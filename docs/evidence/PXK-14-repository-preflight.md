@@ -110,9 +110,14 @@ The append preserved the pre-existing stock `.git/info/exclude` content; `diff` 
 before and after reports exactly one added line (`6a7`), and the file now contains exactly one
 non-comment rule.
 
-No `fetch`, `pull`, `reset`, `clean`, `stash`, `rebase`, `checkout`, `switch`, `branch`, `add`,
-`commit` or `push` was executed. `git reflog` contains a single entry — the original clone — so
-no ref or history was mutated.
+During the preflight verification window, no `fetch`, `pull`, `reset`, `clean`, `stash`, `rebase`,
+`checkout`, `switch`, `branch`, `add`, `commit` or `push` was executed, and `git reflog` contained a
+single entry — the original clone — so no ref or history was mutated during that verification
+window. The subsequent evidence-versioning branch, commit and push are later repository history and
+are not part of the frozen baseline observation.
+
+This document does not claim that repository history remained unchanged after the preflight
+verification timestamp.
 
 ## Scope statement
 

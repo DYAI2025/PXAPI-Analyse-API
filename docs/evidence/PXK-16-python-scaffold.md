@@ -275,7 +275,20 @@ empty and pass. Both yield green results that mean nothing.
 ## I. Status of this document
 
 The results above are **AGENT_REPORTED**. This slice is **not merged** and PXK-16 is **not**
-transitioned to Done. The compatibility workflow had **not executed** at the time of writing —
-nothing here claims CI passed; the workflow's real status is observable only after the branch is
-pushed and the run completes. This repository also has a Sourcery review app that posts a check on
-pull requests, so "no CI is configured here" would be false.
+transitioned to Done.
+
+**CI has since executed and passed** — recorded here because it is now observed fact rather than a
+prediction from the YAML:
+
+| run | event | jobs | conclusion |
+| --- | --- | --- | --- |
+| `33567255569` | `push` | `py3.13`, `py3.14` | success |
+| `33567284722` | `pull_request` | `py3.13`, `py3.14` | success |
+
+Pull request: [#4](https://github.com/DYAI2025/PXAPI-Analyse-API/pull/4), head
+`afdc9584f83e3f0c637ed5ccc49da1cb936e9c06`, base `main` at
+`f2d2a79c6e4be22e18360e3a4a03e1dfbba28ba1`, `merged: false`. This repository also has a Sourcery
+review app that posts a check on pull requests, so "no CI is configured here" would be false.
+
+Note that this section, and the head SHA it names, necessarily predate the commit that records
+them. The orchestrator should re-derive both against the actual PR head.

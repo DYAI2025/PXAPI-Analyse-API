@@ -25,7 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # Exact release tag: astral-sh/setup-uv publishes floating major tags only
+      # up to v7, so "@v10" is not a resolvable ref and the job would not start.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true

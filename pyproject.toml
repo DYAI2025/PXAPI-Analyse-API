@@ -46,7 +46,10 @@ src = [".", "src"]
 # force-exclude makes both bind even when a tool passes a path explicitly
 # (pre-commit, `ruff check $(git diff --name-only)`).
 # Root README.md stays in scope: it is A3-owned.
-extend-exclude = ["oracle", "docs/evidence"]
+# "oracle/*" not "oracle": a pattern without a separator is matched against the
+# BASENAME at any depth, which would silently un-lint a future
+# src/pxapi/adapters/oracle/ as well.
+extend-exclude = ["oracle/*", "docs/evidence"]
 force-exclude = true
 
 [tool.ruff.lint]

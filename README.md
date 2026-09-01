@@ -1,0 +1,88 @@
+# PXAPI — Pixelkiez Website Analysis Platform
+
+PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
+
+> **This repository is scaffold (slice A3 / PXK-16).** It contains **no** analysis, measurement,
+> crawling, SERP, business-context, synthesis, scoring, product-diagnosis, customer-projection,
+> rendering, persistence or API capability. Nothing here analyses a website yet. The layout and
+> the boundary rules exist so that the slices which add those capabilities cannot quietly violate
+> the architecture.
+
+## Supported Python versions
+
+| Version | Role |
+| --- | --- |
+| **3.13** | primary baseline — pinned in `.python-version`, used by default |
+| **3.14** | supported; verified on every push by the compatibility job |
+
+`requires-python = ">=3.13,<3.15"`.
+
+## Prerequisites
+
+[**uv**](https://docs.astral.sh/uv/) is the only prerequisite; it manages both the interpreter and
+the dependencies. Install it per the [official instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+## Bootstrap
+
+```bash
+uv sync --locked      # deterministic install from the committed uv.lock
+```
+
+`--locked` fails instead of silently re-resolving, so a stale lockfile is an error rather than a
+surprise. Use plain `uv sync` only after intentionally changing dependencies (then commit the
+regenerated `uv.lock`).
+
+## Everyday commands
+
+```bash
+uv run pytest                      # full test suite
+uv run ruff check .                # lint
+uv run ruff format .               # format
+uv run ruff format --check .       # verify formatting without writing
+
+uv run --python 3.14 pytest        # run the suite on the compatibility interpreter
+```
+
+## Repository structure
+
+```
+src/pxapi/
+├── domain/        innermost ring — no framework, no database, no cloud SDK, no third party
+├── ports/         explicit boundaries the application talks through
+├── application/   orchestration; depends only on domain + ports
+├── adapters/      implementations that bind ports to the outside world
+└── config/        configuration primitives; a leaf, depends on nothing in pxapi
+
+tests/architecture/  the import-boundary guard (and the proofs it can fail)
+oracle/              frozen regression oracle from A2 — reference evidence, not application code
+docs/evidence/       per-slice verification records
+```
+
+### The architecture rule is executable, not documentation
+
+| layer | may import from `pxapi` | third-party allowed |
+| --- | --- | --- |
+| `domain` | `domain` | no |
+| `ports` | `ports`, `domain` | no |
+| `application` | `application`, `ports`, `domain` | no |
+| `adapters` | `adapters`, `application`, `ports`, `domain`, `config` | **yes** |
+| `config` | `config` | no |
+
+Dependencies point inward only. `tests/architecture/boundaries.py` enforces this by parsing every
+module with `ast` — it never imports them, so it catches a forbidden `import fastapi` in `domain`
+even when FastAPI is not installed. `tests/architecture/test_boundaries_detect_violations.py`
+proves each rule genuinely fails when violated, so the guard cannot rot into a vacuous pass.
+
+Adding a dependency to an inner layer is therefore a deliberate, reviewable edit to
+`LAYER_IMPORTS` / `THIRD_PARTY_ALLOWLIST` — never an accident.
+
+## The `oracle/` directory
+
+`oracle/website-diagnosis/` is the frozen A2 regression oracle: a record of the existing Website
+Diagnosis behavior, kept as migration evidence. It is **not** application code and **not** a
+source to copy from.
+
+## CI
+
+`.github/workflows/python-compat.yml` runs sync + ruff + pytest on Python 3.13 and 3.14. That is
+its entire remit. The full repository CI/security/quality gate is a separate slice (A8).

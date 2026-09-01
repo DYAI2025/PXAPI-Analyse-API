@@ -1,0 +1,48 @@
+# PXK-16 / A3 — Python 3.13 / 3.14 compatibility job, and nothing else.
+#
+# Scope boundary: the full repository CI/security/quality gate is owned by A8 and is
+# deliberately NOT implemented here. This file contains no security scanning, no secret
+# scanning, no dependency security gate, no migration smoke, no API-auth tests, no SSRF
+# gate, no deployment gate and no regression-oracle orchestration.
+name: python-compat
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  compat:
+    name: py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+
+      # Exact release tag: astral-sh/setup-uv publishes floating major tags only
+      # up to v7, so "@v10" is not a resolvable ref and the job would not start.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Sync from the committed lockfile
+        run: uv sync --locked
+
+      - name: Lockfile is up to date
+        run: uv lock --check
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Tests
+        run: uv run pytest

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# uv / virtualenv
+.venv/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# NOTE: local agent-runtime paths (e.g. .claude/) are deliberately NOT listed here.
+# PXK-14 isolated them in workstation-local .git/info/exclude instead, so this
+# repository commits no policy about anyone's local tooling.

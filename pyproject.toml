@@ -1,0 +1,56 @@
+[project]
+name = "pxapi"
+version = "0.1.0"
+description = "PXAPI — Pixelkiez Website Analysis Platform (modular monolith scaffold)"
+readme = "README.md"
+requires-python = ">=3.13,<3.15"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Private :: Do Not Upload",
+]
+# A3 is scaffold only. It has no runtime behavior, and therefore no runtime
+# dependencies. Framework, database and cloud SDK dependencies are deliberately
+# absent: they belong to the slices that actually implement adapters.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",   # test runner; also executes the architecture boundary guard
+    "ruff>=0.16.5",    # linter + formatter (AC2)
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]   # >=1.27 emits PEP 639 License-Expression; older silently degrades
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pxapi"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["."]          # lets tests import the tests.architecture helper package
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = [".", "src"]
+# Frozen prior-slice evidence, deliberately outside this project's lint/format
+# scope so A3 tooling can never rewrite it:
+#   oracle/       the PXK-15 regression-oracle artifact (reference, not A3 code)
+#   docs/evidence per-slice verification records — note ruff formats python code
+#                 fences inside .md, so these are in format scope without this rule
+# force-exclude makes both bind even when a tool passes a path explicitly
+# (pre-commit, `ruff check $(git diff --name-only)`).
+# Root README.md stays in scope: it is A3-owned.
+# "oracle/*" not "oracle": a pattern without a separator is matched against the
+# BASENAME at any depth, which would silently un-lint a future
+# src/pxapi/adapters/oracle/ as well.
+extend-exclude = ["oracle/*", "docs/evidence"]
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "TID", "RUF"]

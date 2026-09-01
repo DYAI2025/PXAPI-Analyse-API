@@ -20,6 +20,20 @@ from pathlib import Path
 
 PACKAGE = "pxapi"
 
+#: Zone for ``pxapi/__init__.py`` itself. The root package is governed too:
+#: left exempt, a single ``import fastapi`` there would make FastAPI an
+#: unconditional dependency of every layer with the architecture gate still green.
+ROOT_ZONE = "<root>"
+
+#: Zone for any module directly under ``pxapi`` that is not a declared layer.
+#: Such a package is refused outright, because it would otherwise be an
+#: ungoverned laundering channel: free to import adapters and third parties, and
+#: free to be imported by any inner layer.
+UNGOVERNED_ZONE = "<ungoverned>"
+
+#: What the root ``pxapi`` package may import from inside ``pxapi``: nothing.
+ROOT_ALLOWED: frozenset[str] = frozenset()
+
 #: Each layer, and the pxapi-internal layers it is allowed to import.
 #: Dependencies point inward only: nothing inner may name an outer layer.
 LAYER_IMPORTS: dict[str, frozenset[str]] = {
@@ -76,11 +90,18 @@ def _module_name(py_file: Path, package_root: Path) -> str:
     return ".".join(parts)
 
 
-def _layer_of(module_name: str) -> str | None:
+def _zone_of(module_name: str) -> str | None:
+    """Which rule-zone a module belongs to, or None if it lives outside ``pxapi``."""
     parts = module_name.split(".")
-    if len(parts) < 2 or parts[0] != PACKAGE:
+    if parts[0] != PACKAGE:
         return None
-    return parts[1] if parts[1] in LAYER_IMPORTS else None
+    if len(parts) == 1:
+        return ROOT_ZONE
+    return parts[1] if parts[1] in LAYER_IMPORTS else UNGOVERNED_ZONE
+
+
+def _allowed_targets(zone: str) -> frozenset[str]:
+    return ROOT_ALLOWED if zone == ROOT_ZONE else LAYER_IMPORTS[zone]
 
 
 def _iter_imports(
@@ -110,10 +131,30 @@ def _judge(module_name: str, layer: str, target: str, lineno: int) -> list[Viola
 
     if root == PACKAGE:
         parts = target.split(".")
-        if len(parts) < 2 or parts[1] not in LAYER_IMPORTS:
-            return []  # bare `import pxapi`, or a name we do not govern
+        if len(parts) == 1:
+            # `import pxapi` hands the importer every layer via attribute access,
+            # which would defeat the whole analysis.
+            return [
+                Violation(
+                    module_name,
+                    layer,
+                    target,
+                    lineno,
+                    "bare-package-import: import a declared layer, not the pxapi package",
+                )
+            ]
         target_layer = parts[1]
-        if target_layer not in LAYER_IMPORTS[layer]:
+        if target_layer not in LAYER_IMPORTS:
+            return [
+                Violation(
+                    module_name,
+                    layer,
+                    target,
+                    lineno,
+                    f"ungoverned-package-import: pxapi.{target_layer} is not a declared layer",
+                )
+            ]
+        if target_layer not in _allowed_targets(layer):
             return [
                 Violation(
                     module_name,
@@ -149,9 +190,21 @@ def check_tree(package_root: Path) -> list[Violation]:
     violations: list[Violation] = []
     for py_file in sorted(package_root.rglob("*.py")):
         module_name = _module_name(py_file, package_root)
-        layer = _layer_of(module_name)
-        if layer is None:
-            continue  # pxapi/__init__.py itself belongs to no layer
+        zone = _zone_of(module_name)
+        if zone is None:
+            continue  # outside the pxapi package entirely
+        if zone == UNGOVERNED_ZONE:
+            violations.append(
+                Violation(
+                    module_name,
+                    UNGOVERNED_ZONE,
+                    module_name,
+                    1,
+                    "ungoverned-package: every module under pxapi must live in a declared layer",
+                )
+            )
+            continue
+        layer = zone
         tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         is_package = py_file.name == "__init__.py"
         for target, lineno in _iter_imports(tree, module_name, is_package):

@@ -135,6 +135,60 @@ def test_import_nested_inside_a_function_is_caught(tmp_path: Path) -> None:
     assert [v.rule for v in check_tree(root)] == ["AC3-banned-dependency: fastapi"]
 
 
+# --- no ungoverned zone: the root package and undeclared siblings are governed too ---
+
+
+def test_root_package_may_not_import_third_party(tmp_path: Path) -> None:
+    """pxapi/__init__.py is not exempt: an import here would bind every layer."""
+    root = _tree(tmp_path, {"__init__.py": '"""root."""\nimport fastapi\n'})
+    assert [v.rule for v in check_tree(root)] == ["AC3-banned-dependency: fastapi"]
+
+
+def test_root_package_may_not_import_a_layer(tmp_path: Path) -> None:
+    root = _tree(tmp_path, {"__init__.py": '"""root."""\nfrom pxapi.adapters import s3\n'})
+    assert [v.rule for v in check_tree(root)] == ["layer-boundary: <root> -> adapters"]
+
+
+def test_undeclared_sibling_package_is_refused(tmp_path: Path) -> None:
+    """A package outside the five layers would be an ungoverned laundering channel."""
+    root = _tree(tmp_path, {"services/__init__.py": '"""svc."""\nimport fastapi\n'})
+    assert [v.rule for v in check_tree(root)] == [
+        "ungoverned-package: every module under pxapi must live in a declared layer"
+    ]
+
+
+def test_application_may_not_import_an_undeclared_sibling_package(tmp_path: Path) -> None:
+    root = _tree(
+        tmp_path,
+        {
+            "services/__init__.py": '"""svc."""\n',
+            "application/use_case.py": "from pxapi.services import gateway\n",
+        },
+    )
+    rules = sorted(v.rule for v in check_tree(root))
+    assert rules == [
+        "ungoverned-package-import: pxapi.services is not a declared layer",
+        "ungoverned-package: every module under pxapi must live in a declared layer",
+    ]
+
+
+def test_bare_package_import_is_refused(tmp_path: Path) -> None:
+    """`import pxapi` reaches every layer by attribute access."""
+    root = _tree(tmp_path, {"domain/thing.py": "import pxapi\n"})
+    assert [v.rule for v in check_tree(root)] == [
+        "bare-package-import: import a declared layer, not the pxapi package"
+    ]
+
+
+# --- the third-party ban is proven for every inner layer, not just domain ---
+
+
+@pytest.mark.parametrize("layer", ["ports", "config"])
+def test_remaining_inner_layers_may_not_import_third_party(tmp_path: Path, layer: str) -> None:
+    root = _tree(tmp_path, {f"{layer}/thing.py": "import httpx\n"})
+    assert [v.rule for v in check_tree(root)] == [f"third-party-in-{layer}"]
+
+
 def test_stdlib_and_future_imports_are_never_violations(tmp_path: Path) -> None:
     root = _tree(
         tmp_path,

@@ -43,15 +43,24 @@ uv run ruff format --check .       # verify formatting without writing
 uv run --python 3.14 pytest        # run the suite on the compatibility interpreter
 ```
 
+Switching interpreter rebuilds `.venv` — uv removes and recreates it each time you cross between
+3.13 and 3.14, in both directions. That is expected, not a fault.
+
+**What the ruff commands actually cover.** `oracle/` and `docs/evidence/` are excluded in
+`pyproject.toml`, so neither is linted or formatted; editing a file there and seeing
+`N files already formatted` does **not** mean your file was checked. Note also that `ruff check`
+inspects no Markdown at all, while `ruff format` does reach Python code fences inside `.md` —
+which is why the root `README.md` is deliberately left in scope.
+
 ## Repository structure
 
 ```
 src/pxapi/
 ├── domain/        innermost ring — no framework, no database, no cloud SDK, no third party
 ├── ports/         explicit boundaries the application talks through
-├── application/   orchestration; depends only on domain + ports
+├── application/   orchestration; depends on domain + ports (and itself)
 ├── adapters/      implementations that bind ports to the outside world
-└── config/        configuration primitives; a leaf, depends on nothing in pxapi
+└── config/        configuration primitives; a leaf, depends on no other pxapi layer
 
 tests/architecture/  the import-boundary guard (and the proofs it can fail)
 oracle/              frozen regression oracle from A2 — reference evidence, not application code
@@ -78,11 +87,12 @@ Adding a dependency to an inner layer is therefore a deliberate, reviewable edit
 
 ## The `oracle/` directory
 
-`oracle/website-diagnosis/` is the frozen A2 regression oracle: a record of the existing Website
-Diagnosis behavior, kept as migration evidence. It is **not** application code and **not** a
-source to copy from.
+`oracle/website-diagnosis/` is the frozen A2 regression oracle: a record of the behavior of the
+separate, pre-existing `pixelkiez-website-diagnosis` tool — **not** of PXAPI. It is kept as
+migration evidence, and it is **not** application code and **not** a source to copy from.
 
 ## CI
 
-`.github/workflows/python-compat.yml` runs sync + ruff + pytest on Python 3.13 and 3.14. That is
-its entire remit. The full repository CI/security/quality gate is a separate slice (A8).
+`.github/workflows/python-compat.yml` runs, on Python 3.13 and 3.14: `uv sync --locked`,
+`uv lock --check`, `ruff check`, `ruff format --check`, and `pytest`. That is its entire remit.
+The full repository CI/security/quality gate is a separate slice (A8).

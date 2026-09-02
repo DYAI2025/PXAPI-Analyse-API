@@ -1,0 +1,4 @@
+{
+  "proves": "A DELIVERED attempt states when the channel accepted it: delivered_at is non-null if and only if status is DELIVERED.",
+  "violations": [{ "pointer": "/delivered_at", "keyword": "type" }]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "A stable id is non-empty and not whitespace, without prescribing an id technology.",
+  "violations": [{ "pointer": "/run_id", "keyword": "pattern" }]
+}

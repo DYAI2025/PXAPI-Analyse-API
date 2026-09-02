@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "delivery_id": "dlv_0002",
+  "channel": "crm_handoff",
+  "artifact_refs": [
+    { "artifact_id": "iar_0001", "artifact_type": "internal-analysis-record" }
+  ],
+  "status": "PENDING",
+  "attempted_at": null,
+  "delivered_at": null
+}

@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:24:00Z",
+  "overall_intervention_level": "TARGETED_MODERNIZATION",
+  "recommendations": [
+    {
+      "recommendation_id": "rec_0001",
+      "title": "Add dedicated service pages for roofing and carpentry",
+      "rationale": "The website names both trades only on the home page. Searchers with a transactional intent for one specific trade in Berlin find no page that answers their question, while the business context publicly evidences roofing and carpentry as the core offerings of Example Handwerk GmbH.",
+      "intervention_level": "TARGETED_MODERNIZATION",
+      "priority_rank": 1,
+      "strategic_relevance": true,
+      "priority_factors": {
+        "business_impact": "HIGH",
+        "urgency": "MEDIUM",
+        "effort": "MEDIUM",
+        "evidence_strength": 4,
+        "dependencies": []
+      },
+      "claim_refs": [],
+      "customer_facing": true
+    },
+    {
+      "recommendation_id": "rec_0002",
+      "title": "Show the master craftsman qualification and chamber registration on the service pages",
+      "rationale": "The chamber of crafts registration and the master craftsman qualification are evidenced in public registers but appear nowhere on the website. Trust-validation searches for the business currently lead to third-party directories instead of the site itself.",
+      "intervention_level": "MAINTENANCE",
+      "priority_rank": 2,
+      "strategic_relevance": true,
+      "priority_factors": {
+        "business_impact": "MEDIUM",
+        "urgency": "LOW",
+        "effort": "LOW",
+        "evidence_strength": 5,
+        "dependencies": ["rec_0001"]
+      },
+      "claim_refs": ["clm_0003"],
+      "customer_facing": true
+    },
+    {
+      "recommendation_id": "rec_0003",
+      "title": "Collect targeted directory-listing evidence before any local search recommendation",
+      "rationale": "Local search visibility was not assessed in this run, so a recommendation on directory listings would rest on a hypothesis rather than on evidence. Gather the targeted evidence first and revisit the question in the next run; nothing is concluded about the website until then.",
+      "intervention_level": "EVIDENCE_FIRST",
+      "priority_rank": 3,
+      "strategic_relevance": false,
+      "priority_factors": {
+        "business_impact": "LOW",
+        "urgency": "LOW",
+        "effort": "LOW",
+        "evidence_strength": 1,
+        "dependencies": []
+      },
+      "claim_refs": ["clm_0004"],
+      "customer_facing": false
+    }
+  ]
+}

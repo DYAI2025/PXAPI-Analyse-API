@@ -1,0 +1,1 @@
+{ "proves": "size_bytes is a non-negative integer.", "violations": [{ "pointer": "/size_bytes", "keyword": "minimum" }] }

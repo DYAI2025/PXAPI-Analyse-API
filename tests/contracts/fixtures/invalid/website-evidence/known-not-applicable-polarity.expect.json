@@ -1,0 +1,4 @@
+{
+  "proves": "A known finding must take a position: NOT_APPLICABLE is reserved for items without a value.",
+  "violations": [{ "pointer": "/items/0/polarity", "keyword": "enum" }]
+}

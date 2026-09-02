@@ -1,0 +1,4 @@
+{
+  "proves": "The problem object is closed: an extra property that would carry internals (a traceback) is rejected, whatever its name.",
+  "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+}

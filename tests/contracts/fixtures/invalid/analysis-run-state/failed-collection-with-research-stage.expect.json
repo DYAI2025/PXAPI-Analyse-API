@@ -1,0 +1,1 @@
+{ "proves": "The failure stage must map to the coarse failure state: FAILED_COLLECTION cannot name BUSINESS_RESEARCH.", "violations": [{ "pointer": "/failure/failure_stage", "keyword": "enum" }] }

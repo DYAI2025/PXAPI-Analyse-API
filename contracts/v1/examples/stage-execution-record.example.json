@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "stage": "BASELINE_COLLECTION",
+  "status": "SUCCEEDED",
+  "started_at": "2026-09-02T10:15:00Z",
+  "finished_at": "2026-09-02T10:18:00Z",
+  "output_artifact_refs": [
+    { "artifact_id": "art_web_evidence_base_0001", "artifact_type": "website-evidence" },
+    { "artifact_id": "art_meas_bundle_0001", "artifact_type": "measurement-record-bundle" }
+  ]
+}

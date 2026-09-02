@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "code": "ILLEGAL_RUN_TRANSITION",
+  "title": "Illegal run transition",
+  "detail": "Transition FAILED_SYNTHESIS -> READY is not approved.",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "errors": []
+}

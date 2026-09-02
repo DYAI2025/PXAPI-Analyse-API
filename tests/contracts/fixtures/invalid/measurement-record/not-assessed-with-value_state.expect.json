@@ -1,0 +1,4 @@
+{
+  "proves": "NOT_ASSESSED and UNKNOWN are distinct: a record cannot be both not assessed and assessed-with-unknown-value.",
+  "violations": [{ "pointer": "", "keyword": "not" }]
+}

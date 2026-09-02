@@ -1,0 +1,1 @@
+{ "proves": "The stage vocabulary is closed: an undeclared stage name is rejected.", "violations": [{ "pointer": "/stage", "keyword": "enum" }] }

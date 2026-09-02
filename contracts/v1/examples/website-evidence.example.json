@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "evidence_pass": "BASELINE",
+  "generated_at": "2026-09-02T10:18:00Z",
+  "target_url": "https://www.example-handwerk.de/",
+  "items": [
+    {
+      "evidence_id": "web_0001",
+      "metric_id": "https.enforced",
+      "subject": { "type": "host", "value": "www.example-handwerk.de" },
+      "assessment_state": "MEASURED",
+      "value_state": "KNOWN",
+      "observation": "All HTTP requests redirect to HTTPS with a valid certificate chain.",
+      "polarity": "POSITIVE",
+      "measurement_refs": ["meas_01J6ZK3N2A7C9E1G3I5K7M9O1T", "meas_01J6ZK3N2A7C9E1G3I5K7M9O1U"],
+      "confidence": 5
+    },
+    {
+      "evidence_id": "web_0002",
+      "metric_id": "structured_data.organization_present",
+      "subject": { "type": "page", "value": "https://www.example-handwerk.de/" },
+      "assessment_state": "OBSERVED",
+      "value_state": "UNKNOWN",
+      "unknown_reason": "UNPARSEABLE_JSON_LD",
+      "observation": "Structured data could not be parsed; whether an Organization entity exists was not established.",
+      "polarity": "NOT_APPLICABLE",
+      "measurement_refs": ["meas_01J6ZK3N2A7C9E1G3I5K7M9O1R"],
+      "confidence": 2
+    },
+    {
+      "evidence_id": "web_0003",
+      "metric_id": "performance.lab.largest_contentful_paint_ms",
+      "subject": { "type": "page", "value": "https://www.example-handwerk.de/" },
+      "assessment_state": "NOT_ASSESSED",
+      "not_assessed_reason": "PROVIDER_FAILURE",
+      "observation": "Lab performance was not assessed because the measurement provider failed.",
+      "polarity": "NOT_APPLICABLE",
+      "measurement_refs": ["meas_01J6ZK3N2A7C9E1G3I5K7M9O1S"],
+      "confidence": null
+    }
+  ]
+}

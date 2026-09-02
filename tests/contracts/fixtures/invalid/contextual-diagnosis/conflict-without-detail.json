@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:31:00Z",
+  "producer_ref": { "kind": "model", "name": "contextual_synthesis", "version": "2026.09.0" },
+  "inputs": {
+    "website_evidence_refs": [
+      { "artifact_id": "wev_01J6ZK3N6M2P8R4T0V6X2Z8B4D", "artifact_type": "website-evidence" },
+      { "artifact_id": "wev_01J6ZK3Q1H5K9M3P7R1T5V9X3Z", "artifact_type": "website-evidence" }
+    ],
+    "business_context_ref": {
+      "artifact_id": "bctx_01J6ZK3P4R8T2V6X0Z4B8D2F6H",
+      "artifact_type": "business-context"
+    },
+    "business_intent_set_ref": {
+      "artifact_id": "bis_01J6ZK3P7Q1S5U9W3Y7A1C5E9G",
+      "artifact_type": "business-intent-set"
+    },
+    "market_evidence_refs": []
+  },
+  "claims": [
+    {
+      "claim_id": "clm_0001",
+      "claim": "Homeowners who compare several carpentry businesses before requesting a quote may drop the website early if it gives no indication of price ranges; no retrieved website, business or market evidence establishes how such comparisons currently go for Example Handwerk GmbH.",
+      "website_evidence_refs": [],
+      "business_evidence_refs": [],
+      "market_evidence_refs": [],
+      "claim_type": "UNRESOLVED_CONFLICT",
+      "strategic_relevance": false,
+      "confidence": 1
+    },
+    {
+      "claim_id": "clm_0002",
+      "claim": "Private homeowners who compare craftsmen online find on this website the trust signals their decision weighs: every request is redirected to HTTPS with a valid certificate chain, and the owner's master craftsman title and the Handwerkskammer Berlin membership are publicly verifiable, so the site's trust foundation matches the business's predominantly private customer type.",
+      "website_evidence_refs": ["web_0001"],
+      "business_evidence_refs": ["ctx_0004", "ctx_0005"],
+      "market_evidence_refs": [],
+      "claim_type": "SUPPORTED_CONTEXTUAL_INFERENCE",
+      "strategic_relevance": true,
+      "confidence": 4
+    },
+    {
+      "claim_id": "clm_0003",
+      "claim": "The targeted pass found the website presenting Brandenburg-wide delivery and installation of custom furniture, while the business context places the service area at Berlin and the surrounding municipalities with reference projects no farther than Potsdam; which statement describes the current service area could not be established.",
+      "website_evidence_refs": ["web_0104"],
+      "business_evidence_refs": ["ctx_0003"],
+      "market_evidence_refs": [],
+      "claim_type": "UNRESOLVED_CONFLICT",
+      "strategic_relevance": true,
+      "confidence": 2,
+      "conflict": {
+        "description": "The website's Brandenburg-wide service statement contradicts the publicly evidenced Berlin-and-surroundings service area. Neither source is dated more recently than the other, so the diagnosis leaves the service area open instead of choosing a side.",
+        "conflicting_refs": ["web_0104", "ctx_0003"]
+      }
+    }
+  ]
+}

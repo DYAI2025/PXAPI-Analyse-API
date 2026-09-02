@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:product-diagnosis:1.0.0",
+  "title": "PXAPI product diagnosis v1",
+  "description": "Prioritised product recommendations derived from the contextual diagnosis (Confluence 39846055 §11). The overall intervention level is a judgement on the website as a whole, from MONITOR to REDESIGN, with EVIDENCE_FIRST when the evidence is too thin to recommend any intervention: there is no automatic redesign bias. Every recommendation is justified by at least one contextual-diagnosis claim, states its priority by rank and by explicit factors, and may only be customer-facing if it has passed the strategic relevance question (customer_facing true implies strategic_relevance true). No formula combining the factors into a rank is part of this contract. An empty recommendations array means no recommendation was made; it is never a finding about the website.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this product diagnosis belongs to."
+    },
+    "generated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the product diagnosis was generated."
+    },
+    "overall_intervention_level": {
+      "type": "string",
+      "enum": ["MONITOR", "MAINTENANCE", "TARGETED_MODERNIZATION", "REDESIGN", "EVIDENCE_FIRST"],
+      "description": "Required. The intervention level judged for the website as a whole. MONITOR: no intervention, keep observing. MAINTENANCE: small corrective work within the existing website. TARGETED_MODERNIZATION: focused modernisation of specific areas. REDESIGN: a full redesign is justified by the evidence. EVIDENCE_FIRST: the evidence is insufficient to recommend an intervention; gather evidence before deciding."
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/recommendation" },
+      "description": "Required. The prioritised recommendations. An empty array means no recommendation was made; it never means the website needs nothing, and it never means anything was not assessed."
+    }
+  },
+  "required": ["schema_version", "run_id", "generated_at", "overall_intervention_level", "recommendations"],
+  "additionalProperties": false,
+  "$defs": {
+    "recommendation": {
+      "type": "object",
+      "properties": {
+        "recommendation_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of this recommendation; the customer projection and other recommendations reference it."
+        },
+        "title": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/short_text",
+          "description": "Required. A single-line title of the recommendation."
+        },
+        "rationale": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/text",
+          "description": "Required. Why the recommendation is made, in business language, grounded in the referenced claims."
+        },
+        "intervention_level": {
+          "type": "string",
+          "enum": ["MONITOR", "MAINTENANCE", "TARGETED_MODERNIZATION", "REDESIGN", "EVIDENCE_FIRST"],
+          "description": "Required. The intervention level of this single recommendation, on the same scale as overall_intervention_level. It may differ from the overall level: one targeted recommendation does not imply a redesign."
+        },
+        "priority_rank": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Required. The recommendation's position in the prioritised list; 1 is the highest priority. How the rank follows from the priority factors is not part of this contract."
+        },
+        "strategic_relevance": {
+          "type": "boolean",
+          "description": "Required. Whether the recommendation passed the strategic relevance question (Confluence 39846055 §3.5): does it matter for the entrepreneur's business, not only for the website? Must be true for a customer-facing recommendation."
+        },
+        "priority_factors": {
+          "type": "object",
+          "properties": {
+            "business_impact": {
+              "type": "string",
+              "enum": ["LOW", "MEDIUM", "HIGH"],
+              "description": "Required. The expected effect on the business if the recommendation is implemented."
+            },
+            "urgency": {
+              "type": "string",
+              "enum": ["LOW", "MEDIUM", "HIGH"],
+              "description": "Required. How soon the recommendation should be acted on."
+            },
+            "effort": {
+              "type": "string",
+              "enum": ["LOW", "MEDIUM", "HIGH"],
+              "description": "Required. The estimated effort of implementing the recommendation."
+            },
+            "evidence_strength": {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/confidence",
+              "description": "Required. How strongly the referenced claims support the recommendation, on the 0..5 scale."
+            },
+            "dependencies": {
+              "type": "array",
+              "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id" },
+              "uniqueItems": true,
+              "description": "Required. The recommendation_ids of the recommendations in this document that this one depends on. An empty array means the recommendation depends on no other."
+            }
+          },
+          "required": ["business_impact", "urgency", "effort", "evidence_strength", "dependencies"],
+          "additionalProperties": false,
+          "description": "Required. The explicit factors behind the rank, stated so that the prioritisation is reviewable. No formula combining them is part of this contract."
+        },
+        "claim_refs": {
+          "type": "array",
+          "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Required. The claim_ids of the contextual-diagnosis claims that justify the recommendation. At least one is required: a recommendation without a justifying claim is invalid, so an empty array is rejected."
+        },
+        "customer_facing": {
+          "type": "boolean",
+          "description": "Required. Whether the recommendation is shown to the customer. True only if strategic_relevance is true; a recommendation that failed the strategic relevance question stays internal."
+        }
+      },
+      "required": [
+        "recommendation_id",
+        "title",
+        "rationale",
+        "intervention_level",
+        "priority_rank",
+        "strategic_relevance",
+        "priority_factors",
+        "claim_refs",
+        "customer_facing"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "customer_facing": { "const": true } },
+            "required": ["customer_facing"]
+          },
+          "then": {
+            "properties": {
+              "strategic_relevance": { "const": true }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

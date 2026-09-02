@@ -1,0 +1,1 @@
+{ "proves": "Embedded stage records are the closed stage-execution-record contract: an attempt counter (no retry model in v1) is rejected.", "violations": [{ "pointer": "/stage_executions/0", "keyword": "additionalProperties" }] }

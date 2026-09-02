@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0.0",
+  "code": "contract validation failed",
+  "title": "Contract validation failed",
+  "detail": "Document does not satisfy contract 'scorecard' (1 violation(s)).",
+  "errors": []
+}

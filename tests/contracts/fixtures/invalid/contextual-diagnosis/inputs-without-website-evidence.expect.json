@@ -1,0 +1,4 @@
+{
+  "proves": "A diagnosis is synthesised from website evidence: an inputs block with no website-evidence artifact reference is rejected.",
+  "violations": [{ "pointer": "/inputs/website_evidence_refs", "keyword": "minItems" }]
+}

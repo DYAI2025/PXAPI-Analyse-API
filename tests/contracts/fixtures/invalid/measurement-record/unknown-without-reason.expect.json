@@ -1,0 +1,4 @@
+{
+  "proves": "UNKNOWN requires an explicit reason code; it cannot be represented by absence.",
+  "violations": [{ "pointer": "", "keyword": "required" }]
+}

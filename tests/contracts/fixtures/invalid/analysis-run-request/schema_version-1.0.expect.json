@@ -1,0 +1,4 @@
+{
+  "proves": "schema_version is an exact const: the abbreviated 1.0 is not 1.0.0 and is rejected as an unsupported version rather than widened to it.",
+  "violations": [{ "pointer": "/schema_version", "keyword": "const" }]
+}

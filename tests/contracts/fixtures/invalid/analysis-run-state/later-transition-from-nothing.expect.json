@@ -1,0 +1,1 @@
+{ "proves": "Every later entry names the state it left: a null from_state after the first entry is rejected.", "violations": [{ "pointer": "/transitions/1/from_state", "keyword": "type" }] }

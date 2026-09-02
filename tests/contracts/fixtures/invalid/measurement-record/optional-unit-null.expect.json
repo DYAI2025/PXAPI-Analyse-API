@@ -1,0 +1,4 @@
+{
+  "proves": "An optional property is optional non-null, never optional-and-nullable: unit may be absent but not null.",
+  "violations": [{ "pointer": "/unit", "keyword": "type" }]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "A scorecard carries at least one index; an index that could not be scored is listed as NOT_SCORED, never dropped, so an empty index list is rejected.",
+  "violations": [{ "pointer": "/indices", "keyword": "minItems" }]
+}

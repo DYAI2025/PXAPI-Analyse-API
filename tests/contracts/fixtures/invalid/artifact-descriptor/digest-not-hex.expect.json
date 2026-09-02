@@ -1,0 +1,1 @@
+{ "proves": "The digest value is lowercase hex only: a prefixed or uppercase value is rejected.", "violations": [{ "pointer": "/digest/value", "keyword": "pattern" }] }

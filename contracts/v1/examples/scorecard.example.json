@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:24:00Z",
+  "score_model_version": "score-model/1.0.0",
+  "indices": [
+    {
+      "index_id": "search_visibility",
+      "label": "Search visibility",
+      "score": {
+        "score_state": "SCORED",
+        "value": 62,
+        "coverage": { "assessed": 7, "required": 7 },
+        "evidence_refs": ["web_0004", "web_0005", "clm_0001"]
+      }
+    },
+    {
+      "index_id": "ai_answerability",
+      "label": "AI answerability",
+      "score": {
+        "score_state": "SCORED",
+        "value": 41.5,
+        "coverage": { "assessed": 5, "required": 6 },
+        "evidence_refs": ["web_0006", "clm_0002"]
+      }
+    },
+    {
+      "index_id": "commercial_coverage",
+      "label": "Commercial coverage",
+      "score": {
+        "score_state": "SCORED",
+        "value": 77,
+        "coverage": { "assessed": 6, "required": 6 },
+        "evidence_refs": ["web_0007", "web_0008", "clm_0001", "clm_0003"]
+      }
+    },
+    {
+      "index_id": "trust_conversion_readiness",
+      "label": "Trust and conversion readiness",
+      "score": {
+        "score_state": "SCORED",
+        "value": 58,
+        "coverage": { "assessed": 8, "required": 9 },
+        "evidence_refs": ["web_0001", "web_0009", "web_0010"]
+      }
+    },
+    {
+      "index_id": "technical_quality",
+      "label": "Technical quality",
+      "score": {
+        "score_state": "NOT_SCORED",
+        "value": null,
+        "not_scored_reason": "INSUFFICIENT_COVERAGE",
+        "coverage": { "assessed": 3, "required": 8 },
+        "evidence_refs": ["web_0001", "web_0003"]
+      }
+    }
+  ],
+  "overall_score": {
+    "score_state": "NOT_SCORED",
+    "value": null,
+    "not_scored_reason": "INSUFFICIENT_COVERAGE",
+    "coverage": { "assessed": 4, "required": 5 },
+    "evidence_refs": []
+  }
+}

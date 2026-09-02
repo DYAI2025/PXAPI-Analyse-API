@@ -1,0 +1,4 @@
+{
+  "proves": "Priority factors use the closed LOW/MEDIUM/HIGH scale: an effort of UNKNOWN is rejected, because an unknown factor is not a factor value.",
+  "violations": [{ "pointer": "/recommendations/0/priority_factors/effort", "keyword": "enum" }]
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:business-intent-set:1.0.0",
+  "title": "PXAPI business intent set v1",
+  "description": "The versioned, segmented set of search intents and queries derived from the business context for one Analysis Run (Confluence 39846055 §7); it steers the targeted pass. Every intent belongs to exactly one segment, traces back to at least one business-context fact and carries at least one query; a set without intents is not a set. Every query is language-scoped and states explicitly whether it is a brand query; country scope is optional and its absence means the query is not country-scoped. Which queries were executed and what they returned is not part of this contract.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this intent set belongs to."
+    },
+    "generated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the intent set was generated."
+    },
+    "set_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/short_text",
+      "description": "Required. The version of this intent set as the producer names it; a regenerated set for the same run carries a new version so that targeted evidence can be tied to the set it was collected for."
+    },
+    "business_context_ref": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref",
+      "description": "Required. The business-context artifact the set was derived from."
+    },
+    "intents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/intent" },
+      "minItems": 1,
+      "description": "Required. The segmented intents of the set, each with its queries. An empty array is rejected: a set without intents cannot steer the targeted pass, and a run for which no intent could be derived expresses that through its business context and run state, never through an empty set."
+    }
+  },
+  "required": ["schema_version", "run_id", "generated_at", "set_version", "business_context_ref", "intents"],
+  "additionalProperties": false,
+  "$defs": {
+    "intent": {
+      "type": "object",
+      "properties": {
+        "intent_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of this intent; targeted evidence and diagnosis claims reference it."
+        },
+        "segment": {
+          "type": "string",
+          "enum": [
+            "TRANSACTIONAL",
+            "PROBLEM_NEED",
+            "TRUST_VALIDATION",
+            "INFORMATIONAL",
+            "BRAND",
+            "NON_BRAND",
+            "LOCAL_REGIONAL"
+          ],
+          "description": "Required. The segment the intent belongs to: a purchase or contact intent (TRANSACTIONAL), a problem the business solves (PROBLEM_NEED), a check of the business's trustworthiness (TRUST_VALIDATION), a general information need (INFORMATIONAL), a query naming the business (BRAND), a query not naming it (NON_BRAND) or a query bound to the business's location or region (LOCAL_REGIONAL)."
+        },
+        "derived_from": {
+          "type": "array",
+          "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Required. The fact_ids of the business-context facts the intent is derived from. An empty array is rejected: an intent that traces back to no fact has no evidenced basis and is not part of a set."
+        },
+        "queries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/query" },
+          "minItems": 1,
+          "description": "Required. The concrete queries that express the intent in the targeted pass. An empty array is rejected: an intent without queries cannot be executed."
+        }
+      },
+      "required": ["intent_id", "segment", "derived_from", "queries"],
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "object",
+      "properties": {
+        "query_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of this query; targeted measurement records reference it as their subject."
+        },
+        "text": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/short_text",
+          "description": "Required. The query text exactly as it is to be issued, on a single line."
+        },
+        "language": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/language",
+          "description": "Required. The two-letter lowercase language code the query is written in."
+        },
+        "country": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/country",
+          "description": "Optional. The two-letter uppercase country code the query is scoped to. Absent means the query is not country-scoped; an unknown country is not representable in v1."
+        },
+        "brand_flag": {
+          "type": "boolean",
+          "description": "Required. Whether the query names the business or its brand (true) or is a non-brand query (false). Stated explicitly on every query so that brand and non-brand visibility are never inferred from the query text."
+        }
+      },
+      "required": ["query_id", "text", "language", "brand_flag"],
+      "additionalProperties": false
+    }
+  }
+}

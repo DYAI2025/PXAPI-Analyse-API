@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:analysis-run-request:1.0.0",
+  "title": "PXAPI analysis run request v1",
+  "description": "The accepted request artifact that started an Analysis Run (Confluence 39846055 §1, §14, §15; 40239107 §5): which website is to be analysed, through which input channel the request arrived and which delivery channels were asked for. The document is privacy-minimal by construction: it never carries an e-mail address, a name or a credential — the requester and the contact are opaque references held by the adapter that raised the request, and both are optional non-null, so their absence means only that no reference was supplied. The channel is an opaque token, not a closed vocabulary; the target URL is a structural shape only, with reachability and egress policy enforced elsewhere; an empty delivery_channels array means no delivery was requested and the run rests at READY.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this request belongs to."
+    },
+    "request_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The stable identity of the request artifact; the internal analysis record references it."
+    },
+    "requested_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the request was raised."
+    },
+    "target_url": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/url",
+      "description": "Required. The website to analyse, as an absolute http or https URL in structural shape only. Reachability, canonicalisation and egress policy are not contract concerns and are enforced elsewhere."
+    },
+    "channel": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/token",
+      "description": "Required. The input channel that raised the request, as an opaque producer-defined token (e.g. internal, self_service). The vocabulary is deliberately not closed in v1."
+    },
+    "requester_ref": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Optional. An opaque reference to the requesting identity — an API key owner, an operator or a self-service request context — as held by the adapter that raised the request. Absent means no requester reference was supplied."
+    },
+    "contact_ref": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Optional. An opaque reference to a contact or recipient context held by a delivery adapter. Never an e-mail address, a name or any other personal datum: the contract carries references only. Absent means no contact reference was supplied."
+    },
+    "delivery_channels": {
+      "type": "array",
+      "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/token" },
+      "uniqueItems": true,
+      "description": "Required. The delivery channels requested for the run, as opaque channel tokens (e.g. email), each at most once. An empty array means no delivery was requested: the run rests at READY."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "request_id",
+    "requested_at",
+    "target_url",
+    "channel",
+    "delivery_channels"
+  ],
+  "additionalProperties": false
+}

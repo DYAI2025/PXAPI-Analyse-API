@@ -1,0 +1,7 @@
+{
+  "proves": "A provider failure cannot carry a substitute negative value (false) or a zero confidence: NOT_ASSESSED forces value and confidence to null.",
+  "violations": [
+    { "pointer": "/value", "keyword": "type" },
+    { "pointer": "/confidence", "keyword": "type" }
+  ]
+}

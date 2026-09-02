@@ -1,0 +1,4 @@
+{
+  "proves": "A strategically relevant claim must rest on evidence: strategic_relevance true with no website, business or market evidence reference is rejected.",
+  "violations": [{ "pointer": "/claims/0", "keyword": "anyOf" }]
+}

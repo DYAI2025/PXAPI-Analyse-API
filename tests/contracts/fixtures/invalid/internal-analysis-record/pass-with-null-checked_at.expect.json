@@ -1,0 +1,4 @@
+{
+  "proves": "An executed validation states when it ran: a PASS with a null checked_at is rejected, so null can never hide an execution.",
+  "violations": [{ "pointer": "/validations/0/checked_at", "keyword": "type" }]
+}

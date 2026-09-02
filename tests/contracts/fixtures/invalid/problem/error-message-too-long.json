@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Document does not satisfy contract 'scorecard' (1 violation(s)).",
+  "errors": [
+    {
+      "pointer": "/indices/0/value",
+      "keyword": "type",
+      "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "Every lever traces back to at least one product-diagnosis recommendation: an empty recommendation_refs array is rejected.",
+  "violations": [{ "pointer": "/levers/0/recommendation_refs", "keyword": "minItems" }]
+}

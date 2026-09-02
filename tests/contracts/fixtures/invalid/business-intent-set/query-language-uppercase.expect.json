@@ -1,0 +1,4 @@
+{
+  "proves": "Query language is a lowercase ISO 639-1 code: an uppercase 'DE' is rejected by the pattern, not silently accepted as a country.",
+  "violations": [{ "pointer": "/intents/0/queries/0/language", "keyword": "pattern" }]
+}

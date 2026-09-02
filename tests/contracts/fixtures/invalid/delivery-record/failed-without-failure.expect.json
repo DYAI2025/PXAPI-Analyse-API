@@ -1,0 +1,4 @@
+{
+  "proves": "A FAILED attempt always says why: failure is required if and only if status is FAILED.",
+  "violations": [{ "pointer": "", "keyword": "required" }]
+}

@@ -10,13 +10,15 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Private :: Do Not Upload",
 ]
-# A3 is scaffold only. It has no runtime behavior, and therefore no runtime
-# dependencies. Framework, database and cloud SDK dependencies are deliberately
-# absent: they belong to the slices that actually implement adapters.
+# No runtime dependencies. A4 adds only stdlib domain code (run state, stage
+# projection); the JSON contracts under contracts/ are data, validated by tests.
+# Framework, database and cloud SDK dependencies are deliberately absent: they
+# belong to the slices that actually implement adapters.
 dependencies = []
 
 [dependency-groups]
 dev = [
+    "jsonschema>=4.26,<5",   # Draft 2020-12 validator for the contract tests ONLY — never a runtime dependency
     "pytest>=9.1.1",   # test runner; also executes the architecture boundary guard
     "ruff>=0.16.5",    # linter + formatter (AC2)
 ]

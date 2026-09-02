@@ -1,0 +1,4 @@
+{
+  "proves": "code is a machine token in upper snake case, not prose; a lowercase sentence is rejected.",
+  "violations": [{ "pointer": "/code", "keyword": "pattern" }]
+}

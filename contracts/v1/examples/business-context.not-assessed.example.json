@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:20:00Z",
+  "producer_ref": { "kind": "model", "name": "business_context_analyzer", "version": "2026.09.0" },
+  "research_state": "NOT_ASSESSED",
+  "not_assessed_reason": "PROVIDER_FAILURE",
+  "facts": []
+}

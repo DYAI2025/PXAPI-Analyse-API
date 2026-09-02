@@ -1,0 +1,1 @@
+{ "proves": "Every failure state except BLOCKED_INPUT names the failed stage: a null failure_stage on FAILED_RESEARCH is rejected.", "violations": [{ "pointer": "/failure/failure_stage", "keyword": "enum" }] }

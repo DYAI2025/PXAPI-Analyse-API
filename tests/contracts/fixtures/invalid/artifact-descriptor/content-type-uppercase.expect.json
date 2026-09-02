@@ -1,0 +1,1 @@
+{ "proves": "content_type is a lowercase media type.", "violations": [{ "pointer": "/content_type", "keyword": "pattern" }] }

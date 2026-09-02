@@ -1,0 +1,1 @@
+{ "proves": "A failed stage must say why: FAILED without a failure block is rejected.", "violations": [{ "pointer": "", "keyword": "required" }] }

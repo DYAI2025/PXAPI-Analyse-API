@@ -1,0 +1,4 @@
+{
+  "proves": "SCORED means a value exists: a SCORED index with a null value is rejected.",
+  "violations": [{ "pointer": "/indices/0/score/value", "keyword": "type" }]
+}

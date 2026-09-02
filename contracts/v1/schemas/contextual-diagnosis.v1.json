@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:contextual-diagnosis:1.0.0",
+  "title": "PXAPI contextual diagnosis v1",
+  "description": "Output of the contextual synthesis model (Confluence 39846055 §9): evidence-bound claims that join website evidence, business context and targeted evidence into one diagnosis of the analysed website. Every claim names the evidence it rests on by identifier. A claim that is strategically relevant, and a claim that is a VERIFIED_FACT or a SUPPORTED_CONTEXTUAL_INFERENCE, references at least one website, business or market evidence item; a HYPOTHESIS may rest on nothing. A contradiction between sources is stated explicitly as an UNRESOLVED_CONFLICT claim carrying the conflicting references — never silently resolved. An empty claims array means no claim could be made and says nothing about the website.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this diagnosis belongs to."
+    },
+    "generated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the diagnosis was generated."
+    },
+    "producer_ref": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/producer_ref",
+      "description": "Required. What produced the diagnosis; synthesis models are interchangeable behind this shape."
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "website_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+          },
+          "minItems": 1,
+          "description": "Required. The website-evidence artifacts the diagnosis was synthesised from (the baseline pass and, when it ran, the targeted pass). At least one; an empty array is rejected, because a diagnosis without website evidence is not a diagnosis of the website.",
+          "uniqueItems": true
+        },
+        "business_context_ref": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref",
+          "description": "Required. The business-context artifact the diagnosis was synthesised from."
+        },
+        "business_intent_set_ref": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref",
+          "description": "Required. The business-intent-set artifact that steered the targeted pass the diagnosis draws on."
+        },
+        "market_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+          },
+          "description": "Required. The market-evidence artifacts the diagnosis was synthesised from. An empty array means no market evidence was used. Market evidence has no v1 contract; it is referenced by artifact identity and type only.",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "website_evidence_refs",
+        "business_context_ref",
+        "business_intent_set_ref",
+        "market_evidence_refs"
+      ],
+      "additionalProperties": false,
+      "description": "Required. The artifacts the diagnosis was synthesised from, by reference. The diagnosis never copies their content."
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      },
+      "description": "Required. The evidence-bound claims of the diagnosis. An empty array means no claim could be made; it is never a finding about the website."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "generated_at",
+    "producer_ref",
+    "inputs",
+    "claims"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "properties": {
+        "claim_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of this claim; product-diagnosis recommendations reference it."
+        },
+        "claim": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/text",
+          "description": "Required. The claim itself, in evidence language: what the sources establish, infer or leave open about the website in its business context."
+        },
+        "website_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id"
+          },
+          "uniqueItems": true,
+          "description": "Required. The evidence_ids of the website-evidence items the claim rests on. An empty array means the claim rests on no website evidence."
+        },
+        "business_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id"
+          },
+          "uniqueItems": true,
+          "description": "Required. The fact_ids of the business-context facts the claim rests on. An empty array means the claim rests on no business fact."
+        },
+        "market_evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id"
+          },
+          "uniqueItems": true,
+          "description": "Required. The identifiers of the market-evidence items the claim rests on. An empty array means the claim rests on no market evidence."
+        },
+        "claim_type": {
+          "type": "string",
+          "enum": [
+            "VERIFIED_FACT",
+            "SUPPORTED_CONTEXTUAL_INFERENCE",
+            "HYPOTHESIS",
+            "UNRESOLVED_CONFLICT"
+          ],
+          "description": "Required. The authority of the claim, ordered HYPOTHESIS < SUPPORTED_CONTEXTUAL_INFERENCE < VERIFIED_FACT; a VERIFIED_FACT or SUPPORTED_CONTEXTUAL_INFERENCE references at least one evidence item. UNRESOLVED_CONFLICT marks a claim whose sources contradict each other and which is left open with its conflict stated, never resolved by choosing a side."
+        },
+        "strategic_relevance": {
+          "type": "boolean",
+          "description": "Required. Whether the claim passed the entrepreneur question (Confluence 39846055 §3.5): would it matter to the owner's business decision? A relevant claim references at least one evidence item; false means the claim is recorded but carries no strategic weight."
+        },
+        "confidence": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/confidence",
+          "description": "Required. Confidence in the claim on the 0..5 scale."
+        },
+        "conflict": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/text",
+              "description": "Required. What the sources disagree about, in evidence language, without deciding which side is right."
+            },
+            "conflicting_refs": {
+              "type": "array",
+              "items": {
+                "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id"
+              },
+              "minItems": 2,
+              "uniqueItems": true,
+              "description": "Required. The identifiers (evidence_ids, fact_ids or market-evidence identifiers) whose statements contradict each other. At least two, because a conflict has two sides; an empty array is rejected."
+            }
+          },
+          "required": [
+            "description",
+            "conflicting_refs"
+          ],
+          "additionalProperties": false,
+          "description": "Conditional. Present if and only if claim_type is UNRESOLVED_CONFLICT: what the sources disagree about and which references disagree. Forbidden for every other claim type, where no conflict exists."
+        }
+      },
+      "required": [
+        "claim_id",
+        "claim",
+        "website_evidence_refs",
+        "business_evidence_refs",
+        "market_evidence_refs",
+        "claim_type",
+        "strategic_relevance",
+        "confidence"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "strategic_relevance": {
+                "const": true
+              }
+            },
+            "required": [
+              "strategic_relevance"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "website_evidence_refs": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "business_evidence_refs": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "market_evidence_refs": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "claim_type": {
+                "enum": [
+                  "VERIFIED_FACT",
+                  "SUPPORTED_CONTEXTUAL_INFERENCE"
+                ]
+              }
+            },
+            "required": [
+              "claim_type"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "website_evidence_refs": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "business_evidence_refs": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "market_evidence_refs": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "claim_type": {
+                "const": "UNRESOLVED_CONFLICT"
+              }
+            },
+            "required": [
+              "claim_type"
+            ]
+          },
+          "then": {
+            "required": [
+              "conflict"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "conflict"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

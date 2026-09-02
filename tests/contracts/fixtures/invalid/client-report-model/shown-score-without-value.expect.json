@@ -1,0 +1,4 @@
+{
+  "proves": "A SHOWN index always carries a number: a null value under SHOWN is rejected, because a missing value never encodes a state.",
+  "violations": [{ "pointer": "/scores/0/value", "keyword": "type" }]
+}

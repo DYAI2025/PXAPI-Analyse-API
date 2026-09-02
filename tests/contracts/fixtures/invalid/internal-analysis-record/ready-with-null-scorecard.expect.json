@@ -1,0 +1,4 @@
+{
+  "proves": "A READY run has produced every artifact: a null scorecard on a READY run is rejected, because a missing artifact can never be a valid outcome of a completed analysis.",
+  "violations": [{ "pointer": "/artifacts/scorecard", "keyword": "type" }]
+}

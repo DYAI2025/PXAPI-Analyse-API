@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "created_at": "2026-09-02T10:19:30Z",
+  "run": {
+    "state": "FAILED_COLLECTION",
+    "channel": "internal",
+    "request_ref": {
+      "artifact_id": "req_01J6ZK3M5D8P2W6Y0A4C8E2G6J",
+      "artifact_type": "analysis-run-request"
+    }
+  },
+  "artifacts": {
+    "website_evidence_baseline": {
+      "artifact_id": "wev_baseline_0001",
+      "artifact_type": "website-evidence"
+    },
+    "website_evidence_targeted": null,
+    "business_context": null,
+    "business_intent_set": null,
+    "contextual_diagnosis": null,
+    "scorecard": null,
+    "product_diagnosis": null,
+    "client_report_model": null,
+    "customer_report_render": null
+  },
+  "delivery_records": [],
+  "measurement_refs": [],
+  "validations": [
+    {
+      "validation_id": "val_contract_conformance",
+      "status": "PASS",
+      "checked_at": "2026-09-02T10:19:20Z"
+    },
+    {
+      "validation_id": "val_collection_completeness",
+      "status": "FAIL",
+      "checked_at": "2026-09-02T10:19:25Z",
+      "detail_ref": { "artifact_id": "valrep_0002", "artifact_type": "validation-report" }
+    },
+    {
+      "validation_id": "val_customer_leakage_gate",
+      "status": "NOT_RUN",
+      "checked_at": null
+    }
+  ]
+}

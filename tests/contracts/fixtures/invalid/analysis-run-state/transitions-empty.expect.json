@@ -1,0 +1,1 @@
+{ "proves": "A run that exists was requested: an empty transition log is rejected.", "violations": [{ "pointer": "/transitions", "keyword": "minItems" }] }

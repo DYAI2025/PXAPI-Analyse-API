@@ -1,0 +1,4 @@
+{
+  "proves": "NOT_SCORED requires an explicit reason; a silently unscored index is rejected.",
+  "violations": [{ "pointer": "/indices/0/score", "keyword": "required" }]
+}

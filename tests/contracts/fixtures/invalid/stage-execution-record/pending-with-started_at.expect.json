@@ -1,0 +1,1 @@
+{ "proves": "PENDING means not started: a started_at on a pending stage is rejected.", "violations": [{ "pointer": "/started_at", "keyword": "type" }] }

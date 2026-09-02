@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "delivery_id": "dlv_0001",
+  "channel": "email",
+  "artifact_refs": [
+    { "artifact_id": "render_0001", "artifact_type": "customer-report-render" },
+    { "artifact_id": "report_0001", "artifact_type": "client-report-model" }
+  ],
+  "recipient_ref": "ctx_0001",
+  "status": "PENDING",
+  "attempted_at": "2026-09-02T10:20:00Z",
+  "delivered_at": null
+}

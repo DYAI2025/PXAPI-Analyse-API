@@ -1,0 +1,1 @@
+{ "proves": "A stage failure detail is single-line and bounded: a traceback-shaped detail is rejected.", "violations": [{ "pointer": "/failure/detail", "keyword": "pattern" }] }

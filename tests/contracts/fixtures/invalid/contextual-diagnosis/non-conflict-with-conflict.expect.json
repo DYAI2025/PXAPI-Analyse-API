@@ -1,0 +1,4 @@
+{
+  "proves": "Only an UNRESOLVED_CONFLICT claim carries a conflict: a HYPOTHESIS with a conflict member is rejected.",
+  "violations": [{ "pointer": "/claims/0", "keyword": "not" }]
+}

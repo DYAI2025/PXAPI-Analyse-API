@@ -1,0 +1,4 @@
+{
+  "proves": "A set without intents is not a set: an empty intents array is rejected instead of silently steering nothing.",
+  "violations": [{ "pointer": "/intents", "keyword": "minItems" }]
+}

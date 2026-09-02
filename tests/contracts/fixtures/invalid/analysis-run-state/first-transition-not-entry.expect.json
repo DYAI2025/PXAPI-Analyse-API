@@ -1,0 +1,1 @@
+{ "proves": "The log starts with the entry into REQUESTED from nothing: a first entry that leaves a state is rejected.", "violations": [{ "pointer": "/transitions/0/from_state", "keyword": "type" }, { "pointer": "/transitions/0/to_state", "keyword": "const" }] }

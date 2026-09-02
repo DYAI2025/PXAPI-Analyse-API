@@ -1,0 +1,1 @@
+{ "proves": "Visibility is INTERNAL or CUSTOMER: a third value (PUBLIC) is rejected.", "violations": [{ "pointer": "/visibility", "keyword": "enum" }] }

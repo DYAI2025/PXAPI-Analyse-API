@@ -1,0 +1,1 @@
+{ "proves": "The run state vocabulary is closed: an undeclared state is rejected.", "violations": [{ "pointer": "/state", "keyword": "enum" }] }

@@ -1,0 +1,155 @@
+{
+  "contracts_version": "1.0.0",
+  "dialect": "https://json-schema.org/draft/2020-12/schema",
+  "id_namespace": "urn:pxapi:schema:",
+  "canonical": [
+    {
+      "name": "analysis-run-request",
+      "schema": "schemas/analysis-run-request.v1.json",
+      "examples": [
+        "examples/analysis-run-request.example.json",
+        "examples/analysis-run-request.internal.example.json"
+      ]
+    },
+    {
+      "name": "measurement-record",
+      "schema": "schemas/measurement-record.v1.json",
+      "examples": [
+        "examples/measurement-record.example.json",
+        "examples/measurement-record.unknown.example.json",
+        "examples/measurement-record.not-assessed.example.json"
+      ]
+    },
+    {
+      "name": "website-evidence",
+      "schema": "schemas/website-evidence.v1.json",
+      "examples": [
+        "examples/website-evidence.example.json"
+      ]
+    },
+    {
+      "name": "business-context",
+      "schema": "schemas/business-context.v1.json",
+      "examples": [
+        "examples/business-context.example.json",
+        "examples/business-context.not-assessed.example.json"
+      ]
+    },
+    {
+      "name": "business-intent-set",
+      "schema": "schemas/business-intent-set.v1.json",
+      "examples": [
+        "examples/business-intent-set.example.json"
+      ]
+    },
+    {
+      "name": "contextual-diagnosis",
+      "schema": "schemas/contextual-diagnosis.v1.json",
+      "examples": [
+        "examples/contextual-diagnosis.example.json"
+      ]
+    },
+    {
+      "name": "scorecard",
+      "schema": "schemas/scorecard.v1.json",
+      "examples": [
+        "examples/scorecard.example.json"
+      ]
+    },
+    {
+      "name": "product-diagnosis",
+      "schema": "schemas/product-diagnosis.v1.json",
+      "examples": [
+        "examples/product-diagnosis.example.json"
+      ]
+    },
+    {
+      "name": "internal-analysis-record",
+      "schema": "schemas/internal-analysis-record.v1.json",
+      "examples": [
+        "examples/internal-analysis-record.example.json",
+        "examples/internal-analysis-record.failed.example.json"
+      ]
+    },
+    {
+      "name": "client-report-model",
+      "schema": "schemas/client-report-model.v1.json",
+      "examples": [
+        "examples/client-report-model.example.json"
+      ]
+    },
+    {
+      "name": "delivery-record",
+      "schema": "schemas/delivery-record.v1.json",
+      "examples": [
+        "examples/delivery-record.example.json",
+        "examples/delivery-record.failed.example.json",
+        "examples/delivery-record.pending.example.json"
+      ]
+    }
+  ],
+  "support": [
+    {
+      "name": "analysis-run-state",
+      "schema": "schemas/analysis-run-state.v1.json",
+      "examples": [
+        "examples/analysis-run-state.example.json",
+        "examples/analysis-run-state.blocked-input.example.json",
+        "examples/analysis-run-state.failed-research.example.json"
+      ],
+      "justification": "Confluence 39846055 §16 fixes the run state vocabulary and 40239107 §6 says the Run Store persists run state and transitions. This contract freezes the run-state document shape so that A5 (persistence) and A7 (status read path) consume one definition; it also carries the precise failure indication (which stage failed) without adding top-level states."
+    },
+    {
+      "name": "stage-execution-record",
+      "schema": "schemas/stage-execution-record.v1.json",
+      "examples": [
+        "examples/stage-execution-record.example.json",
+        "examples/stage-execution-record.failed.example.json"
+      ],
+      "justification": "Confluence 39846055 §8 requires Baseline Website Measurements and Business Context Research to run in parallel in Pass 1. A single top-level run state cannot describe two concurrent activities; one execution record per stage can, and the run state is projected from them by pxapi.domain.stage_execution."
+    },
+    {
+      "name": "artifact-descriptor",
+      "schema": "schemas/artifact-descriptor.v1.json",
+      "examples": [
+        "examples/artifact-descriptor.example.json",
+        "examples/artifact-descriptor.render.example.json"
+      ],
+      "justification": "Confluence 40239107 §6 requires the database to store digest, size, type, timestamps and visibility for every artifact, and application authorisation to separate customer from internal artifacts. This contract is that metadata shape; storage keys and locations are deliberately absent because they belong to A5."
+    },
+    {
+      "name": "problem",
+      "schema": "schemas/problem.v1.json",
+      "examples": [
+        "examples/problem.example.json",
+        "examples/problem.transition.example.json"
+      ],
+      "justification": "PXK-17 AC6 requires stable, client-readable error semantics that do not leak internals. This contract is transport-neutral: no HTTP status, no type URI, no transport binding; the code is an open stable token so later slices can add categories without changing the meaning of existing ones."
+    }
+  ],
+  "shared_definitions": [
+    {
+      "name": "common",
+      "schema": "schemas/common.v1.json"
+    }
+  ],
+  "problem_codes": [
+    {
+      "code": "CONTRACT_VALIDATION_FAILED",
+      "meaning": "A document does not satisfy the contract it claims; errors[] names each violated constraint by JSON pointer and keyword."
+    },
+    {
+      "code": "CONTRACT_NOT_FOUND",
+      "meaning": "The named contract does not exist in this contracts version."
+    },
+    {
+      "code": "SCHEMA_VERSION_UNSUPPORTED",
+      "meaning": "The document's schema_version is not the version this contracts set accepts."
+    },
+    {
+      "code": "ILLEGAL_RUN_TRANSITION",
+      "meaning": "The requested Analysis Run state change is not an approved transition from the run's current state."
+    }
+  ],
+  "problem_code_policy": "This list names the codes known at contracts version 1.0.0. problem.code is an open token: a later slice may register further codes here without changing this contracts version, and adding a code never alters the meaning of an existing one. A client must treat an unknown code as a generic problem of the given title/detail rather than reject the document."
+}

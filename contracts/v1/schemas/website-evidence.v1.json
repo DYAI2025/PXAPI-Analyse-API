@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:website-evidence:1.0.0",
+  "title": "PXAPI website evidence v1",
+  "description": "Deterministic website evidence derived from measurement records for one analysis pass (Confluence 39846055 §8: the baseline pass and the targeted pass produce two instances). Every item states its assessment state explicitly: an item that was NOT_ASSESSED or whose value is UNKNOWN has polarity NOT_APPLICABLE, so a provider or runtime failure can never be expressed as a negative finding. An item that is KNOWN must reference at least one measurement record.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this evidence belongs to."
+    },
+    "evidence_pass": {
+      "type": "string",
+      "enum": ["BASELINE", "TARGETED"],
+      "description": "Required. Which pass this evidence document summarises."
+    },
+    "generated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the evidence document was generated."
+    },
+    "target_url": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/url",
+      "description": "Required. The analysed website's URL as accepted for the run."
+    },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence_item" },
+      "description": "Required. The evidence items. An empty array means no items were derived; it never means anything was not assessed — that is stated per item."
+    }
+  },
+  "required": ["schema_version", "run_id", "evidence_pass", "generated_at", "target_url", "items"],
+  "additionalProperties": false,
+  "$defs": {
+    "evidence_item": {
+      "type": "object",
+      "properties": {
+        "evidence_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of this item; diagnosis claims reference it."
+        },
+        "metric_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The metric the item is about."
+        },
+        "subject": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/subject",
+          "description": "Required. What the item is about."
+        },
+        "assessment_state": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/assessment_state",
+          "description": "Required. Whether the subject was assessed at all."
+        },
+        "value_state": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/value_state",
+          "description": "Conditional. Present if and only if assessment_state is MEASURED or OBSERVED. Forbidden for NOT_ASSESSED."
+        },
+        "unknown_reason": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/unknown_reason",
+          "description": "Conditional. Present if and only if value_state is UNKNOWN."
+        },
+        "not_assessed_reason": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/not_assessed_reason",
+          "description": "Conditional. Present if and only if assessment_state is NOT_ASSESSED."
+        },
+        "observation": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/text",
+          "description": "Required. What was observed, in evidence language; for a NOT_ASSESSED or UNKNOWN item it states that nothing was established."
+        },
+        "polarity": {
+          "type": "string",
+          "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL", "NOT_APPLICABLE"],
+          "description": "Required. Whether the item speaks for, against or neutrally about the website. NOT_APPLICABLE if and only if the item is NOT_ASSESSED or UNKNOWN: a missing measurement has no polarity."
+        },
+        "measurement_refs": {
+          "type": "array",
+          "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id" },
+          "uniqueItems": true,
+          "description": "Required. The record_ids of the measurement records the item is derived from. At least one for a KNOWN item; may be empty for a NOT_ASSESSED or UNKNOWN item."
+        },
+        "confidence": {
+          "anyOf": [
+            { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/confidence" },
+            { "type": "null" }
+          ],
+          "description": "Required, nullable. Confidence in the item on the 0..5 scale; null if and only if assessment_state is NOT_ASSESSED."
+        }
+      },
+      "required": [
+        "evidence_id",
+        "metric_id",
+        "subject",
+        "assessment_state",
+        "observation",
+        "polarity",
+        "measurement_refs",
+        "confidence"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "assessment_state": { "const": "NOT_ASSESSED" } },
+            "required": ["assessment_state"]
+          },
+          "then": {
+            "required": ["not_assessed_reason"],
+            "properties": {
+              "polarity": { "const": "NOT_APPLICABLE" },
+              "confidence": { "type": "null" }
+            },
+            "not": {
+              "anyOf": [{ "required": ["value_state"] }, { "required": ["unknown_reason"] }]
+            }
+          },
+          "else": {
+            "required": ["value_state"],
+            "properties": {
+              "confidence": { "type": "integer" }
+            },
+            "not": { "required": ["not_assessed_reason"] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "value_state": { "const": "KNOWN" } },
+            "required": ["value_state"]
+          },
+          "then": {
+            "properties": {
+              "polarity": { "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL"] },
+              "measurement_refs": { "minItems": 1 }
+            },
+            "not": { "required": ["unknown_reason"] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "value_state": { "const": "UNKNOWN" } },
+            "required": ["value_state"]
+          },
+          "then": {
+            "required": ["unknown_reason"],
+            "properties": {
+              "polarity": { "const": "NOT_APPLICABLE" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

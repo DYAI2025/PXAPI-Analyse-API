@@ -1,0 +1,4 @@
+{
+  "proves": "A provider failure cannot validate as negative website evidence: NOT_ASSESSED forces polarity NOT_APPLICABLE.",
+  "violations": [{ "pointer": "/items/0/polarity", "keyword": "const" }]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:24:00Z",
+  "set_version": "intent-set/2026-09-02.1",
+  "business_context_ref": {
+    "artifact_id": "bctx_01J6ZK3P4R8T2V6X0Z4B8D2F6H",
+    "artifact_type": "business-context"
+  },
+  "intents": []
+}

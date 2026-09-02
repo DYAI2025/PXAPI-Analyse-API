@@ -1,0 +1,4 @@
+{
+  "proves": "Every intent traces back to evidence: an intent derived from no business-context fact is rejected.",
+  "violations": [{ "pointer": "/intents/0/derived_from", "keyword": "minItems" }]
+}

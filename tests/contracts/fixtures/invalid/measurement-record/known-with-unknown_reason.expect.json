@@ -1,0 +1,4 @@
+{
+  "proves": "A KNOWN record may not also claim an unknown reason: the two states are exclusive.",
+  "violations": [{ "pointer": "", "keyword": "not" }]
+}

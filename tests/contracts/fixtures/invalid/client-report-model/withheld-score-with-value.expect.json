@@ -1,0 +1,4 @@
+{
+  "proves": "A WITHHELD index is presented without a number: a non-null value under WITHHELD is rejected.",
+  "violations": [{ "pointer": "/scores/0/value", "keyword": "type" }]
+}

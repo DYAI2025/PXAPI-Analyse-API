@@ -1,0 +1,4 @@
+{
+  "proves": "NOT_SCORED carries no value: a zero standing in for an unscored index is rejected, so insufficient coverage can never read as the worst possible score.",
+  "violations": [{ "pointer": "/indices/0/score/value", "keyword": "type" }]
+}

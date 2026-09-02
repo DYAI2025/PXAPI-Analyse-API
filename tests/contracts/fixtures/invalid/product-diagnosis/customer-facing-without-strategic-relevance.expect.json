@@ -1,0 +1,4 @@
+{
+  "proves": "A customer-facing recommendation must have passed the strategic relevance question: customer_facing true with strategic_relevance false is rejected.",
+  "violations": [{ "pointer": "/recommendations/0/strategic_relevance", "keyword": "const" }]
+}

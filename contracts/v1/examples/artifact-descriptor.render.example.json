@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "artifact_id": "art_customer_report_pdf_0001",
+  "artifact_type": "customer-report-pdf",
+  "contract": null,
+  "content_type": "application/pdf",
+  "size_bytes": 1048576,
+  "digest": {
+    "algorithm": "sha256",
+    "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "visibility": "CUSTOMER",
+  "created_at": "2026-09-02T10:40:02Z"
+}

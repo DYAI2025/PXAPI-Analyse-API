@@ -1,0 +1,4 @@
+{
+  "proves": "COMPLETED and NOT_ASSESSED are distinct: a completed research cannot also carry a not-assessed reason.",
+  "violations": [{ "pointer": "", "keyword": "not" }]
+}

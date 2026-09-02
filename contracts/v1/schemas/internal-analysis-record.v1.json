@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:internal-analysis-record:1.0.0",
+  "title": "PXAPI internal analysis record v1",
+  "description": "The canonical internal artifact of one Analysis Run (Confluence 39846055 §13): a record of references only, never a second copy of any analysis result. It is written for every run, failed and blocked runs included, so no outcome is ever expressed by a missing record: an artifact that was not produced is an explicit null, a delivery that was not attempted is an empty list, and a validation that was known but not executed is written as NOT_RUN. A run in READY or DELIVERED state has produced all nine artifacts, a DELIVERED run references at least one delivery record, and a validation carries a checked_at instant if and only if it was executed.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this record belongs to."
+    },
+    "created_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When this record was written."
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/run_state",
+          "description": "Required. The run's state at the time the record was written. READY and DELIVERED imply that all nine artifacts were produced; DELIVERED implies at least one delivery record."
+        },
+        "channel": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/token",
+          "description": "Required. The input channel that raised the run, as the opaque token carried over from the request."
+        },
+        "request_ref": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref",
+          "description": "Required. The accepted analysis-run-request artifact that started the run."
+        }
+      },
+      "required": [
+        "state",
+        "channel",
+        "request_ref"
+      ],
+      "additionalProperties": false,
+      "description": "Required. The run this record belongs to: its state, the channel that raised it and the request that started it."
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "website_evidence_baseline": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The website-evidence artifact of the baseline pass; null if and only if it was not produced."
+        },
+        "website_evidence_targeted": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The website-evidence artifact of the targeted pass; null if and only if it was not produced."
+        },
+        "business_context": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The business-context artifact; null if and only if it was not produced."
+        },
+        "business_intent_set": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The business-intent-set artifact; null if and only if it was not produced."
+        },
+        "contextual_diagnosis": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The contextual-diagnosis artifact; null if and only if it was not produced."
+        },
+        "scorecard": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The scorecard artifact; null if and only if it was not produced."
+        },
+        "product_diagnosis": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The product-diagnosis artifact; null if and only if it was not produced."
+        },
+        "client_report_model": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The client-report-model artifact, the customer projection; null if and only if it was not produced."
+        },
+        "customer_report_render": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. The rendered customer report artifact; null if and only if it was not produced."
+        }
+      },
+      "required": [
+        "website_evidence_baseline",
+        "website_evidence_targeted",
+        "business_context",
+        "business_intent_set",
+        "contextual_diagnosis",
+        "scorecard",
+        "product_diagnosis",
+        "client_report_model",
+        "customer_report_render"
+      ],
+      "additionalProperties": false,
+      "description": "Required. References to the artifacts of the run, one member per artifact kind. Every member is always present; a member is null if and only if that artifact was not produced, so absence never encodes an outcome. All nine members are non-null for a run in READY or DELIVERED state."
+    },
+    "delivery_records": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+      },
+      "description": "Required. The delivery-record artifacts of the run, one per delivery attempt. An empty array means no delivery was attempted; a DELIVERED run has at least one.",
+      "uniqueItems": true
+    },
+    "measurement_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref"
+      },
+      "description": "Required. The measurement-record artifacts retained for the run. An empty array means no measurement record was retained; it never means nothing was measured.",
+      "uniqueItems": true
+    },
+    "validations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/validation"
+      },
+      "description": "Required. The validations the application recorded for the run. An empty array means the application recorded no validation; a validation that was known but not executed is written with status NOT_RUN, so absence carries no meaning."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "created_at",
+    "run",
+    "artifacts",
+    "delivery_records",
+    "measurement_refs",
+    "validations"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "run": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "READY",
+                  "DELIVERED"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "then": {
+        "properties": {
+          "artifacts": {
+            "properties": {
+              "website_evidence_baseline": {
+                "type": "object"
+              },
+              "website_evidence_targeted": {
+                "type": "object"
+              },
+              "business_context": {
+                "type": "object"
+              },
+              "business_intent_set": {
+                "type": "object"
+              },
+              "contextual_diagnosis": {
+                "type": "object"
+              },
+              "scorecard": {
+                "type": "object"
+              },
+              "product_diagnosis": {
+                "type": "object"
+              },
+              "client_report_model": {
+                "type": "object"
+              },
+              "customer_report_render": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "run": {
+            "properties": {
+              "state": {
+                "const": "DELIVERED"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          }
+        },
+        "required": [
+          "run"
+        ]
+      },
+      "then": {
+        "properties": {
+          "delivery_records": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "validation": {
+      "type": "object",
+      "properties": {
+        "validation_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of the validation (e.g. a contract conformance check or the customer leakage gate), so that later runs can be compared."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ],
+          "description": "Required. The outcome of the validation. PASS: it was executed and the run satisfied it. FAIL: it was executed and the run did not satisfy it. NOT_RUN: it was known but not executed; it carries no checked_at instant."
+        },
+        "checked_at": {
+          "anyOf": [
+            {
+              "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Required, nullable. When the validation was executed; null if and only if status is NOT_RUN."
+        },
+        "detail_ref": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref",
+          "description": "Optional. A reference to an artifact holding the validation's detail, such as the violations it found. Absent means no detail artifact exists for this validation."
+        }
+      },
+      "required": [
+        "validation_id",
+        "status",
+        "checked_at"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NOT_RUN"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checked_at": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "checked_at": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

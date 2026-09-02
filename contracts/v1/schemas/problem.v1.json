@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:problem:1.0.0",
+  "title": "PXAPI problem v1",
+  "description": "A transport-neutral, client-readable description of why an operation did not succeed. It carries no HTTP status, no type URI and no transport binding; a later adapter maps it onto its transport. Every text member is single-line, bounded and built from fixed templates so that tracebacks, filesystem paths, secrets and raw internal exception messages cannot appear.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "code": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+      "description": "Required. A stable machine-readable problem code. The codes known at this version are listed in the manifest; the set is open, and a client must handle a code it does not know as a generic problem."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[^\r\n]+(?!\n)$",
+      "description": "Required. A short, single-line, human-readable summary that is the same for every occurrence of the code."
+    },
+    "detail": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\r\n]+(?!\n)$",
+      "description": "Required. A single-line, bounded explanation specific to this occurrence, rendered from a fixed template. Never validator free text, never a traceback, never a path."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Optional. The Analysis Run the problem is attributable to. Absent means the problem is not attributable to a run (e.g. the request never became one)."
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pointer": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^(/[^/\r\n]*)*(?!\n)$",
+            "description": "Required. An RFC 6901 JSON pointer into the offending document; the empty string is the document root."
+          },
+          "keyword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z$][A-Za-z0-9_]*(?!\n)$",
+            "description": "Required. The JSON Schema keyword that was violated (e.g. required, const, pattern, additionalProperties)."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\r\n]+(?!\n)$",
+            "description": "Required. A single-line, templated statement of the violation."
+          }
+        },
+        "required": ["pointer", "keyword", "message"],
+        "additionalProperties": false
+      },
+      "description": "Required. The individual violations for a validation problem; empty for problems that are not about a document."
+    }
+  },
+  "required": ["schema_version", "code", "title", "detail", "errors"],
+  "additionalProperties": false
+}

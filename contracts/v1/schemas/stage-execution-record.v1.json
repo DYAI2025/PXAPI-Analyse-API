@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:stage-execution-record:1.0.0",
+  "title": "PXAPI stage execution record v1",
+  "description": "A snapshot of one processing stage's current execution within an Analysis Run — not an attempt history. It exists because Pass 1 runs Baseline Collection and Business Research concurrently (Confluence 39846055 §8) and one top-level run state cannot describe two activities; pxapi.domain.stage_execution projects the Pass-1 records onto the run state vocabulary. A record is written when a stage starts; stages that have not started need no record. CANCELLED is only ever the consequence of a concurrent sibling stage failing.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this stage execution belongs to."
+    },
+    "stage": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/stage",
+      "description": "Required. Which processing activity this record describes."
+    },
+    "status": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/stage_status",
+      "description": "Required. The stage's current execution status."
+    },
+    "started_at": {
+      "anyOf": [
+        { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp" },
+        { "type": "null" }
+      ],
+      "description": "Required, nullable. When execution started; null if and only if status is PENDING."
+    },
+    "finished_at": {
+      "anyOf": [
+        { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp" },
+        { "type": "null" }
+      ],
+      "description": "Required, nullable. When execution ended; non-null if and only if status is SUCCEEDED, FAILED or CANCELLED."
+    },
+    "failure": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/failure",
+      "description": "Conditional. Present if and only if status is FAILED: the sanitised failure code and detail."
+    },
+    "output_artifact_refs": {
+      "type": "array",
+      "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/artifact_ref" },
+      "uniqueItems": true,
+      "description": "Required. The artifacts this stage execution produced so far. An empty array means none were produced (yet); it never means anything about the website."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "stage",
+    "status",
+    "started_at",
+    "finished_at",
+    "output_artifact_refs"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "PENDING" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "started_at": { "type": "null" },
+          "finished_at": { "type": "null" }
+        },
+        "not": { "required": ["failure"] }
+      },
+      "else": {
+        "properties": {
+          "started_at": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "RUNNING" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "finished_at": { "type": "null" }
+        },
+        "not": { "required": ["failure"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["SUCCEEDED", "FAILED", "CANCELLED"] } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "finished_at": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "FAILED" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["failure"]
+      },
+      "else": {
+        "not": { "required": ["failure"] }
+      }
+    }
+  ]
+}

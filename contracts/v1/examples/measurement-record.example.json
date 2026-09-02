@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "record_id": "meas_01J6ZK3N2A7C9E1G3I5K7M9O1Q",
+  "metric_id": "http.response_time_ms",
+  "subject": { "type": "page", "value": "https://www.example-handwerk.de/" },
+  "collection_pass": "BASELINE",
+  "assessment_state": "MEASURED",
+  "value_state": "KNOWN",
+  "value": 412,
+  "unit": "ms",
+  "source_type": "http_response",
+  "source_ref": {
+    "kind": "http_response",
+    "value": "https://www.example-handwerk.de/",
+    "retrieved_at": "2026-09-02T10:15:30Z"
+  },
+  "provider": "pxapi.http_probe",
+  "method_version": "http-probe/1.0.0",
+  "measured_at": "2026-09-02T10:15:30.250Z",
+  "confidence": 5,
+  "raw_ref": { "artifact_id": "raw_7f3a2c9d", "artifact_type": "provider-raw-payload" }
+}

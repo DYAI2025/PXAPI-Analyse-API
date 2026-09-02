@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Document does not satisfy contract 'measurement-record' (2 violation(s)).",
+  "errors": [
+    {
+      "pointer": "",
+      "keyword": "required",
+      "message": "Constraint 'required' violated at '/'."
+    },
+    {
+      "pointer": "/measured_at",
+      "keyword": "pattern",
+      "message": "Constraint 'pattern' violated at '/measured_at'."
+    }
+  ]
+}

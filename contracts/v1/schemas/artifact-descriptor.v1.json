@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:artifact-descriptor:1.0.0",
+  "title": "PXAPI artifact descriptor v1",
+  "description": "The metadata of one stored artifact of an Analysis Run: identity, type, digest, size, content type, visibility and creation time (Confluence 40239107 §6). Where the bytes live — object key, bucket, path — is deliberately not part of this contract; that is persistence data owned by A5 and keyed by artifact_id. Visibility is what application authorisation decides on: an object key alone never grants customer or internal access.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this artifact belongs to."
+    },
+    "artifact_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The stable identity of the artifact; artifact_ref values point at it."
+    },
+    "artifact_type": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/token",
+      "description": "Required. The producer-defined artifact type. Contract names are the usual values for contract documents; rendered reports, raw provider payloads and chart data have their own types."
+    },
+    "contract": {
+      "type": ["object", "null"],
+      "properties": {
+        "name": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/contract_name",
+          "description": "Required. The contract the document validates against."
+        },
+        "schema_version": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+          "description": "Required. The contract version the document claims."
+        }
+      },
+      "required": ["name", "schema_version"],
+      "additionalProperties": false,
+      "description": "Required, nullable. Which contract the artifact is a document of; null if and only if the artifact is not a contract document (e.g. a rendered PDF, a raw provider payload, chart data)."
+    },
+    "content_type": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z]+/[a-z0-9.+-]+(?!\n)$",
+      "description": "Required. The media type of the stored bytes, lowercase, e.g. application/json or application/pdf."
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Required. The size of the stored bytes."
+    },
+    "digest": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/token",
+          "description": "Required. The digest algorithm, e.g. sha256."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32,128}(?!\n)$",
+          "description": "Required. The lowercase hexadecimal digest of the stored bytes."
+        }
+      },
+      "required": ["algorithm", "value"],
+      "additionalProperties": false,
+      "description": "Required. The content digest, so that a delivered artifact can be bound to exactly one run and one set of bytes."
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["INTERNAL", "CUSTOMER"],
+      "description": "Required. Whether the artifact may reach a customer (CUSTOMER) or is Pixelkiez-internal only (INTERNAL). Internal analysis documents are never CUSTOMER."
+    },
+    "created_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the artifact was stored."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "artifact_id",
+    "artifact_type",
+    "contract",
+    "content_type",
+    "size_bytes",
+    "digest",
+    "visibility",
+    "created_at"
+  ],
+  "additionalProperties": false
+}

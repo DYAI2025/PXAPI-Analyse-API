@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6F",
+  "state": "FAILED_RESEARCH",
+  "entered_at": "2026-09-02T10:16:40Z",
+  "transitions": [
+    { "from_state": null, "to_state": "REQUESTED", "at": "2026-09-02T10:14:30Z" },
+    { "from_state": "REQUESTED", "to_state": "VERIFIED", "at": "2026-09-02T10:14:45Z" },
+    { "from_state": "VERIFIED", "to_state": "COLLECTING_BASELINE", "at": "2026-09-02T10:15:00Z" },
+    { "from_state": "COLLECTING_BASELINE", "to_state": "FAILED_RESEARCH", "at": "2026-09-02T10:16:40Z" }
+  ],
+  "stage_executions": [
+    {
+      "schema_version": "1.0.0",
+      "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6F",
+      "stage": "BASELINE_COLLECTION",
+      "status": "CANCELLED",
+      "started_at": "2026-09-02T10:15:00Z",
+      "finished_at": "2026-09-02T10:16:40Z",
+      "output_artifact_refs": []
+    },
+    {
+      "schema_version": "1.0.0",
+      "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6F",
+      "stage": "BUSINESS_RESEARCH",
+      "status": "FAILED",
+      "started_at": "2026-09-02T10:15:00Z",
+      "finished_at": "2026-09-02T10:16:40Z",
+      "failure": {
+        "code": "RESEARCH_PROVIDER_UNAVAILABLE",
+        "detail": "The business research provider did not respond within the allowed time."
+      },
+      "output_artifact_refs": []
+    }
+  ],
+  "failure": {
+    "failure_stage": "BUSINESS_RESEARCH",
+    "code": "RESEARCH_PROVIDER_UNAVAILABLE",
+    "occurred_at": "2026-09-02T10:16:40Z"
+  }
+}

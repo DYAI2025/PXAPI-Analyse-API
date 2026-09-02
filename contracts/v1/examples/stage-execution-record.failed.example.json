@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "stage": "BUSINESS_RESEARCH",
+  "status": "FAILED",
+  "started_at": "2026-09-02T10:15:00Z",
+  "finished_at": "2026-09-02T10:16:40Z",
+  "failure": {
+    "code": "RESEARCH_PROVIDER_UNAVAILABLE",
+    "detail": "The business research provider did not respond within the allowed time."
+  },
+  "output_artifact_refs": []
+}

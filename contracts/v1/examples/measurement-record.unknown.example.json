@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "record_id": "meas_01J6ZK3N2A7C9E1G3I5K7M9O1R",
+  "metric_id": "structured_data.organization_present",
+  "subject": { "type": "page", "value": "https://www.example-handwerk.de/" },
+  "collection_pass": "BASELINE",
+  "assessment_state": "OBSERVED",
+  "value_state": "UNKNOWN",
+  "value": null,
+  "unknown_reason": "UNPARSEABLE_JSON_LD",
+  "source_type": "html_document",
+  "source_ref": {
+    "kind": "http_response",
+    "value": "https://www.example-handwerk.de/",
+    "retrieved_at": "2026-09-02T10:15:30Z"
+  },
+  "provider": "pxapi.structured_data_probe",
+  "method_version": "structured-data/1.0.0",
+  "measured_at": "2026-09-02T10:15:31Z",
+  "confidence": 2
+}

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:scorecard:1.0.0",
+  "title": "PXAPI scorecard v1",
+  "description": "The segmented indices and the overall score of one Analysis Run (Confluence 39846055 §10; oracle INV-SCORE-02/03/04). The scorecard carries results, never the formula: how a value was computed belongs to the deterministic, versioned score model named in score_model_version and is not part of this contract. Every index and the overall score state their score state explicitly. A SCORED score has a value on 0..100 and rests on at least one evidence reference; a NOT_SCORED score carries a reason and a null value — never a zero, never a placeholder — and there is no partial score in v1. The overall score is optional only by being NOT_SCORED with a reason, never by absence. Coverage counts are informational: an input that was not assessed lowers coverage, never the value, and is never a weakness of the website.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/schema_version",
+      "description": "Required. Always 1.0.0 for this contract."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this scorecard belongs to."
+    },
+    "generated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the scorecard was generated."
+    },
+    "score_model_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/short_text",
+      "description": "Required. The version of the deterministic score model that produced every value in this document, so that scorecards of different runs are comparable only when the model is the same. The model itself — its inputs, weights and formula — is not part of this contract."
+    },
+    "indices": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/index" },
+      "minItems": 1,
+      "description": "Required. The segmented indices, at least one. The set is extensible: index_id is the stable identity of an index across runs, and this contract prescribes no fixed list of indices. An empty array is rejected, because a scorecard without any index scores nothing; an index that could not be scored is listed as NOT_SCORED, never omitted."
+    },
+    "overall_score": {
+      "$ref": "#/$defs/score",
+      "description": "Required. The overall score across the indices. It is optional only by being NOT_SCORED with a reason, never by absence."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "generated_at",
+    "score_model_version",
+    "indices",
+    "overall_score"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "index": {
+      "type": "object",
+      "properties": {
+        "index_id": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+          "description": "Required. The stable identity of the index (e.g. search_visibility), so that later runs and the customer projection can refer to it."
+        },
+        "label": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/short_text",
+          "description": "Required. The human-readable name of the index."
+        },
+        "score": {
+          "$ref": "#/$defs/score",
+          "description": "Required. The index's score, with its state, value, reason, coverage and evidence."
+        }
+      },
+      "required": ["index_id", "label", "score"],
+      "additionalProperties": false
+    },
+    "score": {
+      "type": "object",
+      "properties": {
+        "score_state": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/score_state",
+          "description": "Required. Whether the score was computed. SCORED or NOT_SCORED; no partial or placeholder state exists."
+        },
+        "value": {
+          "anyOf": [
+            { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/score_value" },
+            { "type": "null" }
+          ],
+          "description": "Required, nullable. The score on the closed interval 0..100 when score_state is SCORED; null if and only if score_state is NOT_SCORED. A NOT_SCORED score never carries a zero or any other substitute value."
+        },
+        "not_scored_reason": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/not_scored_reason",
+          "description": "Conditional. Present if and only if score_state is NOT_SCORED: the stable reason code why no score was computed. Every reason describes the analysis process or a policy, never the website."
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "assessed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Required. How many of the required inputs were assessed."
+            },
+            "required": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Required. How many inputs the score model requires for this score."
+            }
+          },
+          "required": ["assessed", "required"],
+          "additionalProperties": false,
+          "description": "Required. How many of the inputs the score model requires for this score were assessed. Informational only: coverage explains a NOT_SCORED score or qualifies a SCORED one; it is never a penalty, and an input that was not assessed is never a weakness."
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id" },
+          "uniqueItems": true,
+          "description": "Required. The identifiers of the evidence items and diagnosis claims the score rests on. At least one for a SCORED score; may be empty for a NOT_SCORED score. An empty array means the score rests on no evidence, which is only legal when nothing was scored."
+        }
+      },
+      "required": ["score_state", "value", "coverage", "evidence_refs"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "score_state": { "const": "SCORED" } },
+            "required": ["score_state"]
+          },
+          "then": {
+            "properties": {
+              "value": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/score_value" },
+              "evidence_refs": { "minItems": 1 }
+            },
+            "not": { "required": ["not_scored_reason"] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "score_state": { "const": "NOT_SCORED" } },
+            "required": ["score_state"]
+          },
+          "then": {
+            "required": ["not_scored_reason"],
+            "properties": {
+              "value": { "type": "null" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

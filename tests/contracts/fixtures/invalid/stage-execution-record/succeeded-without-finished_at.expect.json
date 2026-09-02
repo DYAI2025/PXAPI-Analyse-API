@@ -1,0 +1,1 @@
+{ "proves": "A finished stage records when it finished: SUCCEEDED with a null finished_at is rejected.", "violations": [{ "pointer": "/finished_at", "keyword": "type" }] }

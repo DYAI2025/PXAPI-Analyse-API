@@ -1,0 +1,4 @@
+{
+  "proves": "KNOWN means the value is present: a KNOWN record with a null value is rejected.",
+  "violations": [{ "pointer": "/value", "keyword": "not" }]
+}

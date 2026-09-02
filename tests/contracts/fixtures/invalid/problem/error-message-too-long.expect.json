@@ -1,0 +1,4 @@
+{
+  "proves": "errors[].message is bounded (200 characters), so a dumped payload cannot ride along in it.",
+  "violations": [{ "pointer": "/errors/0/message", "keyword": "maxLength" }]
+}

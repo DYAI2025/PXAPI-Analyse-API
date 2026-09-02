@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_1",
+  "generated_at": "2026-09-02T10:20:00Z",
+  "producer_ref": { "kind": "model", "name": "business_context_analyzer", "version": "2026.09.0" },
+  "research_state": "COMPLETED",
+  "facts": [
+    {
+      "fact_id": "ctx_0001",
+      "category": "COMPANY",
+      "statement": "Example Handwerk GmbH is a limited company registered in Berlin and operates as a craftsman business in carpentry and interior fit-out.",
+      "evidence_class": "VERIFIED_FACT",
+      "source_refs": [],
+      "confidence": 5
+    },
+    {
+      "fact_id": "ctx_0007",
+      "category": "COMPETITOR",
+      "statement": "Regional carpentry businesses with a comparable custom-furniture offering compete for the same Berlin homeowners; the website names no competitor.",
+      "evidence_class": "HYPOTHESIS",
+      "source_refs": [],
+      "confidence": 1
+    }
+  ]
+}

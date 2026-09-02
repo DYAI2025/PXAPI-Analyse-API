@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_1",
+  "evidence_pass": "BASELINE",
+  "generated_at": "2026-09-02T10:18:00Z",
+  "target_url": "https://www.example-handwerk.de/",
+  "items": [
+    {
+      "evidence_id": "web_0003",
+      "metric_id": "performance.lab.largest_contentful_paint_ms",
+      "subject": { "type": "page", "value": "https://www.example-handwerk.de/" },
+      "assessment_state": "NOT_ASSESSED",
+      "not_assessed_reason": "PROVIDER_FAILURE",
+      "observation": "Lab performance is poor.",
+      "polarity": "NEGATIVE",
+      "measurement_refs": [],
+      "confidence": null
+    }
+  ]
+}

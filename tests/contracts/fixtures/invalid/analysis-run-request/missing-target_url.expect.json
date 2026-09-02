@@ -1,0 +1,4 @@
+{
+  "proves": "A request without the website to analyse is rejected: target_url is required, and its absence is never read as a default target.",
+  "violations": [{ "pointer": "", "keyword": "required" }]
+}

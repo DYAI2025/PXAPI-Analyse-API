@@ -1,0 +1,1 @@
+{ "proves": "Only a FAILED stage carries a failure block: SUCCEEDED with failure is rejected.", "violations": [{ "pointer": "", "keyword": "not" }] }

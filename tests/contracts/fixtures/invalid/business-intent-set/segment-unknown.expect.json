@@ -1,0 +1,4 @@
+{
+  "proves": "The segment vocabulary is closed: a segment outside the seven declared values (here NAVIGATIONAL) is rejected.",
+  "violations": [{ "pointer": "/intents/0/segment", "keyword": "enum" }]
+}

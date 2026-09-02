@@ -1,0 +1,1 @@
+{ "proves": "RUNNING means not finished: a finished_at on a running stage is rejected.", "violations": [{ "pointer": "/finished_at", "keyword": "type" }] }

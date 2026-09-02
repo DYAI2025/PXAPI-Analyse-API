@@ -1,0 +1,4 @@
+{
+  "proves": "The request object is closed: an undeclared property — here a credential-shaped api_key — is rejected, whatever its name, so no secret or personal datum can ride along in the request artifact.",
+  "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+}

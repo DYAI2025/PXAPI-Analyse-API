@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_1",
+  "evidence_pass": "BASELINE",
+  "generated_at": "2026-09-02T10:18:00Z",
+  "target_url": "https://www.example-handwerk.de/",
+  "items": [
+    {
+      "evidence_id": "web_0001",
+      "metric_id": "https.enforced",
+      "subject": { "type": "host", "value": "www.example-handwerk.de" },
+      "assessment_state": "MEASURED",
+      "value_state": "KNOWN",
+      "observation": "HTTPS is enforced.",
+      "polarity": "POSITIVE",
+      "measurement_refs": ["meas_1"],
+      "confidence": 4,
+      "score_penalty": -10
+    }
+  ]
+}

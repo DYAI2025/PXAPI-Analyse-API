@@ -1,0 +1,4 @@
+{
+  "proves": "The run state vocabulary is closed: a state outside the shared run_state enum (DONE) is rejected.",
+  "violations": [{ "pointer": "/run/state", "keyword": "enum" }]
+}

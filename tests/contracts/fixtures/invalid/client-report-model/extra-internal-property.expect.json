@@ -1,0 +1,4 @@
+{
+  "proves": "The customer projection is closed: an undeclared property — here an internal audit_coverage figure — is rejected whatever its name, so internal vocabulary cannot ride along into the customer report.",
+  "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+}

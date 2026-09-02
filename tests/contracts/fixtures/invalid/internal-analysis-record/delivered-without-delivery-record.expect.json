@@ -1,0 +1,4 @@
+{
+  "proves": "A DELIVERED run is evidenced by its delivery: a DELIVERED record with no delivery record is rejected.",
+  "violations": [{ "pointer": "/delivery_records", "keyword": "minItems" }]
+}

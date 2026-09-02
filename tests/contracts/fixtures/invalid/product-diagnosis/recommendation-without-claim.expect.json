@@ -1,0 +1,4 @@
+{
+  "proves": "Every recommendation is justified by at least one contextual-diagnosis claim: an empty claim_refs array is rejected.",
+  "violations": [{ "pointer": "/recommendations/0/claim_refs", "keyword": "minItems" }]
+}

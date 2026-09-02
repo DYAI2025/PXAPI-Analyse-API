@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_1",
+  "generated_at": "2026-09-02T10:24:00Z",
+  "score_model_version": "score-model/1.0.0",
+  "indices": [
+    {
+      "index_id": "search_visibility",
+      "label": "Search visibility",
+      "score": {
+        "score_state": "SCORED",
+        "value": 62,
+        "coverage": { "assessed": 7, "required": 7 },
+        "evidence_refs": []
+      }
+    }
+  ],
+  "overall_score": {
+    "score_state": "NOT_SCORED",
+    "value": null,
+    "not_scored_reason": "INSUFFICIENT_COVERAGE",
+    "coverage": { "assessed": 1, "required": 5 },
+    "evidence_refs": []
+  }
+}

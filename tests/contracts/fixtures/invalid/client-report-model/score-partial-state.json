@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:26:00Z",
+  "projection_version": "customer-projection/1.0.0",
+  "language": "de",
+  "company_name": "Example Handwerk GmbH",
+  "headline": "Ihre Website ist solide – zwei gezielte Schritte bringen mehr Anfragen aus Berlin",
+  "summary": "Die Website der Example Handwerk GmbH ist technisch sauber aufgebaut und wird von Suchmaschinen gefunden. Wer in Berlin gezielt nach Dachdecker- oder Zimmererleistungen sucht, findet jedoch keine Seite, die diese Frage direkt beantwortet. Ihre Meisterqualifikation und der Eintrag bei der Handwerkskammer sind öffentlich belegt, auf der Website aber nicht sichtbar. Beides lässt sich mit überschaubarem Aufwand ändern und wirkt direkt auf die Zahl qualifizierter Anfragen.",
+  "levers": [
+    {
+      "lever_id": "lev_0001",
+      "title": "Eigene Leistungsseiten für Dachdeckerei und Zimmerei",
+      "business_impact": "Interessenten mit einem konkreten Anliegen landen heute auf der Startseite und müssen sich Ihr Angebot zusammensuchen. Eine eigene Seite je Gewerk beantwortet ihre Frage sofort und macht aus Besuchern Anfragen.",
+      "next_steps": [
+        "Je eine Seite für Dachdeckerei und Zimmerei mit Leistungen, Referenzen und Kontaktmöglichkeit anlegen.",
+        "Beide Seiten in der Hauptnavigation verlinken."
+      ],
+      "recommendation_refs": ["rec_0001"]
+    },
+    {
+      "lever_id": "lev_0002",
+      "title": "Meisterbetrieb und Handwerkskammer-Eintrag sichtbar machen",
+      "business_impact": "Ihre Qualifikation ist ein Vertrauensvorteil, den Interessenten derzeit nur in fremden Verzeichnissen finden. Auf der eigenen Website stärkt er die Entscheidung für Sie.",
+      "next_steps": [
+        "Meistertitel und Handwerkskammer-Eintrag auf den Leistungsseiten und im Impressum nennen."
+      ],
+      "recommendation_refs": ["rec_0002"]
+    },
+    {
+      "lever_id": "lev_0003",
+      "title": "Lokale Auffindbarkeit in Berlin stärken",
+      "business_impact": "Wer regional sucht, entscheidet sich schnell. Leistungsseiten mit klarem Berlin-Bezug und sichtbaren Qualifikationen erhöhen die Chance, dass Ihre Website in diesen Suchen vor Verzeichnissen und Wettbewerbern erscheint.",
+      "next_steps": [
+        "Auf jeder Leistungsseite das Einsatzgebiet in Berlin benennen.",
+        "Anschrift und Öffnungszeiten einheitlich auf der Website und in Branchenverzeichnissen pflegen.",
+        "Nach der Umsetzung die Auffindbarkeit im nächsten Bericht erneut prüfen lassen."
+      ],
+      "recommendation_refs": ["rec_0001", "rec_0002"]
+    }
+  ],
+  "scores": [
+    {
+      "index_id": "search_visibility",
+      "label": "Sichtbarkeit in der Suche",
+      "state": "PARTIAL",
+      "value": 62
+    },
+    {
+      "index_id": "ai_answerability",
+      "label": "Auffindbarkeit in KI-Antworten",
+      "state": "SHOWN",
+      "value": 41.5
+    },
+    {
+      "index_id": "commercial_coverage",
+      "label": "Abdeckung Ihrer Angebote",
+      "state": "SHOWN",
+      "value": 77
+    },
+    {
+      "index_id": "trust_conversion_readiness",
+      "label": "Vertrauen und Anfragebereitschaft",
+      "state": "SHOWN",
+      "value": 58
+    },
+    {
+      "index_id": "technical_quality",
+      "label": "Technische Qualität",
+      "state": "WITHHELD",
+      "value": null
+    }
+  ],
+  "charts": [
+    {
+      "chart_id": "cht_0001",
+      "kind": "index_bars",
+      "data_ref": { "artifact_id": "art_chart_0001", "artifact_type": "chart_data" }
+    }
+  ],
+  "closing_actions": [
+    "Vereinbaren Sie ein kurzes Gespräch, in dem wir die beiden ersten Hebel gemeinsam priorisieren.",
+    "Lassen Sie uns die neuen Leistungsseiten in einem ersten Entwurf mit Ihnen abstimmen.",
+    "Nach der Umsetzung erhalten Sie einen Folgebericht, der die Wirkung der Änderungen zeigt."
+  ]
+}

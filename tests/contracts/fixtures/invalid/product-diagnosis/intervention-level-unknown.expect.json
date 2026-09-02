@@ -1,0 +1,4 @@
+{
+  "proves": "The intervention level vocabulary is closed: an overall level outside the five named levels is rejected.",
+  "violations": [{ "pointer": "/overall_intervention_level", "keyword": "enum" }]
+}

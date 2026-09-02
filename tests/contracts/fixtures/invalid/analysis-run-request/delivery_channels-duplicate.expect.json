@@ -1,0 +1,4 @@
+{
+  "proves": "delivery_channels is a set of channel tokens: the same channel requested twice is rejected by uniqueItems, so a delivery can never be demanded twice by repetition.",
+  "violations": [{ "pointer": "/delivery_channels", "keyword": "uniqueItems" }]
+}

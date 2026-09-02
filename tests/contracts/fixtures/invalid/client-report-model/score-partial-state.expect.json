@@ -1,0 +1,4 @@
+{
+  "proves": "A presented index is either SHOWN or WITHHELD: no partial, placeholder or other state exists in the customer projection.",
+  "violations": [{ "pointer": "/scores/0/state", "keyword": "enum" }]
+}

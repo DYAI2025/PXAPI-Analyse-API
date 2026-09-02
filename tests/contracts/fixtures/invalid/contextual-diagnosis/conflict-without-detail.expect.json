@@ -1,0 +1,4 @@
+{
+  "proves": "An UNRESOLVED_CONFLICT claim must state its conflict: the claim type without the conflict member is rejected.",
+  "violations": [{ "pointer": "/claims/0", "keyword": "required" }]
+}

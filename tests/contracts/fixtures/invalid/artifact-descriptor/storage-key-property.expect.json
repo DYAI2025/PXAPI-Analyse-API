@@ -1,0 +1,1 @@
+{ "proves": "Where the bytes live is A5 persistence data, not contract metadata: a storage key is rejected.", "violations": [{ "pointer": "", "keyword": "additionalProperties" }] }

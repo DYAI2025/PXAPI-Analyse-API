@@ -1,0 +1,4 @@
+{
+  "proves": "A fact fails closed: a VERIFIED_FACT must cite at least one public source, while the HYPOTHESIS beside it may stand without one.",
+  "violations": [{ "pointer": "/facts/0/source_refs", "keyword": "minItems" }]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "detail is single-line: a multi-line value (the shape of a traceback) is rejected by pattern.",
+  "violations": [{ "pointer": "/detail", "keyword": "pattern" }]
+}

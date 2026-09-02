@@ -1,0 +1,4 @@
+{
+  "proves": "UNKNOWN carries no substitute value: a zero standing in for an unknown measurement is rejected.",
+  "violations": [{ "pointer": "/value", "keyword": "type" }]
+}

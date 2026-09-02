@@ -1,0 +1,4 @@
+{
+  "proves": "Nested objects are closed too: an undeclared member on an evidence item is rejected.",
+  "violations": [{ "pointer": "/items/0", "keyword": "additionalProperties" }]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "A delivery attempt always names at least one artifact it carried: artifact_refs may not be empty.",
+  "violations": [{ "pointer": "/artifact_refs", "keyword": "minItems" }]
+}

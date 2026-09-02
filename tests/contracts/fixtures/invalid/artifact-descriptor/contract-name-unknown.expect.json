@@ -1,0 +1,1 @@
+{ "proves": "A contract document names one of the fifteen v1 contracts: an unknown contract name is rejected.", "violations": [{ "pointer": "/contract/name", "keyword": "enum" }] }

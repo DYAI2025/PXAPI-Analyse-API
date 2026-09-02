@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "request_id": "req_01J6ZK3M5D8P2W6Y0A4C8E2G6J",
+  "requested_at": "2026-09-02T10:12:00Z",
+  "target_url": "https://www.example-handwerk.de/",
+  "channel": "self_service",
+  "requester_ref": "ctx_0001",
+  "contact_ref": "cnt_0001",
+  "delivery_channels": ["email", "email"]
+}

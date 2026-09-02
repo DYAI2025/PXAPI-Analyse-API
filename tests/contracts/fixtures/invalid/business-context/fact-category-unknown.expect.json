@@ -1,0 +1,4 @@
+{
+  "proves": "The fact category vocabulary is closed: a category outside the twelve of Confluence 39846055 §6 is rejected.",
+  "violations": [{ "pointer": "/facts/0/category", "keyword": "enum" }]
+}

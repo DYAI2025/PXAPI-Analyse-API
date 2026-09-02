@@ -1,0 +1,4 @@
+{
+  "proves": "A score fails closed: a SCORED index must rest on at least one evidence reference.",
+  "violations": [{ "pointer": "/indices/0/score/evidence_refs", "keyword": "minItems" }]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "An optional property is optional non-null, never optional-and-nullable: recipient_ref may be absent but not null.",
+  "violations": [{ "pointer": "/recipient_ref", "keyword": "type" }]
+}

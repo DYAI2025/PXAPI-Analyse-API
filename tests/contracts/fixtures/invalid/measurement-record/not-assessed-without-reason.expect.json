@@ -1,0 +1,4 @@
+{
+  "proves": "NOT_ASSESSED requires an explicit reason; a silent gap is rejected.",
+  "violations": [{ "pointer": "", "keyword": "required" }]
+}

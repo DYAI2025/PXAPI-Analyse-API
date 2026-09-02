@@ -1,0 +1,4 @@
+{
+  "proves": "A customer report always presents at least one business lever: an empty levers array is rejected.",
+  "violations": [{ "pointer": "/levers", "keyword": "minItems" }]
+}

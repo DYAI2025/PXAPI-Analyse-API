@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_1",
+  "generated_at": "2026-09-02T10:20:00Z",
+  "producer_ref": { "kind": "model", "name": "business_context_analyzer", "version": "2026.09.0" },
+  "research_state": "COMPLETED",
+  "not_assessed_reason": "NOT_REQUESTED",
+  "facts": [
+    {
+      "fact_id": "ctx_0001",
+      "category": "COMPANY",
+      "statement": "Example Handwerk GmbH is a limited company registered in Berlin and operates as a craftsman business in carpentry and interior fit-out.",
+      "evidence_class": "VERIFIED_FACT",
+      "source_refs": [
+        {
+          "kind": "http_response",
+          "value": "https://www.example-handwerk.de/impressum",
+          "retrieved_at": "2026-09-02T10:19:12Z"
+        }
+      ],
+      "confidence": 5
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{ "proves": "A lifecycle state carries no failure block: COLLECTING_BASELINE with failure is rejected.", "violations": [{ "pointer": "", "keyword": "not" }] }

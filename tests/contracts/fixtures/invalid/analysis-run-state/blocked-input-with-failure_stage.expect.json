@@ -1,0 +1,1 @@
+{ "proves": "BLOCKED_INPUT happens before any stage: a failure_stage on it is rejected.", "violations": [{ "pointer": "/failure/failure_stage", "keyword": "type" }] }

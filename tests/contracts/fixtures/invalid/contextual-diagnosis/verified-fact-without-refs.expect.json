@@ -1,0 +1,4 @@
+{
+  "proves": "A VERIFIED_FACT must be bound to evidence even when it is not strategically relevant: the claim type with every reference list empty is rejected.",
+  "violations": [{ "pointer": "/claims/0", "keyword": "anyOf" }]
+}

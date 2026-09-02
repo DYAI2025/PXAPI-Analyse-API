@@ -1,0 +1,4 @@
+{
+  "proves": "No customer PARTIAL_SCORE exists: the only score states are SCORED and NOT_SCORED, so a partial state with a value is rejected.",
+  "violations": [{ "pointer": "/indices/0/score/score_state", "keyword": "enum" }]
+}

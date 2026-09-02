@@ -1,0 +1,4 @@
+{
+  "proves": "A research failure carries no result: a NOT_ASSESSED context cannot list facts, however well sourced.",
+  "violations": [{ "pointer": "/facts", "keyword": "maxItems" }]
+}

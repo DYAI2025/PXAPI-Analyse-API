@@ -1,0 +1,4 @@
+{
+  "proves": "Absence never encodes an outcome: every one of the nine artifact members must be present, as a reference or as an explicit null; dropping customer_report_render is rejected.",
+  "violations": [{ "pointer": "/artifacts", "keyword": "required" }]
+}

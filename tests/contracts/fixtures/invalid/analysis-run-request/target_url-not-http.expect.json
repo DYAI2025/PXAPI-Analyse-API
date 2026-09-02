@@ -1,0 +1,4 @@
+{
+  "proves": "target_url is an absolute http or https URL as a structural shape; an ftp URL is rejected by pattern, without the contract deciding anything about reachability or egress.",
+  "violations": [{ "pointer": "/target_url", "keyword": "pattern" }]
+}

@@ -1,0 +1,4 @@
+{
+  "proves": "A scorecard claiming a contract version other than 1.0.0 is rejected; a later version is a new schema artifact, never a widened const.",
+  "violations": [{ "pointer": "/schema_version", "keyword": "const" }]
+}

@@ -1,0 +1,1 @@
+{ "proves": "A failure state must carry its failure block: FAILED_COLLECTION without failure is rejected.", "violations": [{ "pointer": "", "keyword": "required" }] }

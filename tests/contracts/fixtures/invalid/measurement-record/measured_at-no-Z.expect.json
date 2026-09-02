@@ -1,0 +1,4 @@
+{
+  "proves": "Timestamps are RFC 3339 UTC with a mandatory Z; a numeric offset is rejected by pattern, not by a format annotation.",
+  "violations": [{ "pointer": "/measured_at", "keyword": "pattern" }]
+}

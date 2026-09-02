@@ -1,0 +1,4 @@
+{
+  "proves": "Evidence fails closed: a KNOWN finding must reference at least one measurement record.",
+  "violations": [{ "pointer": "/items/0/measurement_refs", "keyword": "minItems" }]
+}

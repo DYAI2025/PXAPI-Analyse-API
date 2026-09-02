@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Document does not satisfy contract 'scorecard' (1 violation(s)).",
+  "errors": [],
+  "traceback": "Traceback (most recent call last):\n  File \"/srv/pxapi/app.py\", line 12"
+}

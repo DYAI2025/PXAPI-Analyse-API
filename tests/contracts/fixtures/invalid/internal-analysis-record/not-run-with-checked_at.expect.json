@@ -1,0 +1,4 @@
+{
+  "proves": "A validation that was not executed has no execution instant: NOT_RUN forces checked_at to null.",
+  "violations": [{ "pointer": "/validations/0/checked_at", "keyword": "type" }]
+}

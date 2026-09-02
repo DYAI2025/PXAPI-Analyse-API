@@ -1,0 +1,4 @@
+{
+  "proves": "A PENDING attempt has not been attempted: attempted_at is null if and only if status is PENDING.",
+  "violations": [{ "pointer": "/attempted_at", "keyword": "type" }]
+}

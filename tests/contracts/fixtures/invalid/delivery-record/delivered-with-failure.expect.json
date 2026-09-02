@@ -1,0 +1,4 @@
+{
+  "proves": "DELIVERED and FAILED are exclusive outcomes: a delivered attempt cannot also carry a failure.",
+  "violations": [{ "pointer": "", "keyword": "not" }]
+}

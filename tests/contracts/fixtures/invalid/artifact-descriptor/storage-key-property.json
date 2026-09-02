@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "artifact_id": "art_scorecard_0001",
+  "artifact_type": "scorecard",
+  "contract": { "name": "scorecard", "schema_version": "1.0.0" },
+  "content_type": "application/json",
+  "size_bytes": 4821,
+  "digest": { "algorithm": "sha256", "value": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" },
+  "visibility": "INTERNAL",
+  "created_at": "2026-09-02T10:31:12Z",
+  "storage_key": "s3://pxapi-artifacts/run/art_scorecard_0001.json"
+}

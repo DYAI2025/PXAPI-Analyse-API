@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run_01J6ZK3M8Q0X4V9R2T7B5N1C6D",
+  "generated_at": "2026-09-02T10:24:00Z",
+  "set_version": "intent-set/2026-09-02.1",
+  "business_context_ref": {
+    "artifact_id": "bctx_01J6ZK3P4R8T2V6X0Z4B8D2F6H",
+    "artifact_type": "business-context"
+  },
+  "intents": [
+    {
+      "intent_id": "int_0001",
+      "segment": "TRANSACTIONAL",
+      "derived_from": ["ctx_0002", "ctx_0003"],
+      "queries": [
+        {
+          "query_id": "qry_0001",
+          "text": "Dachdecker Berlin Angebot anfordern",
+          "language": "DE",
+          "country": "DE",
+          "brand_flag": false
+        },
+        {
+          "query_id": "qry_0002",
+          "text": "Dachsanierung Kosten Berlin",
+          "language": "de",
+          "country": "DE",
+          "brand_flag": false
+        }
+      ]
+    },
+    {
+      "intent_id": "int_0002",
+      "segment": "PROBLEM_NEED",
+      "derived_from": ["ctx_0002"],
+      "queries": [
+        {
+          "query_id": "qry_0003",
+          "text": "Dach undicht was tun",
+          "language": "de",
+          "brand_flag": false
+        }
+      ]
+    },
+    {
+      "intent_id": "int_0003",
+      "segment": "TRUST_VALIDATION",
+      "derived_from": ["ctx_0001", "ctx_0005"],
+      "queries": [
+        {
+          "query_id": "qry_0004",
+          "text": "Example Handwerk GmbH Bewertungen",
+          "language": "de",
+          "brand_flag": true
+        },
+        {
+          "query_id": "qry_0005",
+          "text": "Example Handwerk GmbH Erfahrungen",
+          "language": "de",
+          "country": "DE",
+          "brand_flag": true
+        }
+      ]
+    },
+    {
+      "intent_id": "int_0004",
+      "segment": "LOCAL_REGIONAL",
+      "derived_from": ["ctx_0003", "ctx_0004"],
+      "queries": [
+        {
+          "query_id": "qry_0006",
+          "text": "Dachdecker Berlin-Pankow",
+          "language": "de",
+          "country": "DE",
+          "brand_flag": false
+        }
+      ]
+    },
+    {
+      "intent_id": "int_0005",
+      "segment": "BRAND",
+      "derived_from": ["ctx_0001"],
+      "queries": [
+        {
+          "query_id": "qry_0007",
+          "text": "Example Handwerk Berlin",
+          "language": "de",
+          "country": "DE",
+          "brand_flag": true
+        },
+        {
+          "query_id": "qry_0008",
+          "text": "Example Handwerk roofing Berlin",
+          "language": "en",
+          "brand_flag": true
+        }
+      ]
+    }
+  ]
+}

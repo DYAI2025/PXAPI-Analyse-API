@@ -1,0 +1,4 @@
+{
+  "proves": "The overall score obeys the same rule as every index: NOT_SCORED with a value is rejected, so an unscored overall can never carry a number.",
+  "violations": [{ "pointer": "/overall_score/value", "keyword": "type" }]
+}

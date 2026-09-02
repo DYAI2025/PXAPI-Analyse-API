@@ -1,0 +1,4 @@
+{
+  "proves": "Priority ranks start at 1: a rank of zero is rejected.",
+  "violations": [{ "pointer": "/recommendations/0/priority_rank", "keyword": "minimum" }]
+}

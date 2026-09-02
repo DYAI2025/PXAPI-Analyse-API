@@ -1,0 +1,4 @@
+{
+  "proves": "A score value lives on the closed interval 0..100; a value of 101 is rejected by the shared score_value bound.",
+  "violations": [{ "pointer": "/indices/0/score/value", "keyword": "maximum" }]
+}

@@ -2,11 +2,13 @@
 
 PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 
-> **This repository is scaffold (slice A3 / PXK-16).** It contains **no** analysis, measurement,
-> crawling, SERP, business-context, synthesis, scoring, product-diagnosis, customer-projection,
-> rendering, persistence or API capability. Nothing here analyses a website yet. The layout and
-> the boundary rules exist so that the slices which add those capabilities cannot quietly violate
-> the architecture.
+> **This repository holds the scaffold (A3 / PXK-16) plus the v1 contracts and the Analysis Run
+> state machine (A4 / PXK-17).** It contains **no** analysis, measurement, crawling, SERP,
+> business-context, synthesis, scoring, product-diagnosis, customer-projection, rendering,
+> persistence or API capability. Nothing here analyses a website yet. The contracts fix the
+> shapes those capabilities will produce; the state machine fixes the run lifecycle; the layout
+> and the boundary rules exist so that the slices which add the capabilities cannot quietly
+> violate the architecture.
 
 ## Supported Python versions
 
@@ -57,15 +59,31 @@ which is why the root `README.md` is deliberately left in scope.
 ```
 src/pxapi/
 ├── domain/        innermost ring — no framework, no database, no cloud SDK, no third party
+│   ├── run_state.py         the 19 run states and the 27 approved transitions (A4)
+│   └── stage_execution.py   stage vocabulary and the Pass-1 projection onto run states (A4)
 ├── ports/         explicit boundaries the application talks through
 ├── application/   orchestration; depends on domain + ports (and itself)
 ├── adapters/      implementations that bind ports to the outside world
 └── config/        configuration primitives; a leaf, depends on no other pxapi layer
 
+contracts/v1/        the language-neutral v1 contracts: manifest, JSON Schemas, valid examples
+                     (see contracts/README.md for versioning, categories and semantics)
 tests/architecture/  the import-boundary guard (and the proofs it can fail)
+tests/contracts/     schema meta-rules, valid examples, targeted invalid fixtures, vocabulary parity
+tests/domain/        transition matrix (27 legal / 334 illegal, derived) and Pass-1 projection
 oracle/              frozen regression oracle from A2 — reference evidence, not application code
 docs/evidence/       per-slice verification records
 ```
+
+### Dependencies
+
+| Group | Packages | Why |
+| --- | --- | --- |
+| runtime (`[project].dependencies`) | *none* | no runtime behaviour needs one; `src/` is standard library only |
+| dev | `pytest`, `ruff`, `jsonschema` | test runner, lint/format, Draft 2020-12 validation of the contracts **in tests only** |
+
+`jsonschema` is deliberately not a runtime dependency: A4 ships no validator port or adapter.
+The slice that validates documents at runtime decides where that dependency lives.
 
 ### The architecture rule is executable, not documentation
 

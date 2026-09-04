@@ -10,13 +10,19 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Private :: Do Not Upload",
 ]
-# A3 is scaffold only. It has no runtime behavior, and therefore no runtime
-# dependencies. Framework, database and cloud SDK dependencies are deliberately
+# Still no runtime dependencies. PXK-59 adds JSON contract data under contracts/
+# and a test-side harness that validates it; nothing under src/pxapi imports a
+# validator. Framework, database and cloud SDK dependencies are deliberately
 # absent: they belong to the slices that actually implement adapters.
 dependencies = []
 
 [dependency-groups]
 dev = [
+    # Contract harness, test-only. The harness imports `referencing` directly to
+    # build the offline schema registry, so it is declared here in its own right
+    # rather than relied on as a transitive dependency of jsonschema.
+    "jsonschema>=4.26,<5",
+    "referencing>=0.36,<0.37",
     "pytest>=9.1.1",   # test runner; also executes the architecture boundary guard
     "ruff>=0.16.5",    # linter + formatter (AC2)
 ]

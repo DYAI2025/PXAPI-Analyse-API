@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Document does not satisfy contract 'problem': 1 violation(s), 1 reported.",
+  "errors": [
+    {
+      "pointer": "/detail",
+      "keyword": "pattern"
+    }
+  ],
+  "status": 422
+}

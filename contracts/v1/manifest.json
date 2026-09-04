@@ -33,7 +33,7 @@
   "problem_codes": [
     {
       "code": "CONTRACT_VALIDATION_FAILED",
-      "meaning": "A document does not satisfy the contract it claims; errors names each violated constraint by JSON pointer and schema keyword."
+      "meaning": "A document does not satisfy the contract it claims; errors names each violated constraint by JSON pointer and schema keyword. It is also the code for a document that declares no schema_version at all: an absent version is a missing member, not an unsupported one."
     },
     {
       "code": "CONTRACT_NOT_FOUND",
@@ -41,7 +41,7 @@
     },
     {
       "code": "SCHEMA_VERSION_UNSUPPORTED",
-      "meaning": "The document does not declare the version of the contract it was validated against."
+      "meaning": "The document declares a schema_version that is present but is not the version this contract pins. A document that omits schema_version is CONTRACT_VALIDATION_FAILED instead."
     }
   ],
   "problem_code_policy": "This list names the codes registered at this point in the delivery sequence. problem.code is an open token: a later slice registers further codes here without changing the version of the problem contract, and adding a code never alters the meaning of an existing one. A client must treat an unknown code as a generic problem of the given title and detail rather than reject the document."

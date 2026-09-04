@@ -3,7 +3,7 @@
   "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded, so a validator upgrade that rewords a message cannot turn these expectations red. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
   "cases": {
     "schema-version-foreign": {
-      "proves": "A document claiming a version this contract does not pin is rejected by const, which is what lets a producer map it to SCHEMA_VERSION_UNSUPPORTED.",
+      "proves": "A document claiming a version this contract does not pin is rejected by const, which is what lets a producer map it to SCHEMA_VERSION_UNSUPPORTED. The version is foreign to this contract alone; another contract may legitimately register it.",
       "violations": [
         {
           "pointer": "/schema_version",
@@ -12,7 +12,7 @@
       ]
     },
     "schema-version-missing": {
-      "proves": "Every contract document states the version it claims; omitting it is a root required violation, never a silent default to the current version.",
+      "proves": "Every contract document states the version it claims; omitting it is a root required violation, never a silent default to the current version. A producer reports it as CONTRACT_VALIDATION_FAILED: nothing unsupported was declared.",
       "violations": [
         {
           "pointer": "",

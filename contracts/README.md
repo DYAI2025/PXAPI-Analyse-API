@@ -85,6 +85,10 @@ reference producer in `tests/contracts/support.py`:
    truncates to the bound and states the untruncated count in `detail`.
 5. **Single-line text.** `title` and `detail` reject every C0 and C1 control character, DEL,
    and the Unicode LINE SEPARATOR and PARAGRAPH SEPARATOR — not merely CR and LF.
+6. **An unsupported version and an absent one are different problems.** A `schema_version`
+   that is present but not the one the contract pins fails `const` and is reported as
+   `SCHEMA_VERSION_UNSUPPORTED`; an omitted one fails `required` and is reported as
+   `CONTRACT_VALIDATION_FAILED`. The two never collapse into one code.
 
 ## Determinism
 

@@ -50,15 +50,17 @@ def test_the_source_tree_is_not_empty() -> None:
     assert SOURCE_FILES, f"no Python source found under {SRC}"
 
 
-def test_the_project_declares_no_runtime_dependencies() -> None:
-    assert _project()["project"]["dependencies"] == []
-
-
 @pytest.mark.parametrize("distribution", TEST_ONLY_DISTRIBUTIONS)
 def test_the_harness_dependency_is_declared_in_the_dev_group(distribution: str) -> None:
     """Declared in its own right — `referencing` is imported directly, not merely transitively."""
     dev = _requirement_names(_project()["dependency-groups"]["dev"])
     assert distribution in dev, f"{distribution} must be declared in [dependency-groups].dev"
+
+
+def test_the_requirement_reader_resolves_a_declared_requirement() -> None:
+    """Canary: with no runtime dependency declared today, the checks below read through this."""
+    declared = ["jsonschema>=4.26,<5", "referencing[x]==0.36.2; python_version >= '3.13'"]
+    assert _requirement_names(declared) == {"jsonschema", "referencing"}
 
 
 @pytest.mark.parametrize("distribution", TEST_ONLY_DISTRIBUTIONS)

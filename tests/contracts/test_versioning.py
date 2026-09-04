@@ -2,8 +2,9 @@
 
 Each contract is versioned in its own right: the registry entry, the schema's ``$id`` and the
 ``const`` on ``schema_version`` are three statements of one fact and must agree. There is no
-global contracts version acting as the semantic authority for every contract, so a later
-slice can register ``foo`` at 1.0.0 next to ``bar`` at 2.1.0 without touching this file.
+global contracts version, and no legitimate version is forbidden project-wide: a version is
+foreign *relative to one contract*, derived here from that contract's own version.
+``test_registry_evolution`` registers a second contract at another version to prove it.
 """
 
 from __future__ import annotations
@@ -26,9 +27,19 @@ ENTRIES = CONTRACTS.entries()
 NAMES = CONTRACTS.names()
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
-#: Versions no v1 contract may accept. None of them is the version of any registered contract;
-#: `test_the_rejected_versions_are_actually_foreign` proves that rather than assuming it.
-FOREIGN_VERSIONS = ["1.0", "1.0.1", "1.1.0", "2.0.0", "0.9.0", "v1.0.0", ""]
+#: Not semantic versions at all: a shape rule, never a blacklist of legitimate values.
+MALFORMED = ["1.0", "v1.0.0", "1.0.0.0", "latest", ""]
+
+
+def _foreign_to(version: str) -> list[str]:
+    """The next patch, minor and major of ``version``: legitimate versions, foreign to it."""
+    major, minor, patch = (int(part) for part in version.split("."))
+    return [f"{major}.{minor}.{patch + 1}", f"{major}.{minor + 1}.0", f"{major + 1}.0.0"]
+
+
+#: ``(contract, version)`` pairs, derived from the registry and each contract's own version.
+FOREIGN = [(e["name"], v) for e in ENTRIES for v in _foreign_to(e["version"])]
+REJECTED = FOREIGN + [(name, bad) for name in NAMES for bad in MALFORMED]
 
 
 def _first_example(name: str) -> dict[str, Any]:
@@ -49,36 +60,37 @@ def test_registry_id_schema_id_and_version_agree(entry: dict[str, Any]) -> None:
     assert schema["$id"] == expected_id, f"{name}: schema $id disagrees with the registry"
 
 
-def test_the_rejected_versions_are_actually_foreign() -> None:
-    """Canary: the rejection cases below only mean something if no contract is at those versions."""
-    registered = {entry["version"] for entry in ENTRIES}
-    assert not registered & set(FOREIGN_VERSIONS)
+def test_each_rejection_case_is_foreign_or_malformed() -> None:
+    """Canary: a case proves nothing unless it differs from the contract's own version."""
+    assert FOREIGN, "canary: no foreign version was derived, so no rejection is exercised"
+    assert all(SEMVER.fullmatch(v) and v != CONTRACTS.entry(n)["version"] for n, v in FOREIGN)
+    assert not any(SEMVER.fullmatch(bad) for bad in MALFORMED)
 
 
-@pytest.mark.parametrize("name", NAMES)
-@pytest.mark.parametrize("version", FOREIGN_VERSIONS, ids=repr)
+@pytest.mark.parametrize(("name", "version"), REJECTED, ids=[f"{n}@{v!r}" for n, v in REJECTED])
 def test_an_unsupported_schema_version_is_rejected_by_const(name: str, version: str) -> None:
-    document = _first_example(name)
-    document["schema_version"] = version
-    found = validate(name, document)
-    assert ("/schema_version", "const") in {v.key for v in found}
+    document = dict(_first_example(name), schema_version=version)
+    assert ("/schema_version", "const") in {v.key for v in validate(name, document)}
 
 
 @pytest.mark.parametrize("name", NAMES)
 def test_a_missing_schema_version_is_rejected_at_the_root(name: str) -> None:
     document = _first_example(name)
     del document["schema_version"]
-    found = validate(name, document)
-    assert ("", "required") in {v.key for v in found}
+    assert ("", "required") in {v.key for v in validate(name, document)}
 
 
 @pytest.mark.parametrize("name", NAMES)
-def test_an_unsupported_version_maps_to_schema_version_unsupported(name: str) -> None:
-    document = _first_example(name)
-    document["schema_version"] = "9.9.9"
-    problem = to_problem(name, validate(name, document))
-    assert problem["code"] == "SCHEMA_VERSION_UNSUPPORTED"
-    assert validate("problem", problem) == ()
+def test_an_unsupported_version_and_a_missing_one_carry_different_codes(name: str) -> None:
+    """Regression: a version this contract does not support is not the same fact as none."""
+    foreign = _foreign_to(CONTRACTS.entry(name)["version"])[0]
+    missing = _first_example(name)
+    del missing["schema_version"]
+    unsupported = to_problem(name, validate(name, dict(missing, schema_version=foreign)))
+    absent = to_problem(name, validate(name, missing))
+    assert unsupported["code"] == "SCHEMA_VERSION_UNSUPPORTED"
+    assert absent["code"] == "CONTRACT_VALIDATION_FAILED"
+    assert validate("problem", unsupported) == () and validate("problem", absent) == ()
 
 
 @pytest.mark.parametrize("name", NAMES)

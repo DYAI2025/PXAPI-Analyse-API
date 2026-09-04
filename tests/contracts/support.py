@@ -255,13 +255,12 @@ class ContractRoot:
 
         safe_name = self.entry(name)["name"]
         reported = sorted(found, key=lambda violation: violation.key)[: self.max_problem_errors()]
+        # A present unsupported version fails `const`; an absent one fails `required`.
         version_rejected = any(v.key == ("/schema_version", "const") for v in found)
         code = "SCHEMA_VERSION_UNSUPPORTED" if version_rejected else "CONTRACT_VALIDATION_FAILED"
         title = "Schema version unsupported" if version_rejected else "Contract validation failed"
         subject = (
-            "does not declare a supported schema version of"
-            if version_rejected
-            else "does not satisfy"
+            "declares a schema version not supported by" if version_rejected else "does not satisfy"
         )
         return {
             "schema_version": problem_version,

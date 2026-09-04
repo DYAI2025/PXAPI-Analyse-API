@@ -2,11 +2,12 @@
 
 PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 
-> **This repository is scaffold (slice A3 / PXK-16).** It contains **no** analysis, measurement,
-> crawling, SERP, business-context, synthesis, scoring, product-diagnosis, customer-projection,
-> rendering, persistence or API capability. Nothing here analyses a website yet. The layout and
-> the boundary rules exist so that the slices which add those capabilities cannot quietly violate
-> the architecture.
+> **This repository is scaffold plus a contract foundation (slices A3 / PXK-16 and PXK-59).** It
+> contains **no** analysis, measurement, crawling, SERP, business-context, synthesis, scoring,
+> product-diagnosis, customer-projection, rendering, persistence or API capability. Nothing here
+> analyses a website yet. The layout and the boundary rules exist so that the slices which add
+> those capabilities cannot quietly violate the architecture; `contracts/` adds the versioned
+> vocabulary they will speak, as data rather than behavior.
 
 ## Supported Python versions
 
@@ -62,10 +63,24 @@ src/pxapi/
 ├── adapters/      implementations that bind ports to the outside world
 └── config/        configuration primitives; a leaf, depends on no other pxapi layer
 
+contracts/v1/        the versioned contract registry: manifest, schemas, valid examples
 tests/architecture/  the import-boundary guard (and the proofs it can fail)
+tests/contracts/     the contract validation harness and its invalid fixtures
 oracle/              frozen regression oracle from A2 — reference evidence, not application code
 docs/evidence/       per-slice verification records
 ```
+
+### Contracts are data, and the harness is test-only
+
+`contracts/v1/manifest.json` is the single inventory of PXAPI contracts. The validation harness
+under `tests/contracts/` derives everything from it — which contracts exist, their versions,
+their schemas and examples — so registering a contract needs no change to any test. Each contract
+carries its own version; there is no global contracts version. See
+[`contracts/README.md`](contracts/README.md) for the registry model, the versioning rules, the
+consumer compatibility rules and the Problem producer rule.
+
+`jsonschema` and `referencing` are **dev/test dependencies only**. Nothing under `src/pxapi`
+imports a validator, and `tests/contracts/test_dependency_isolation.py` fails if that changes.
 
 ### The architecture rule is executable, not documentation
 

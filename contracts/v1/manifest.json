@@ -1,0 +1,48 @@
+{
+  "registry": {
+    "version": "1.0.0",
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "id_namespace": "urn:pxapi:schema:",
+    "roles": ["core", "support"],
+    "statuses": ["active", "deprecated"],
+    "policy": "This registry is the single inventory of PXAPI v1 contracts. Every contract carries its own version, and that version is the semantic authority for that contract alone: the registry version below describes the shape of this file, never the meaning of a contract listed in it. Registering a contract is an additive change — it never alters the meaning of a contract already listed — and requires no change to the validation harness, which derives its whole inventory from this data."
+  },
+  "shared_definitions": [
+    {
+      "name": "common",
+      "id": "urn:pxapi:schema:common:1.0.0",
+      "version": "1.0.0",
+      "schema": "schemas/common.v1.json"
+    }
+  ],
+  "contracts": [
+    {
+      "name": "problem",
+      "id": "urn:pxapi:schema:problem:1.0.0",
+      "version": "1.0.0",
+      "role": "support",
+      "status": "active",
+      "owner_slice": "PXK-59",
+      "schema": "schemas/problem.v1.json",
+      "examples": [
+        "examples/problem.example.json",
+        "examples/problem.validation-failed.example.json"
+      ]
+    }
+  ],
+  "problem_codes": [
+    {
+      "code": "CONTRACT_VALIDATION_FAILED",
+      "meaning": "A document does not satisfy the contract it claims; errors names each violated constraint by JSON pointer and schema keyword."
+    },
+    {
+      "code": "CONTRACT_NOT_FOUND",
+      "meaning": "The requested contract is not registered in this registry. The requested name is not echoed back, because it is untrusted input."
+    },
+    {
+      "code": "SCHEMA_VERSION_UNSUPPORTED",
+      "meaning": "The document does not declare the version of the contract it was validated against."
+    }
+  ],
+  "problem_code_policy": "This list names the codes registered at this point in the delivery sequence. problem.code is an open token: a later slice registers further codes here without changing the version of the problem contract, and adding a code never alters the meaning of an existing one. A client must treat an unknown code as a generic problem of the given title and detail rather than reject the document."
+}

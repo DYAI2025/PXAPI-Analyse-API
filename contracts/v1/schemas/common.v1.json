@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:common:1.0.0",
+  "title": "PXAPI shared definitions v1",
+  "description": "Reusable $defs for the PXAPI v1 contracts. This file is not a contract: no document validates against it as a whole, and it carries no analysis meaning of its own. It holds only the lexical primitives that a registered contract actually references; a slice that needs a new primitive adds it here together with the contract that consumes it.",
+  "$defs": {
+    "single_line_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^\\u0000-\\u0020\\u007F-\\u009F\\u2028\\u2029]([^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]*[^\\u0000-\\u0020\\u007F-\\u009F\\u2028\\u2029])?(?!\\n)$",
+      "description": "A single-line, bounded string with at least one non-blank character and no leading or trailing blank. The pattern rejects every C0 control (tab, CR and LF included), DEL, every C1 control (NEL included) and the Unicode LINE SEPARATOR and PARAGRAPH SEPARATOR — not merely CR and LF, because a renderer, a log line and a header all break on the others too."
+    },
+    "single_line_label": {
+      "$ref": "#/$defs/single_line_text",
+      "maxLength": 120,
+      "description": "A short single-line label or title. Same lexical rules as single_line_text, more tightly bounded."
+    },
+    "id": {
+      "$ref": "#/$defs/single_line_text",
+      "maxLength": 128,
+      "description": "An opaque, stable identifier. No identifier technology (UUID, ULID, prefix scheme) is prescribed; the producer chooses one and keeps it stable."
+    },
+    "code": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[A-Z][A-Z0-9_]+(?!\\n)$",
+      "description": "A stable machine-readable code in upper snake case. Codes are open: a consumer must treat a code it does not know as a generic member of its category, never as an error."
+    },
+    "json_pointer": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?:/[^\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]*)?(?!\\n)$",
+      "description": "An RFC 6901 JSON pointer into a document; the empty string is the document root. The pattern fixes the single-line, bounded shape only — a pointer that resolves nowhere is a caller error, not a contract violation. It uses no nested quantifier, so a hostile value cannot make matching super-linear."
+    },
+    "schema_keyword": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z$][A-Za-z0-9_]*(?!\\n)$",
+      "description": "The name of a JSON Schema keyword (for example required, const, pattern, additionalProperties, $ref). It is structural vocabulary, so it is safe to hand to a client; a validator's free-text message is not."
+    }
+  }
+}

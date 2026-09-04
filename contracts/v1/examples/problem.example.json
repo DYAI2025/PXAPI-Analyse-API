@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_NOT_FOUND",
+  "title": "Contract not found",
+  "detail": "The requested contract is not registered in this contract registry.",
+  "errors": []
+}

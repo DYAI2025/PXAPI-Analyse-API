@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Validation failed:\nTraceback (most recent call last):",
+  "errors": [
+    {
+      "pointer": "/detail",
+      "keyword": "pattern"
+    }
+  ]
+}

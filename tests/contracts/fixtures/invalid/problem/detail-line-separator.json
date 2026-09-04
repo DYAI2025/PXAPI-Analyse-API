@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Validation failed:\u2028/srv/pxapi/app.py line 12",
+  "errors": [
+    {
+      "pointer": "/detail",
+      "keyword": "pattern"
+    }
+  ]
+}

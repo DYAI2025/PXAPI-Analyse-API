@@ -1,0 +1,212 @@
+{
+  "schema_version": "1.0.0",
+  "code": "CONTRACT_VALIDATION_FAILED",
+  "title": "Contract validation failed",
+  "detail": "Document does not satisfy contract 'problem': 1 violation(s), 1 reported.",
+  "errors": [
+    {
+      "pointer": "/field_000",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_001",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_002",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_003",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_004",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_005",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_006",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_007",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_008",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_009",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_010",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_011",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_012",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_013",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_014",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_015",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_016",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_017",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_018",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_019",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_020",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_021",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_022",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_023",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_024",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_025",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_026",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_027",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_028",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_029",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_030",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_031",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_032",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_033",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_034",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_035",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_036",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_037",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_038",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_039",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_040",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_041",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_042",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_043",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_044",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_045",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_046",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_047",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_048",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_049",
+      "keyword": "type"
+    },
+    {
+      "pointer": "/field_050",
+      "keyword": "type"
+    }
+  ]
+}

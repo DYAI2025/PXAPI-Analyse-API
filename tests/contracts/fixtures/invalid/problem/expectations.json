@@ -1,0 +1,132 @@
+{
+  "contract": "problem",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded, so a validator upgrade that rewords a message cannot turn these expectations red. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "schema-version-foreign": {
+      "proves": "A document claiming a version this contract does not pin is rejected by const, which is what lets a producer map it to SCHEMA_VERSION_UNSUPPORTED. The version is foreign to this contract alone; another contract may legitimately register it.",
+      "violations": [
+        {
+          "pointer": "/schema_version",
+          "keyword": "const"
+        }
+      ]
+    },
+    "schema-version-missing": {
+      "proves": "Every contract document states the version it claims; omitting it is a root required violation, never a silent default to the current version. A producer reports it as CONTRACT_VALIDATION_FAILED: nothing unsupported was declared.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "required"
+        }
+      ]
+    },
+    "detail-missing": {
+      "proves": "detail is required: a problem without an explanation is not a usable problem.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "required"
+        }
+      ]
+    },
+    "code-lowercase": {
+      "proves": "A problem code is upper snake case, so case is part of the identity and a lowercased code cannot be matched against a registered one by accident.",
+      "violations": [
+        {
+          "pointer": "/code",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "detail-multiline": {
+      "proves": "detail is single-line: a multi-line value is exactly the shape a copied traceback or exception message has, so the pattern refuses it.",
+      "violations": [
+        {
+          "pointer": "/detail",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "detail-line-separator": {
+      "proves": "A guard written as [^\\r\\n] would accept U+2028 LINE SEPARATOR while a renderer still breaks the line on it; the contract rejects the separators too.",
+      "violations": [
+        {
+          "pointer": "/detail",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "title-control-character": {
+      "proves": "A C0 control inside a title would survive into a log line or a header; the single-line rule covers every control character, not only CR and LF.",
+      "violations": [
+        {
+          "pointer": "/title",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "detail-leading-whitespace": {
+      "proves": "Templated text has no leading padding; padding is a sign the value was concatenated from somewhere else rather than rendered.",
+      "violations": [
+        {
+          "pointer": "/detail",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "extra-traceback-property": {
+      "proves": "The root is closed, so a producer cannot bolt an internal diagnostic member onto a client-facing problem.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "transport-binding-property": {
+      "proves": "The problem contract is transport-neutral; an HTTP status belongs to the adapter that maps this document onto a transport, not to the contract.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "error-carries-a-message": {
+      "proves": "An error entry is (pointer, keyword) only. A free-text member is the exact channel through which validator text, and anything it quotes, would reach a client.",
+      "violations": [
+        {
+          "pointer": "/errors/0",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "error-pointer-not-a-pointer": {
+      "proves": "A JSON pointer is empty or starts with '/'; a bare member name is not a pointer and would resolve nowhere in the client's document.",
+      "violations": [
+        {
+          "pointer": "/errors/0/pointer",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "error-keyword-with-space": {
+      "proves": "keyword names a JSON Schema keyword, so it is a bounded structural token rather than a place to put a sentence.",
+      "violations": [
+        {
+          "pointer": "/errors/0/keyword",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "errors-above-the-bound": {
+      "proves": "The error collection is finitely bounded, so one pathological document cannot turn a single problem into an unbounded response.",
+      "violations": [
+        {
+          "pointer": "/errors",
+          "keyword": "maxItems"
+        }
+      ]
+    }
+  }
+}

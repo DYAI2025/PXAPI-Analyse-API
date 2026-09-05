@@ -28,6 +28,47 @@
         "examples/problem.example.json",
         "examples/problem.validation-failed.example.json"
       ]
+    },
+    {
+      "name": "analysis-run-request",
+      "id": "urn:pxapi:schema:analysis-run-request:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXK-60",
+      "schema": "schemas/analysis-run-request.v1.json",
+      "examples": [
+        "examples/analysis-run-request.example.json",
+        "examples/analysis-run-request.owner-verified.example.json"
+      ]
+    },
+    {
+      "name": "analysis-run-state",
+      "id": "urn:pxapi:schema:analysis-run-state:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXK-60",
+      "schema": "schemas/analysis-run-state.v1.json",
+      "examples": [
+        "examples/analysis-run-state.example.json",
+        "examples/analysis-run-state.succeeded.example.json",
+        "examples/analysis-run-state.failed.example.json",
+        "examples/analysis-run-state.cancelled.example.json"
+      ]
+    },
+    {
+      "name": "stage-execution-record",
+      "id": "urn:pxapi:schema:stage-execution-record:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXK-60",
+      "schema": "schemas/stage-execution-record.v1.json",
+      "examples": [
+        "examples/stage-execution-record.example.json",
+        "examples/stage-execution-record.failed.example.json"
+      ]
     }
   ],
   "problem_codes": [
@@ -42,6 +83,10 @@
     {
       "code": "SCHEMA_VERSION_UNSUPPORTED",
       "meaning": "The document declares a schema_version that is present but is not the version this contract pins. A document that omits schema_version is CONTRACT_VALIDATION_FAILED instead."
+    },
+    {
+      "code": "ILLEGAL_RUN_TRANSITION",
+      "meaning": "A caller asked for an Analysis Run state transition that is not an approved edge of the coarse execution lifecycle. The two states are named; nothing else about the run is carried."
     }
   ],
   "problem_code_policy": "This list names the codes registered at this point in the delivery sequence. problem.code is an open token: a later slice registers further codes here without changing the version of the problem contract, and adding a code never alters the meaning of an existing one. A client must treat an unknown code as a generic problem of the given title and detail rather than reject the document."

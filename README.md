@@ -85,6 +85,13 @@ consumer compatibility rules and the Problem producer rule.
 `jsonschema` and `referencing` are **dev/test dependencies only**. Nothing under `src/pxapi`
 imports a validator, and `tests/contracts/test_dependency_isolation.py` fails if that changes.
 
+An invalid fixture proves one token is rejected; it does not pin the set a closed `enum`
+declares. Measured on this tree: a third `scan_mode`, a fifth stage `status` and a fourth member
+of the run state's terminal condition each left the whole suite green.
+`tests/test_closed_vocabularies.py` closes that — it states every closed vocabulary in the
+registry once and in full, derives the ones the Domain owns from the Domain, and fails when the
+registry declares a closed vocabulary nobody pinned.
+
 ### The architecture rule is executable, not documentation
 
 | layer | may import from `pxapi` | third-party allowed |

@@ -113,6 +113,14 @@ a valid request. Recording the mode is **not** performing owner verification, ac
 URL safety, SSRF or egress enforcement, robots handling or any scanner execution policy — those
 belong to the slices that own them, and a valid request document proves none of them.
 
+**A closed vocabulary is pinned as a whole set, not one token at a time.** An invalid fixture
+proves that a particular token is rejected; it says nothing about the set, so a value silently
+added to a closed `enum` would leave every fixture green. `tests/test_closed_vocabularies.py`
+states each closed vocabulary in the registry once and in full — deriving it from the Domain
+where the Domain owns the fact — and fails when a closed vocabulary appears anywhere in the
+registry that nobody has pinned. Widening or narrowing `scan_mode`, the run state, the stage
+status or either terminal condition is therefore a reviewed change, never an accident.
+
 ## The Problem contract and its producer rule
 
 `problem` is transport-neutral: no HTTP status, no type URI, no other transport binding. The

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "evidence_id": "evd-01JQ8Z4K2M0000000000000010",
+  "source_url": "https://example.com/",
+  "observed_at": "2026-09-06T09:12:51Z",
+  "scenario": "HOMEPAGE_FETCH",
+  "collector": "HTTP_BASELINE",
+  "collector_version": "1.0.0",
+  "assessment": { "collection_mode": "MEASURED", "result_state": "KNOWN" },
+  "polarity": "POSITIVE",
+  "measurement_refs": ["msr-01JQ8Z4K2M0000000000000001"],
+  "response_body": "<!doctype html><html><body>Example Domain</body></html>"
+}

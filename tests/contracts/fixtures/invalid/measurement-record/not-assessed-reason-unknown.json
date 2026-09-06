@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "measurement_id": "msr-01JQ8Z4K2M0000000000000001",
+  "metric_id": "HTTP_STATUS",
+  "source_url": "https://example.com/",
+  "observed_at": "2026-09-06T09:12:47Z",
+  "collector": "HTTP_BASELINE",
+  "collector_version": "1.0.0",
+  "assessment": { "not_assessed_reason": "BUDGET_EXCEEDED" }
+}

@@ -1,0 +1,50 @@
+{
+  "contract": "website-evidence",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "provider-failure-with-negative-polarity": {
+      "proves": "The rule this whole slice exists for: a provider that failed cannot be reported as a negative finding about the website. The polarity member is refused outright rather than set to some neutral token, so there is no value a careless writer could reach for.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "runtime-error-with-polarity": {
+      "proves": "The same rule for our own runtime: a crash inside the analysis says nothing about the analysed site, and the contract will not let it say anything.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "timeout-with-polarity": {
+      "proves": "A timeout carries no polarity either, and not even a POSITIVE one: the ban is on stating a website judgement without an assessment, not merely on stating a bad one.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "unknown-with-negative-polarity": {
+      "proves": "An assessment that ran but established nothing is still not a finding. UNKNOWN is the honest outcome of a performed observation, and it may not be silently read as a defect.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "conflict-with-negative-polarity": {
+      "proves": "Conflicting observations are a state of the evidence, not a verdict on the site. Resolving a conflict is a later decision that must be taken deliberately rather than defaulted to NEGATIVE here.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "not-applicable-with-negative-polarity": {
+      "proves": "A measurement that does not apply to this subject cannot count against it. NOT_APPLICABLE lives in result_state, so it never has to be smuggled in as a polarity value.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "polarity-neutral": {
+      "proves": "The polarity vocabulary is closed at POSITIVE and NEGATIVE. There is deliberately no NEUTRAL token: a KNOWN observation that carries no judgement omits the member instead, so nobody has to invent what neutral would mean.",
+      "violations": [{ "pointer": "/polarity", "keyword": "enum" }]
+    },
+    "known-without-measurement-reference": {
+      "proves": "KNOWN website evidence is derived evidence: it must name at least one measurement record it came from, so no claim about the site exists without something measured behind it.",
+      "violations": [{ "pointer": "/measurement_refs", "keyword": "minItems" }]
+    },
+    "assessment-both-groups": {
+      "proves": "Evidence cannot claim both that it was observed and that it was never assessed, by the same structural rule the measurement record applies to itself.",
+      "violations": [{ "pointer": "/assessment", "keyword": "not" }]
+    },
+    "inline-raw-response-body": {
+      "proves": "A captured response body never lives inline in normalised evidence. The closed root refuses the member, so raw provider data cannot travel with the evidence into every downstream consumer.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "scenario-lowercase": {
+      "proves": "The scenario vocabulary is open but not free text: it keeps a stable upper-snake shape, so a scenario a later slice introduces stays a token rather than prose.",
+      "violations": [{ "pointer": "/scenario", "keyword": "pattern" }]
+    }
+  }
+}

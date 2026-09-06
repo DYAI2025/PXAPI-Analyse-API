@@ -102,12 +102,16 @@ def test_violation_ordering_is_deterministic_and_free_text_independent() -> None
 
 # --- untrusted contract names ---------------------------------------------------------------
 
+#: The last entry is a *probe value*, not an inventory claim: it must name a contract-shaped
+#: string that is plausible enough to be echoed by accident and that no slice registers. It
+#: previously held "measurement-record", which PXK-61 then registered — the self-guard below is
+#: what caught that, and it is the reason the guard stays.
 UNTRUSTED_NAMES = [
     "no-such-contract",
     "../../etc/passwd",
     "problem\nX-Injected: 1",
     "<script>alert(1)</script>",
-    "measurement-record",  # a PXK-60+ candidate name: not registered here, so not echoed
+    "untrusted-name-probe",
 ]
 
 

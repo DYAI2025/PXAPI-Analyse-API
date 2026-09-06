@@ -13,6 +13,12 @@
       "id": "urn:pxapi:schema:common:1.0.0",
       "version": "1.0.0",
       "schema": "schemas/common.v1.json"
+    },
+    {
+      "name": "assessment",
+      "id": "urn:pxapi:schema:assessment:1.0.0",
+      "version": "1.0.0",
+      "schema": "schemas/assessment.v1.json"
     }
   ],
   "contracts": [
@@ -68,6 +74,38 @@
       "examples": [
         "examples/stage-execution-record.example.json",
         "examples/stage-execution-record.failed.example.json"
+      ]
+    },
+    {
+      "name": "measurement-record",
+      "id": "urn:pxapi:schema:measurement-record:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXK-61",
+      "schema": "schemas/measurement-record.v1.json",
+      "examples": [
+        "examples/measurement-record.example.json",
+        "examples/measurement-record.observed-known.example.json",
+        "examples/measurement-record.unknown.example.json",
+        "examples/measurement-record.provider-failure.example.json",
+        "examples/measurement-record.timeout.example.json"
+      ]
+    },
+    {
+      "name": "website-evidence",
+      "id": "urn:pxapi:schema:website-evidence:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXK-61",
+      "schema": "schemas/website-evidence.v1.json",
+      "examples": [
+        "examples/website-evidence.example.json",
+        "examples/website-evidence.known-without-judgement.example.json",
+        "examples/website-evidence.conflict.example.json",
+        "examples/website-evidence.not-applicable.example.json",
+        "examples/website-evidence.provider-failure.example.json"
       ]
     }
   ],

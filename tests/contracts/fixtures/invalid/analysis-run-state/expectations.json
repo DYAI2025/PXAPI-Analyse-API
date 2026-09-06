@@ -1,0 +1,58 @@
+{
+  "contract": "analysis-run-state",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "state-seventh-value": {
+      "proves": "The global vocabulary is closed at six values. A seventh operational-sounding state is not a run state, however reasonable it looks; adding one is a product decision, not a document a producer may simply send.",
+      "violations": [{ "pointer": "/state", "keyword": "enum" }]
+    },
+    "state-pr5-requested": {
+      "proves": "REQUESTED was a global state in the superseded nineteen-state model. It cannot re-enter through a document even though no Python constant names it any more.",
+      "violations": [{ "pointer": "/state", "keyword": "enum" }]
+    },
+    "state-pr5-ready": {
+      "proves": "READY described report readiness, not execution. Coupling execution state to release readiness is exactly the conflation this contract exists to prevent.",
+      "violations": [{ "pointer": "/state", "keyword": "enum" }]
+    },
+    "state-stage-like-scoring": {
+      "proves": "A stage or business phase is not a global execution state. A stage's progress belongs in its own record, which this document never embeds.",
+      "violations": [{ "pointer": "/state", "keyword": "enum" }]
+    },
+    "state-lowercase": {
+      "proves": "The vocabulary is case-sensitive, so a lowercased token cannot be matched against an approved state by accident.",
+      "violations": [{ "pointer": "/state", "keyword": "enum" }]
+    },
+    "terminal-without-finished-at": {
+      "proves": "A terminal state states when the run finished. Without it a consumer cannot tell a finished run from one whose end was never recorded.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "non-terminal-with-finished-at": {
+      "proves": "The converse rule: a run that is still executing has no end instant, so finished_at is refused rather than tolerated as harmless extra data.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "failed-without-failure": {
+      "proves": "A failed run says why in machine-readable terms. A bare FAILED with no code leaves a consumer nothing to branch on.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "failure-on-succeeded": {
+      "proves": "Failure metadata belongs to FAILED alone. A succeeded or cancelled run carrying a failure code would make the state member unreliable as the single answer to how the run ended.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "failure-carries-detail": {
+      "proves": "The failure block is a code and nothing else. A detail member is precisely the channel through which a traceback, an exception message or a filesystem path would reach a client.",
+      "violations": [{ "pointer": "/failure", "keyword": "additionalProperties" }]
+    },
+    "failure-stage-property": {
+      "proves": "A failure is not attributed to a stage here. Naming the stage that failed would make the global state a projection of stage outcomes, which this slice deliberately does not decide.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "customer-release-property": {
+      "proves": "SUCCEEDED is an execution fact only. A customer_release member would couple finishing execution to releasing a result to a customer, and the root is closed so the coupling cannot be bolted on.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "stage-executions-property": {
+      "proves": "Stage executions are not embedded in the run state. The two documents are linked by run_id alone, so neither can be derived from the other by reading one of them.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    }
+  }
+}

@@ -2,12 +2,14 @@
 
 PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 
-> **This repository is scaffold plus a contract foundation (slices A3 / PXK-16 and PXK-59).** It
-> contains **no** analysis, measurement, crawling, SERP, business-context, synthesis, scoring,
-> product-diagnosis, customer-projection, rendering, persistence or API capability. Nothing here
-> analyses a website yet. The layout and the boundary rules exist so that the slices which add
-> those capabilities cannot quietly violate the architecture; `contracts/` adds the versioned
-> vocabulary they will speak, as data rather than behavior.
+> **This repository is scaffold plus a contract foundation (slices A3 / PXK-16, PXK-59 and
+> PXK-60).** It contains **no** analysis, measurement, crawling, SERP, business-context,
+> synthesis, scoring, product-diagnosis, customer-projection, rendering, delivery, persistence,
+> orchestration or API capability. Nothing here analyses a website, runs a stage or stores
+> anything. The layout and the boundary rules exist so that the slices which add those
+> capabilities cannot quietly violate the architecture; `contracts/` adds the versioned
+> vocabulary they will speak, as data rather than behavior. PXK-60 adds the first executable
+> Domain module — the coarse Analysis Run lifecycle — and nothing else executable.
 
 ## Supported Python versions
 
@@ -66,6 +68,7 @@ src/pxapi/
 contracts/v1/        the versioned contract registry: manifest, schemas, valid examples
 tests/architecture/  the import-boundary guard (and the proofs it can fail)
 tests/contracts/     the contract validation harness and its invalid fixtures
+tests/domain/        the run-state transition matrix and the orthogonality proofs
 oracle/              frozen regression oracle from A2 — reference evidence, not application code
 docs/evidence/       per-slice verification records
 ```
@@ -81,6 +84,13 @@ consumer compatibility rules and the Problem producer rule.
 
 `jsonschema` and `referencing` are **dev/test dependencies only**. Nothing under `src/pxapi`
 imports a validator, and `tests/contracts/test_dependency_isolation.py` fails if that changes.
+
+An invalid fixture proves one token is rejected; it does not pin the set a closed `enum`
+declares. Measured on this tree: a third `scan_mode`, a fifth stage `status` and a fourth member
+of the run state's terminal condition each left the whole suite green.
+`tests/test_closed_vocabularies.py` closes that — it states every closed vocabulary in the
+registry once and in full, derives the ones the Domain owns from the Domain, and fails when the
+registry declares a closed vocabulary nobody pinned.
 
 ### The architecture rule is executable, not documentation
 
@@ -99,6 +109,29 @@ proves each rule genuinely fails when violated, so the guard cannot rot into a v
 
 Adding a dependency to an inner layer is therefore a deliberate, reviewable edit to
 `LAYER_IMPORTS` / `THIRD_PARTY_ALLOWLIST` — never an accident.
+
+### Behavior exists only where a slice authorised it
+
+A3 forbade every executable statement under `src/pxapi`: a scope gate that made it impossible
+for scoring, measurement, synthesis, projection, rendering, persistence or an adapter to appear
+by accident. PXK-60 adds the first real module, so the gate is **narrowed rather than dropped**.
+`BEHAVIOR_ALLOWED` in `tests/test_package_scaffold.py` names each authorised module and the
+slice that authorised it; every other module must still be a docstring and nothing else, and an
+entry that is stale, unearned, outside a layer or blanket fails on its own. Today the mapping
+holds exactly one entry:
+
+| module | authorised by |
+| --- | --- |
+| `domain/run_state.py` | PXK-60 |
+
+### The Analysis Run lifecycle
+
+`src/pxapi/domain/run_state.py` is data plus one decision: is `current -> target` an approved
+edge? It reads no store, consults no clock and knows nothing about stages. The vocabulary and
+the approved edges are described in [`contracts/README.md`](contracts/README.md#the-analysis-run-lifecycle-and-scan-mode);
+this module is the authority on which transitions are legal, and the contract is the authority
+on what a persisted document looks like. `tests/domain/` decides all 36 ordered state pairs and
+mechanically forbids a stage-to-run projection from reappearing.
 
 ## The `oracle/` directory
 

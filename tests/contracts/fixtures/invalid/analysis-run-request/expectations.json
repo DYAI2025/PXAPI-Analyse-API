@@ -1,0 +1,30 @@
+{
+  "contract": "analysis-run-request",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "scan-mode-missing": {
+      "proves": "The authorised operating mode is mandatory. A run whose mode was never stated cannot later be argued to have been authorised for one, and there is deliberately no default.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "scan-mode-unknown": {
+      "proves": "The mode vocabulary is closed at the two accepted modes. An invented, more aggressive-sounding mode is rejected by the contract before any component could act on it.",
+      "violations": [{ "pointer": "/scan_mode", "keyword": "enum" }]
+    },
+    "scan-mode-lowercase": {
+      "proves": "The vocabulary is case-sensitive, so a lowercased value cannot be matched against an accepted mode by accident.",
+      "violations": [{ "pointer": "/scan_mode", "keyword": "enum" }]
+    },
+    "target-url-not-http": {
+      "proves": "The target is an absolute http or https URL as a structural shape. This is a shape rule, not an egress or SSRF control: a value that validates here is still subject to whatever the scanner runtime enforces.",
+      "violations": [{ "pointer": "/target_url", "keyword": "pattern" }]
+    },
+    "requested-at-offset": {
+      "proves": "Instants are UTC with the Z designator. A numeric offset is rejected by an explicit pattern rather than by a format annotation, which asserts nothing unless a checker is wired in.",
+      "violations": [{ "pointer": "/requested_at", "keyword": "pattern" }]
+    },
+    "contact-email-property": {
+      "proves": "The request carries opaque references, never personal data. The root is closed, so a contact address cannot be attached to a run request as a forward-compatible extension.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    }
+  }
+}

@@ -63,6 +63,64 @@ registered, and it never requires an existing consumer to change.
 * Every contract root object is closed. Sending an unrecognised property is an error, not a
   forward-compatible extension.
 
+## The Analysis Run lifecycle and scan mode
+
+**Global execution state is deliberately coarse.** `analysis-run-state` carries exactly six
+states:
+
+```text
+CREATED -> QUEUED -> RUNNING -> SUCCEEDED | FAILED | CANCELLED
+```
+
+Those five arrows are the whole approved edge set: 5 of the 36 ordered pairs are legal, 31 are
+not, and every self-transition is among the 31. Terminal states — `SUCCEEDED`, `FAILED`,
+`CANCELLED` — are the states with no outgoing edge, derived rather than declared. The schema
+fixes the vocabulary; `pxapi.domain.run_state` is the authority on which transitions are legal,
+and an unapproved one raises `ILLEGAL_RUN_TRANSITION`, registered in the manifest under the
+existing open problem-code policy.
+
+`entered_at` is always present. `finished_at` is present **iff** the state is terminal.
+`failure` is present **iff** the state is `FAILED`, and it carries a `code` and nothing else —
+no detail, no stage attribution. `CANCELLED` is the state plus the terminal timestamp: this
+slice defines no cancellation reason, requester or retry metadata, and the closed root refuses
+one.
+
+**`SUCCEEDED` is an execution fact, not a release decision.** It does not mean customer
+release, delivery, report readiness, completed scoring, or legal or security approval, and it
+does not mean every stage succeeded. The contract carries no member that could say otherwise.
+
+**Stage execution is a separate record.** `stage-execution-record` describes one stage's own
+execution and is linked to the run by `run_id` alone — it is not embedded in the run state, and
+neither document is derived from the other. Its `status` is a closed four-value vocabulary,
+`RUNNING | SUCCEEDED | FAILED | CANCELLED`: there is no `PENDING` and no `QUEUED`, because a
+record exists only once the stage has begun. The absence of a record means no record is
+present, and carries no further meaning.
+
+`stage_id` is an **open** stable token, not an enum: this slice fixes the token's lexical shape
+and deliberately not the set of stages, so a stage a later slice introduces validates without a
+schema change. Treat a `stage_id` you do not know as an unknown stage, never as an error.
+
+A `FAILED` stage record and a `SUCCEEDED` run state for the same run are both valid at the same
+time. That is a statement about the contracts, not a claim that a stage failure is harmless:
+**whether a given stage or provider failure is fatal to a run is orchestration policy, which no
+contract here decides.** A later slice must decide it explicitly rather than inherit it from a
+schema, which is why neither document carries an `optional`, `fatal` or `severity` member.
+
+**`scan_mode` records an authorised operating mode and nothing more.** `analysis-run-request`
+requires exactly one of `PUBLIC_NON_INVASIVE` or `OWNER_VERIFIED_CONTROLLED`; the vocabulary is
+closed and case-sensitive and there is no default, so a run whose mode was never stated is not
+a valid request. Recording the mode is **not** performing owner verification, access control,
+URL safety, SSRF or egress enforcement, robots handling or any scanner execution policy — those
+belong to the slices that own them, and a valid request document proves none of them.
+
+**A closed vocabulary is pinned as a whole set, not one token at a time.** An invalid fixture
+proves that a particular token is rejected; it says nothing about the set, so a value silently
+added to a closed `enum` would leave every fixture green. `tests/test_closed_vocabularies.py`
+states each closed vocabulary in the registry once and in full — deriving it from the Domain
+where the Domain owns the fact — and fails when a closed vocabulary appears anywhere in the
+registry that nobody has pinned. Widening or narrowing `scan_mode`, the run state, the stage
+status or either terminal condition is therefore a reviewed change, never an accident.
+
 ## The Problem contract and its producer rule
 
 `problem` is transport-neutral: no HTTP status, no type URI, no other transport binding. The

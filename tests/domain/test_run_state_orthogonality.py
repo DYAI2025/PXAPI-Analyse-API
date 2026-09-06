@@ -6,12 +6,19 @@ pass of stages. Both are structurally excluded here, in three independent ways:
 
 * the Domain module's top-level surface is pinned, so a projection helper cannot be added
   without changing a test that says what the module is allowed to be;
-* no identifier anywhere under ``src/pxapi`` may mention a stage, so a stage vocabulary — open
-  or closed — cannot enter the Domain at all. Prose *about* the boundary is deliberately still
-  allowed: only identifiers and runtime strings are scanned;
+* the RunState module boundary is scanned: no identifier or runtime string in
+  ``domain/run_state.py`` may mention a stage, a superseded helper or a release concept, so a
+  stage vocabulary — open or closed — cannot enter the global run state. Separately, the
+  superseded design's *own* names may not reappear anywhere under ``src/pxapi``. Prose *about*
+  the boundary is deliberately still allowed: only identifiers and runtime strings are scanned;
 * the two contracts are checked against each other: neither declares a member of the other's
   vocabulary, and a failed stage record and a globally succeeded run state validate side by
   side.
+
+The generic ``stage`` fragment is enforced at the RunState module, not across every layer. PXK-60
+decides that the global run state holds no stage concept; it does not decide what a later,
+separately authorised orchestration module may be called. Such a module may legitimately name a
+``stage_execution``, and this suite is not the place that forbids it.
 
 That last property is a statement about the *contracts*, not about operations. It does not say
 a stage failure is harmless. It says the contracts do not decide the question: whether a given
@@ -32,8 +39,13 @@ from tests.contracts.support import CONTRACTS, load_json
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "pxapi"
+DOMAIN = SRC / "domain"
 SOURCE_FILES = sorted(SRC.rglob("*.py"))
 SOURCE_IDS = [str(path.relative_to(SRC)) for path in SOURCE_FILES]
+DOMAIN_IDS = [str(path.relative_to(SRC)) for path in sorted(DOMAIN.rglob("*.py"))]
+
+#: The module boundary this suite owns: the global run state, and nothing else.
+RUN_STATE_PATH = Path(run_state.__file__).resolve()
 
 RUN_STATE_CONTRACT = "analysis-run-state"
 STAGE_CONTRACT = "stage-execution-record"
@@ -53,15 +65,28 @@ EXPECTED_MODULE_SURFACE: frozenset[str] = frozenset(
     }
 )
 
-#: Names from the superseded design, banned by name as well as by shape. The generic stage
-#: scan below already covers most of them; naming them makes a regression report say which
-#: idea came back rather than only that some identifier matched.
-BANNED_IDENTIFIER_PARTS: tuple[str, ...] = (
+#: Banned inside the RunState module boundary, and only there. ``stage`` and ``customer_release``
+#: are *generic* fragments: an outer layer a later slice authorises may legitimately need them,
+#: and PXK-60 does not decide that. What PXK-60 does decide is that the global run state itself
+#: holds neither concept — so the generic ban is enforced at the boundary that owns the rule
+#: rather than turned into a permanent architecture lock over every future layer.
+BANNED_IN_THE_RUN_STATE_MODULE: tuple[str, ...] = (
     "stage",
     "failure_state_for",
     "project_pass_one",
     "pass_one",
     "customer_release",
+)
+
+#: Names of the superseded design *itself*, banned everywhere under ``src/pxapi``. These are not
+#: generic concepts a later slice might legitimately reach for: they name the rejected
+#: stage-to-run projection — a mapping from a stage to the run state its failure produced, and a
+#: helper that advanced the run by running a pass of stages. Wherever one of them reappears, the
+#: rejected design has reappeared with it, whichever layer it is hiding in.
+SUPERSEDED_DESIGN_NAMES: tuple[str, ...] = (
+    "failure_state_for",
+    "project_pass_one",
+    "pass_one",
 )
 
 
@@ -121,6 +146,12 @@ def _identifiers_and_runtime_strings(source: str) -> set[str]:
     return found
 
 
+def _offenders(source: str, banned: tuple[str, ...]) -> list[str]:
+    """Every identifier or runtime string in ``source`` carrying one of the banned fragments."""
+    found = _identifiers_and_runtime_strings(source)
+    return sorted({name for name in found for part in banned if part in name.lower()})
+
+
 # --- the Domain surface ----------------------------------------------------------------------
 
 
@@ -129,10 +160,16 @@ def test_the_run_state_module_defines_exactly_its_decision_surface() -> None:
     assert _top_level_definitions(path) == set(EXPECTED_MODULE_SURFACE)
 
 
-def test_the_domain_holds_no_module_named_for_a_stage() -> None:
-    """No ``stage_execution.py``: a stage has no Python representation in this slice at all."""
-    named = [name for name in SOURCE_IDS if "stage" in name.lower()]
+def test_this_slice_adds_no_stage_module_to_the_domain_ring() -> None:
+    """No Domain ``stage_execution.py``: a stage has no Domain representation in this slice.
+
+    This states what PXK-60 builds, not a permanent architecture rule. An outer layer a later
+    slice authorises may hold a ``stage_orchestrator``; what may not happen is a Domain stage
+    module appearing as a side effect of this slice, unnoticed and unattributed.
+    """
+    named = [name for name in DOMAIN_IDS if "stage" in name.lower()]
     assert named == [], f"stage-named Domain modules: {named}"
+    assert DOMAIN_IDS, f"no Python source found under {DOMAIN}"
 
 
 def test_the_identifier_scanner_sees_what_it_forbids(tmp_path: Path) -> None:
@@ -156,18 +193,83 @@ def test_the_identifier_scanner_sees_what_it_forbids(tmp_path: Path) -> None:
     assert _identifiers_and_runtime_strings(prose_only.read_text(encoding="utf-8")) == set()
 
 
-@pytest.mark.parametrize("path", SOURCE_FILES, ids=SOURCE_IDS)
-def test_no_source_identifier_mentions_a_stage_or_a_superseded_helper(path: Path) -> None:
+def test_the_scanned_boundary_is_the_real_run_state_module() -> None:
+    """Canary: the scan below reads the module it protects, not an empty or unrelated file."""
+    assert (DOMAIN / "run_state.py").resolve() == RUN_STATE_PATH
+    source = RUN_STATE_PATH.read_text(encoding="utf-8")
+    assert "class RunState" in source and "ALLOWED_TRANSITIONS" in source
+
+
+def test_the_run_state_module_names_no_stage_and_no_superseded_helper() -> None:
     """A stage vocabulary, a stage-to-state mapping and a pass runner cannot exist here.
 
-    The scan covers identifiers and runtime strings, not documentation: a module may explain
+    The scan covers identifiers and runtime strings, not documentation: the module may explain
     that it holds no stage concept, and may not quietly acquire one.
     """
-    found = _identifiers_and_runtime_strings(path.read_text(encoding="utf-8"))
-    offenders = sorted(
-        name for name in found for part in BANNED_IDENTIFIER_PARTS if part in name.lower()
+    offenders = _offenders(
+        RUN_STATE_PATH.read_text(encoding="utf-8"), BANNED_IN_THE_RUN_STATE_MODULE
     )
-    assert offenders == [], f"{path.relative_to(ROOT)} names {offenders}"
+    assert offenders == [], f"{RUN_STATE_PATH.relative_to(ROOT)} names {offenders}"
+
+
+def test_a_projection_planted_in_the_run_state_module_is_rejected(tmp_path: Path) -> None:
+    """Mutation canary on the real module: reviving the superseded design is mechanically red.
+
+    The mutation is applied to ``run_state.py``'s own source rather than to a synthetic
+    stand-in, so the guard is proven on the file it protects. Both independent guards fire: the
+    identifier scan sees the names, and the pinned module surface no longer matches.
+    """
+    mutated = RUN_STATE_PATH.read_text(encoding="utf-8") + (
+        "\n\nFAILURE_STATE_FOR = {RunState.RUNNING: RunState.FAILED}\n\n\n"
+        "def project_pass_one(stage_records):\n"
+        "    return RunState.FAILED\n"
+    )
+    offenders = _offenders(mutated, BANNED_IN_THE_RUN_STATE_MODULE)
+    assert "FAILURE_STATE_FOR" in offenders
+    assert "project_pass_one" in offenders
+    assert "stage_records" in offenders
+
+    planted = tmp_path / "run_state.py"
+    planted.write_text(mutated, encoding="utf-8")
+    assert _top_level_definitions(planted) != set(EXPECTED_MODULE_SURFACE)
+
+
+def test_an_outer_layer_stage_identifier_is_not_rejected_by_this_guard(tmp_path: Path) -> None:
+    """A later slice's authorised orchestration module is not this suite's business.
+
+    The narrowing is a scope decision, not a weakening: the very same source is still rejected
+    by the RunState module's own ban list. What changed is where the generic ``stage`` fragment
+    is enforced — at the boundary that owns the rule, instead of over every future layer.
+    """
+    outer = tmp_path / "stage_orchestrator.py"
+    outer.write_text(
+        '"""A later, separately authorised orchestration module."""\n\n\n'
+        "def record_stage_execution(run_id, stage_execution):\n"
+        "    return {run_id: stage_execution}\n",
+        encoding="utf-8",
+    )
+    source = outer.read_text(encoding="utf-8")
+    assert _offenders(source, SUPERSEDED_DESIGN_NAMES) == []
+    assert _offenders(source, BANNED_IN_THE_RUN_STATE_MODULE) == [
+        "record_stage_execution",
+        "stage_execution",
+    ]
+
+
+def test_the_source_scan_is_not_vacuous() -> None:
+    """Canary: an empty file list would make the parametrized scan below pass by default."""
+    assert SOURCE_IDS, f"no Python source found under {SRC}"
+
+
+@pytest.mark.parametrize("path", SOURCE_FILES, ids=SOURCE_IDS)
+def test_no_source_anywhere_revives_the_superseded_projection(path: Path) -> None:
+    """Everywhere under ``src/pxapi``: the rejected stage-to-run projection stays gone.
+
+    These fragments name one specific rejected design rather than a generic concept, so barring
+    them outside the Domain locks nothing a later slice legitimately needs.
+    """
+    offenders = _offenders(path.read_text(encoding="utf-8"), SUPERSEDED_DESIGN_NAMES)
+    assert offenders == [], f"{path.relative_to(ROOT)} revives {offenders}"
 
 
 # --- one vocabulary, two representations ------------------------------------------------------

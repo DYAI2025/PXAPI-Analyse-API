@@ -21,6 +21,19 @@ LAYERS = ("domain", "ports", "application", "adapters", "config")
 #: is stale, unearned or blanket fail on its own.
 BEHAVIOR_ALLOWED: dict[str, str] = {
     "domain/run_state.py": "PXK-60",
+    "domain/observations.py": "PXK-67",
+    "ports/page_fetch.py": "PXK-67",
+    "ports/html_observation.py": "PXK-67",
+    "application/analyze_homepage.py": "PXK-67",
+    "adapters/contracts/registry.py": "PXK-67",
+    "adapters/web/target_policy.py": "PXK-67",
+    "adapters/web/page_fetcher.py": "PXK-67",
+    "adapters/web/html_observations.py": "PXK-67",
+    "adapters/inbound/http_api.py": "PXK-67",
+    "adapters/inbound/cli.py": "PXK-67",
+    "adapters/composition.py": "PXK-67",
+    "config/contract_root.py": "PXK-67",
+    "config/fetch_limits.py": "PXK-67",
 }
 
 SOURCE_FILES = sorted(SRC.rglob("*.py"))

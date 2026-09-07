@@ -10,21 +10,32 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Private :: Do Not Upload",
 ]
-# Still no runtime dependencies. PXK-59 adds JSON contract data under contracts/
-# and a test-side harness that validates it; nothing under src/pxapi imports a
-# validator. Framework, database and cloud SDK dependencies are deliberately
-# absent: they belong to the slices that actually implement adapters.
-dependencies = []
+# PXK-67 turns the scaffold into a product: it is the slice that "actually
+# implements adapters", which PXK-59 named as the point where framework
+# dependencies become legitimate. Each entry is used by exactly one adapter and
+# by no inner layer; tests/architecture/boundaries.py keeps them there.
+dependencies = [
+    # Runtime contract validation. JSON Schema is the single contract authority,
+    # so the transport boundary validates against the *same* registry the tests
+    # use rather than restating any shape as a Python model. `referencing` is
+    # declared in its own right because the registry builder imports it directly.
+    "jsonschema>=4.26,<5",
+    "referencing>=0.36,<0.37",
+    # Inbound transport only: routing, request body, status codes. No contract
+    # shape is ever expressed as a Pydantic model.
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+]
 
 [dependency-groups]
 dev = [
-    # Contract harness, test-only. The harness imports `referencing` directly to
-    # build the offline schema registry, so it is declared here in its own right
-    # rather than relied on as a transitive dependency of jsonschema.
-    "jsonschema>=4.26,<5",
-    "referencing>=0.36,<0.37",
+    # jsonschema and referencing moved to [project].dependencies in PXK-67: the
+    # transport boundary validates at runtime against the same registry, so they
+    # are no longer test-only and declaring them here as well would state one
+    # fact twice.
     "pytest>=9.1.1",   # test runner; also executes the architecture boundary guard
     "ruff>=0.16.5",    # linter + formatter (AC2)
+    "httpx>=0.28,<1",  # starlette TestClient transport; test-only, never imported by src/
 ]
 
 [build-system]

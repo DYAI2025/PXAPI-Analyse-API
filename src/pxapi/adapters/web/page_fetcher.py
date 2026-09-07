@@ -1,0 +1,233 @@
+"""Fetches one public page over real HTTP, under an explicit safety and resource boundary.
+
+Three properties are the reason this module exists rather than a two-line call to a library.
+
+**Every hop is validated before it is taken.** Redirects are followed by hand. A library that
+follows them for us would perform the second request itself, and our check would then have run
+only against the first URL. Each ``Location`` is resolved, re-validated and **re-resolved**
+through the policy before any connection is made to it.
+
+**We connect to an address, not to a name.** The policy hands back the addresses it actually
+classified, and the connection is opened to one of those. Connecting by hostname would resolve
+a second time, and a name that answered publicly during the check may answer with a loopback
+address a moment later — the very gap a DNS-rebinding attack lives in. TLS still verifies the
+certificate against the *hostname*, which is why the socket is wrapped explicitly.
+
+**Nothing is unbounded.** Connect, read and a deadline spanning the whole redirect chain all
+have limits, and the body is read to a byte bound rather than into memory in full.
+
+A failure returns a value, never an exception, and that value carries a category and nothing
+else: no message, no address, no exception text. A provider's free text cannot reach a
+normalised record through this module.
+"""
+
+from __future__ import annotations
+
+import http.client
+import socket
+import ssl
+import time
+from collections.abc import Callable
+from urllib.parse import urljoin, urlsplit
+
+from pxapi.adapters.web.target_policy import (
+    PublicTargetPolicy,
+    TargetRefused,
+    ValidatedTarget,
+)
+from pxapi.config.fetch_limits import DEFAULT_FETCH_LIMITS, FetchLimits
+from pxapi.ports.page_fetch import (
+    FetchFailureKind,
+    PageFetchFailure,
+    PageFetchOutcome,
+    PageFetchResult,
+)
+
+#: Statuses this fetcher treats as a redirect. 300 is excluded: it offers choices rather than
+#: naming one, so there is nothing deterministic to follow.
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """Sends ``Host: <hostname>`` but connects to the address the policy validated."""
+
+    def __init__(self, host: str, address: str, port: int, connect_timeout: float) -> None:
+        super().__init__(host, port=port, timeout=connect_timeout)
+        self._address = address
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self._address, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """The same pinning for TLS, with the certificate still checked against the hostname."""
+
+    def __init__(
+        self,
+        host: str,
+        address: str,
+        port: int,
+        connect_timeout: float,
+        context: ssl.SSLContext,
+    ) -> None:
+        super().__init__(host, port=port, timeout=connect_timeout, context=context)
+        self._address = address
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self._address, self.port), self.timeout)
+        # `server_hostname` is the name, not the pinned address: certificate verification and
+        # SNI must still be about who we believe we are talking to.
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class SafePageFetcher:
+    """Fetches one page, following only redirects that are themselves permitted targets."""
+
+    def __init__(
+        self,
+        policy: PublicTargetPolicy | None = None,
+        limits: FetchLimits = DEFAULT_FETCH_LIMITS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.policy = policy or PublicTargetPolicy()
+        self.limits = limits
+        self.clock = clock
+
+    def fetch(self, url: str) -> PageFetchResult:
+        deadline = self.clock() + self.limits.total_deadline_seconds
+        current = url
+        redirects = 0
+
+        while True:
+            # Re-entering the loop re-validates AND re-resolves: a redirect target gets the
+            # same scrutiny as the original URL, never a weaker one.
+            try:
+                target = self.policy.validate(current)
+            except TargetRefused as refused:
+                return PageFetchFailure(refused.kind)
+
+            if self.clock() >= deadline:
+                return PageFetchFailure(FetchFailureKind.TIMEOUT)
+
+            outcome = self._request(target, deadline, redirects)
+            if isinstance(outcome, PageFetchFailure):
+                return outcome
+
+            location = outcome.redirect_location
+            if location is None:
+                return outcome.response
+
+            if redirects >= self.limits.max_redirects:
+                return PageFetchFailure(FetchFailureKind.TOO_MANY_REDIRECTS)
+
+            nxt = urljoin(target.url, location)
+            if not urlsplit(nxt).scheme:
+                return PageFetchFailure(FetchFailureKind.INVALID_REDIRECT)
+            current = nxt
+            redirects += 1
+
+    # --- one hop ---------------------------------------------------------------------
+
+    def _request(self, target: ValidatedTarget, deadline: float, redirects: int) -> _HopResult:
+        remaining = deadline - self.clock()
+        if remaining <= 0:
+            return PageFetchFailure(FetchFailureKind.TIMEOUT)
+
+        connect_timeout = min(self.limits.connect_timeout_seconds, remaining)
+        read_timeout = min(self.limits.read_timeout_seconds, remaining)
+        connection = self._connection(target, connect_timeout)
+
+        try:
+            connection.connect()
+            # Connect and read are bounded separately: a peer that accepts instantly and then
+            # says nothing is a read timeout, not a connection that succeeded forever.
+            if connection.sock is not None:
+                connection.sock.settimeout(read_timeout)
+            connection.putrequest("GET", self._request_path(target.url), skip_accept_encoding=True)
+            connection.putheader("Accept", "text/html,application/xhtml+xml,*/*;q=0.1")
+            connection.putheader("Accept-Encoding", "identity")
+            connection.putheader("Connection", "close")
+            connection.endheaders()
+            response = connection.getresponse()
+
+            status = response.status
+            content_type = response.getheader("Content-Type")
+
+            if status in REDIRECT_STATUSES:
+                location = response.getheader("Location")
+                if location is None or not location.strip():
+                    return PageFetchFailure(FetchFailureKind.INVALID_REDIRECT)
+                return _Hop(response=None, redirect_location=location.strip())
+
+            bound = self.limits.max_response_bytes
+            # One byte past the bound: enough to know the body was longer, never enough to
+            # matter. Reading without a bound is what this line exists to prevent.
+            raw = response.read(bound + 1)
+            truncated = len(raw) > bound
+            body = raw[:bound]
+
+            return _Hop(
+                response=PageFetchOutcome(
+                    final_url=target.url,
+                    status_code=status,
+                    content_type=content_type,
+                    is_https=target.is_https,
+                    redirect_count=redirects,
+                    body=body,
+                    truncated=truncated,
+                    declared_charset=_charset_of(content_type),
+                ),
+                redirect_location=None,
+            )
+        except TimeoutError:
+            return PageFetchFailure(FetchFailureKind.TIMEOUT)
+        except ssl.SSLError:
+            return PageFetchFailure(FetchFailureKind.PROTOCOL_ERROR)
+        except http.client.HTTPException:
+            return PageFetchFailure(FetchFailureKind.PROTOCOL_ERROR)
+        except OSError:
+            # Every remaining socket-level problem: refused, reset, unreachable. The text is
+            # deliberately dropped rather than carried into a record.
+            return PageFetchFailure(FetchFailureKind.CONNECTION_FAILURE)
+        finally:
+            connection.close()
+
+    def _connection(
+        self, target: ValidatedTarget, connect_timeout: float
+    ) -> http.client.HTTPConnection:
+        address = target.addresses[0]
+        if target.is_https:
+            return _PinnedHTTPSConnection(
+                target.host, address, target.port, connect_timeout, ssl.create_default_context()
+            )
+        return _PinnedHTTPConnection(target.host, address, target.port, connect_timeout)
+
+    @staticmethod
+    def _request_path(url: str) -> str:
+        parts = urlsplit(url)
+        path = parts.path or "/"
+        return f"{path}?{parts.query}" if parts.query else path
+
+
+class _Hop:
+    """One hop's result: either a response, or the Location to validate and follow."""
+
+    __slots__ = ("redirect_location", "response")
+
+    def __init__(self, response: PageFetchOutcome | None, redirect_location: str | None) -> None:
+        self.response = response
+        self.redirect_location = redirect_location
+
+
+_HopResult = _Hop | PageFetchFailure
+
+
+def _charset_of(content_type: str | None) -> str | None:
+    """The charset declared in a Content-Type header, if it declares one."""
+    if not content_type:
+        return None
+    for parameter in content_type.split(";")[1:]:
+        name, _, value = parameter.partition("=")
+        if name.strip().lower() == "charset":
+            return value.strip().strip('"').strip("'") or None
+    return None

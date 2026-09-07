@@ -125,6 +125,18 @@
     {
       "code": "ILLEGAL_RUN_TRANSITION",
       "meaning": "A caller asked for an Analysis Run state transition that is not an approved edge of the coarse execution lifecycle. The two states are named; nothing else about the run is carried."
+    },
+    {
+      "code": "MALFORMED_REQUEST_BODY",
+      "meaning": "The request body could not be read as JSON at all, so no contract could be applied to it. The decoder's message and position are deliberately not reported: they quote the submitted bytes, which are untrusted input. A body that parses but does not satisfy its contract is CONTRACT_VALIDATION_FAILED instead."
+    },
+    {
+      "code": "SCAN_MODE_NOT_SUPPORTED",
+      "meaning": "The request names a scan mode the contract allows but this deployment has not implemented. It is refused rather than run as though it were a mode we do support, because the mode records what the run was authorised under."
+    },
+    {
+      "code": "CANONICAL_OUTPUT_INVALID",
+      "meaning": "A document the service itself produced does not satisfy the contract it claims. It names a defect in this service and never anything about the analysed website, and the offending document is withheld rather than returned unvalidated."
     }
   ],
   "problem_code_policy": "This list names the codes registered at this point in the delivery sequence. problem.code is an open token: a later slice registers further codes here without changing the version of the problem contract, and adding a code never alters the meaning of an existing one. A client must treat an unknown code as a generic problem of the given title and detail rather than reject the document."

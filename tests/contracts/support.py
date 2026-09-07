@@ -11,25 +11,59 @@ built from every schema's ``$id``, **without** a format checker: every constrain
 contracts rely on is an assertion keyword (``pattern``, ``const``, ``enum``, ``required``,
 ``if``/``then``), so the same document fails the same way on every run and offline.
 
-Nothing under ``src/`` imports this module, ``jsonschema`` or ``referencing``; PXK-59 ships
-no runtime validator, no port and no adapter (``test_dependency_isolation`` proves it).
-``to_problem`` exists so the tests can prove that a ``problem`` document built from validator
-output stays sanitised; the templates it uses are the producer rule published in
-``contracts/README.md`` for the slice that will implement a real producer.
+The registry reader, the validator and the ``problem`` producer are **not** defined here.
+PXK-67 promoted them to ``pxapi.adapters.contracts.registry``, because the running service now
+validates at its transport boundary and the validation the tests exercise must be the same code
+the service executes, not a second implementation that can drift from it. This module imports
+them and adds only what is test-only: the schema meta-rule walk and the invalid-fixture index.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
-from referencing.jsonschema import DRAFT202012
+from referencing import Registry
+
+from pxapi.adapters.contracts.registry import (
+    PROBLEM_CONTRACT,
+    ContractNotFound,
+    ContractRegistry,
+    Violation,
+    load_json,
+    violations_of,
+)
+
+#: Re-exported so the test modules keep one import site for the harness surface.
+__all__ = [
+    "CONTRACTS",
+    "CONTRACTS_DIR",
+    "EXPECTATIONS_FILENAME",
+    "FIXTURES_DIR",
+    "PROBLEM_CONTRACT",
+    "REQUIRED_ENTRY_MEMBERS",
+    "REQUIRED_SHARED_MEMBERS",
+    "ContractNotFound",
+    "ContractRoot",
+    "InvalidCase",
+    "SchemaWalk",
+    "Violation",
+    "contract_entries",
+    "contract_names",
+    "declares_object",
+    "invalid_fixture_cases",
+    "is_nullable",
+    "iter_patterns",
+    "iter_refs",
+    "load_json",
+    "manifest",
+    "to_problem",
+    "validate",
+    "violations_of",
+]
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS_DIR = ROOT / "contracts" / "v1"
@@ -55,223 +89,15 @@ REQUIRED_ENTRY_MEMBERS: tuple[str, ...] = (
 #: Members every shared-definition entry must carry.
 REQUIRED_SHARED_MEMBERS: tuple[str, ...] = ("name", "id", "version", "schema")
 
-#: The one contract the harness itself produces documents for. This names the producer helper
-#: below, not an inventory of the registry: `to_problem` has to know which contract its own
-#: output must validate against.
-PROBLEM_CONTRACT = "problem"
 
+class ContractRoot(ContractRegistry):
+    """The runtime contract registry plus the test-only invalid-fixture index.
 
-class ContractNotFound(LookupError):
-    """The named contract is not registered in the manifest."""
-
-    code = "CONTRACT_NOT_FOUND"
-
-    def __init__(self, name: str) -> None:
-        # The offending name stays on the exception for tests and logs. It is deliberately
-        # NOT rendered into any client-facing text; see `to_problem`.
-        super().__init__("contract not found")
-        self.name = name
-
-
-@dataclass(frozen=True)
-class Violation:
-    """One failed constraint: where (JSON pointer), which keyword, and the validator's text.
-
-    ``message`` is the validator's raw output. It is kept here so tests can feed hostile text
-    through the producer, and it is never copied into a ``problem`` document; ordering below
-    is by ``(pointer, keyword)`` alone so the free text cannot influence the result either.
+    Everything about reading the registry and validating a document is inherited, so the
+    harness and the service cannot disagree about what a contract means. Only the fixture
+    index below is test-only: invalid documents are proofs about the schemas and are
+    deliberately not part of the published contract surface.
     """
-
-    pointer: str
-    keyword: str
-    message: str
-
-    @property
-    def key(self) -> tuple[str, str]:
-        return (self.pointer, self.keyword)
-
-
-def _reject_non_json_constant(token: str) -> Any:
-    """``NaN``/``Infinity`` are not JSON; a bound like ``maximum`` compares False against NaN."""
-    raise ValueError(f"non-JSON constant in document: {token}")
-
-
-def load_json(path: Path) -> Any:
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle, parse_constant=_reject_non_json_constant)
-
-
-def _pointer(parts: Any) -> str:
-    return "".join(f"/{str(part).replace('~', '~0').replace('/', '~1')}" for part in parts)
-
-
-@dataclass(frozen=True)
-class ContractRoot:
-    """One contract root directory: a ``manifest.json`` plus the files it names.
-
-    Every accessor derives from the manifest, so the same code runs against the repository's
-    ``contracts/v1`` and against a throwaway root built in a pytest ``tmp_path``.
-    """
-
-    path: Path
-
-    # --- registry data ---------------------------------------------------------------
-
-    @property
-    def manifest_path(self) -> Path:
-        return self.path / "manifest.json"
-
-    def manifest(self) -> dict[str, Any]:
-        return load_json(self.manifest_path)
-
-    def registry_meta(self) -> dict[str, Any]:
-        return self.manifest()["registry"]
-
-    def dialect(self) -> str:
-        return self.registry_meta()["dialect"]
-
-    def id_namespace(self) -> str:
-        return self.registry_meta()["id_namespace"]
-
-    def roles(self) -> tuple[str, ...]:
-        """The role vocabulary the registry declares — data, so a later slice may extend it."""
-        return tuple(self.registry_meta()["roles"])
-
-    def statuses(self) -> tuple[str, ...]:
-        return tuple(self.registry_meta()["statuses"])
-
-    def entries(self) -> list[dict[str, Any]]:
-        """Every registered contract, in manifest order. The only source of the inventory."""
-        return list(self.manifest()["contracts"])
-
-    def names(self) -> list[str]:
-        return [entry["name"] for entry in self.entries()]
-
-    def has_contract(self, name: str) -> bool:
-        return any(entry["name"] == name for entry in self.entries())
-
-    def entry(self, name: str) -> dict[str, Any]:
-        for entry in self.entries():
-            if entry["name"] == name:
-                return entry
-        raise ContractNotFound(name)
-
-    def shared_definitions(self) -> list[dict[str, Any]]:
-        return list(self.manifest()["shared_definitions"])
-
-    def problem_codes(self) -> list[dict[str, Any]]:
-        return list(self.manifest()["problem_codes"])
-
-    # --- files -----------------------------------------------------------------------
-
-    def schema_path(self, name: str) -> Path:
-        for shared in self.shared_definitions():
-            if shared["name"] == name:
-                return self.path / shared["schema"]
-        return self.path / self.entry(name)["schema"]
-
-    def all_schema_paths(self) -> list[Path]:
-        """Every schema file the manifest names: shared definitions first, then contracts."""
-        paths = [self.path / shared["schema"] for shared in self.shared_definitions()]
-        paths.extend(self.path / entry["schema"] for entry in self.entries())
-        return paths
-
-    def example_paths(self, name: str) -> list[Path]:
-        return [self.path / rel for rel in self.entry(name)["examples"]]
-
-    def expected_schema_id(self, name: str, version: str) -> str:
-        return f"{self.id_namespace()}{name}:{version}"
-
-    # --- validation ------------------------------------------------------------------
-
-    def jsonschema_registry(self) -> Registry:
-        """One offline registry keyed by each schema's own ``$id``. No network lookups."""
-        resources = []
-        for path in self.all_schema_paths():
-            schema = load_json(path)
-            resources.append(
-                (schema["$id"], Resource.from_contents(schema, default_specification=DRAFT202012))
-            )
-        return Registry().with_resources(resources)
-
-    def validator_for(self, name: str) -> Draft202012Validator:
-        """A validator for the contract ``name`` — resolved by name only.
-
-        Each contract pins its own version with a ``const`` on ``schema_version``, so a
-        document with a wrong or missing version is an ordinary ``const`` / ``required``
-        violation against that one schema. There is no second lookup keyed by version and
-        therefore no second code path.
-        """
-        return Draft202012Validator(
-            load_json(self.schema_path(name)), registry=self.jsonschema_registry()
-        )
-
-    def validator_for_definition(
-        self, definition: str, shared: str = "common"
-    ) -> Draft202012Validator:
-        """A validator for one entry of a shared definition file's ``$defs``."""
-        entry = next(s for s in self.shared_definitions() if s["name"] == shared)
-        schema = {"$schema": self.dialect(), "$ref": f"{entry['id']}#/$defs/{definition}"}
-        return Draft202012Validator(schema, registry=self.jsonschema_registry())
-
-    def validate(self, name: str, document: Any) -> tuple[Violation, ...]:
-        """All violations of ``document`` against contract ``name``, deterministically ordered."""
-        return violations_of(self.validator_for(name), document)
-
-    # --- the problem producer --------------------------------------------------------
-
-    def max_problem_errors(self) -> int:
-        """The bound on ``problem.errors``, read from the contract rather than duplicated here.
-
-        Reading it from the schema is what makes the bound a single fact: drop ``maxItems``
-        from the contract and this raises, so the producer cannot quietly become unbounded.
-        """
-        schema = load_json(self.schema_path(PROBLEM_CONTRACT))
-        return int(schema["properties"]["errors"]["maxItems"])
-
-    def to_problem(self, name: str, found: tuple[Violation, ...]) -> dict[str, Any]:
-        """Build a ``problem`` document from violations using fixed templates only.
-
-        Three rules make the output safe by construction, not by filtering:
-
-        * the validator's free-text ``message`` is never read here;
-        * the contract name is echoed only after the registry resolved it, and the echoed
-          string is the manifest's own value — an unregistered name is reported as
-          ``CONTRACT_NOT_FOUND`` and never appears in the document;
-        * ``errors`` is truncated to the contract's own bound, and the untruncated count is
-          reported as a number.
-        """
-        problem_version = self.entry(PROBLEM_CONTRACT)["version"]
-        total = len(found)
-
-        if not self.has_contract(name):
-            return {
-                "schema_version": problem_version,
-                "code": "CONTRACT_NOT_FOUND",
-                "title": "Contract not found",
-                "detail": "The requested contract is not registered in this contract registry.",
-                "errors": [],
-            }
-
-        safe_name = self.entry(name)["name"]
-        reported = sorted(found, key=lambda violation: violation.key)[: self.max_problem_errors()]
-        # A present unsupported version fails `const`; an absent one fails `required`.
-        version_rejected = any(v.key == ("/schema_version", "const") for v in found)
-        code = "SCHEMA_VERSION_UNSUPPORTED" if version_rejected else "CONTRACT_VALIDATION_FAILED"
-        title = "Schema version unsupported" if version_rejected else "Contract validation failed"
-        subject = (
-            "declares a schema version not supported by" if version_rejected else "does not satisfy"
-        )
-        return {
-            "schema_version": problem_version,
-            "code": code,
-            "title": title,
-            "detail": (
-                f"Document {subject} contract '{safe_name}': "
-                f"{total} violation(s), {len(reported)} reported."
-            ),
-            "errors": [{"pointer": v.pointer, "keyword": v.keyword} for v in reported],
-        }
 
     # --- invalid fixtures ------------------------------------------------------------
 
@@ -328,15 +154,6 @@ class InvalidCase:
     def expected_keys(self) -> set[tuple[str, str]]:
         expectation = self.expectation or {}
         return {(v["pointer"], v["keyword"]) for v in expectation.get("violations", [])}
-
-
-def violations_of(validator: Draft202012Validator, document: Any) -> tuple[Violation, ...]:
-    """Every violation, ordered by ``(pointer, keyword)`` so the free text cannot reorder it."""
-    found = [
-        Violation(_pointer(error.absolute_path), str(error.validator), error.message)
-        for error in validator.iter_errors(document)
-    ]
-    return tuple(sorted(found, key=lambda violation: violation.key))
 
 
 # --- schema meta-rules, shared by the repository tests and the evolution proof -----------

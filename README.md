@@ -2,14 +2,53 @@
 
 PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 
-> **This repository is scaffold plus a contract foundation (slices A3 / PXK-16, PXK-59 and
-> PXK-60).** It contains **no** analysis, measurement, crawling, SERP, business-context,
-> synthesis, scoring, product-diagnosis, customer-projection, rendering, delivery, persistence,
-> orchestration or API capability. Nothing here analyses a website, runs a stage or stores
-> anything. The layout and the boundary rules exist so that the slices which add those
-> capabilities cannot quietly violate the architecture; `contracts/` adds the versioned
-> vocabulary they will speak, as data rather than behavior. PXK-60 adds the first executable
-> Domain module — the coarse Analysis Run lifecycle — and nothing else executable.
+> **This repository analyses one public homepage, and nothing more** (slices A3 / PXK-16,
+> PXK-59, PXK-60, PXK-61 and PXK-67). PXK-67 adds the first vertical product path: a real
+> public URL in, real HTTP and HTML observations out, as canonical contract documents. It
+> contains **no** scoring, product diagnosis, customer projection, rendering, delivery,
+> persistence, queueing, browser execution, SERP or business-context capability, and **no
+> authentication, authorisation, rate limiting or deployment**. It does not crawl: it fetches
+> exactly one page. `contracts/` remains the versioned vocabulary, as data rather than
+> behavior, and is still the single contract authority.
+
+## Analysing a page
+
+```bash
+# the command line, which is what the real-boundary smoke uses
+uv run python -m pxapi.adapters.inbound.cli https://example.com/
+
+# the same use case over HTTP
+uv run uvicorn pxapi.adapters.inbound.http_api:app --port 8000
+curl -sS -X POST localhost:8000/v1/analysis-runs -H 'Content-Type: application/json' -d '{
+  "schema_version": "1.0.0", "run_id": "run-1", "request_id": "req-1",
+  "requested_at": "2026-09-07T10:00:00Z", "target_url": "https://example.com/",
+  "scan_mode": "PUBLIC_NON_INVASIVE"
+}'
+```
+
+Both return the same canonical envelope — the accepted request, the run state, the stage
+executions, the measurements and the website evidence — in which **every member validates
+against its own merged contract on its own**. The envelope itself is deliberately not a
+registered contract: it adds no analysis meaning, and registering it would create a second
+authority beside the contracts it carries.
+
+**A technical failure is never a finding about the website.** A timeout, a DNS failure, a
+refused target, a broken parser and a response we cannot decode each record why *our process*
+did not measure — carrying no value and no polarity — and fail the run rather than the site.
+Three states are kept apart: *absent* is a fact about the site, *not applicable* a fact about
+the measurement, and *unknown* an assessment that established nothing.
+
+### Which destinations may be fetched
+
+`http` and `https` only, no credentials in the URL authority, and every resolved address must
+be public — loopback, private, link-local (where cloud metadata lives), unspecified, multicast,
+reserved, carrier-grade NAT and unique-local are all refused. **A host is refused outright if
+any one of its addresses is forbidden**, and the connection is made to the address that was
+validated rather than to the hostname, so a name cannot be rebound between the check and the
+connect. Redirects are followed by hand, and every hop is re-validated and re-resolved.
+
+The shipped policy takes no argument that could widen that rule. Integration tests reach a
+loopback server by subclassing it in test code, never by configuring the product.
 
 ## Supported Python versions
 
@@ -82,8 +121,16 @@ carries its own version; there is no global contracts version. See
 [`contracts/README.md`](contracts/README.md) for the registry model, the versioning rules, the
 consumer compatibility rules and the Problem producer rule.
 
-`jsonschema` and `referencing` are **dev/test dependencies only**. Nothing under `src/pxapi`
-imports a validator, and `tests/contracts/test_dependency_isolation.py` fails if that changes.
+`jsonschema` and `referencing` are **runtime dependencies as of PXK-67**, because the HTTP
+boundary validates what arrives and what leaves against the same registry the tests use. The
+old blanket rule — nothing under `src/pxapi` may import a validator — was **narrowed rather
+than dropped**, the way PXK-60 narrowed the behavior gate: `domain`, `ports`, `application` and
+`config` may still never import one, and exactly one allowlisted adapter may.
+`tests/contracts/test_dependency_isolation.py` fails if that changes, and an allowlist entry
+that is stale, unearned or outside `adapters` fails on its own.
+
+`tests/contracts/support.py` builds on that same runtime registry rather than restating it, so
+the validation the tests exercise is the code the service runs.
 
 An invalid fixture proves one token is rejected; it does not pin the set a closed `enum`
 declares. Measured on this tree: a third `scan_mode`, a fifth stage `status` and a fourth member
@@ -123,6 +170,13 @@ holds exactly one entry:
 | module | authorised by |
 | --- | --- |
 | `domain/run_state.py` | PXK-60 |
+| `domain/observations.py` | PXK-67 |
+| `ports/page_fetch.py`, `ports/html_observation.py` | PXK-67 |
+| `application/analyze_homepage.py` | PXK-67 |
+| `adapters/contracts/registry.py` | PXK-67 |
+| `adapters/web/*` | PXK-67 |
+| `adapters/inbound/*`, `adapters/composition.py` | PXK-67 |
+| `config/contract_root.py`, `config/fetch_limits.py` | PXK-67 |
 
 ### The Analysis Run lifecycle
 

@@ -194,6 +194,44 @@ anticipated here. `tests/evidence/test_assessment_semantics.py` enforces the inl
 two contracts this slice owns, and not registry-wide: what a later, separately authorised
 contract may hold is not this slice's decision.
 
+## Producing documents from a real observation
+
+PXK-67 is the first slice that writes these contracts from live input, and two of its decisions
+are worth stating here because they are contract decisions rather than collector conveniences.
+
+**An open vocabulary meant no contract had to change.** `metric_id`, `collector`, `scenario`
+and `stage_id` all reference `common#/$defs/code`, which fixes a token's lexical shape and
+never the set. Every metric the walking skeleton introduces — `HTTP_STATUS`, `FINAL_URL`,
+`CONTENT_TYPE`, `TRANSPORT_IS_HTTPS`, `REDIRECT_COUNT`, and the presence/value pairs for the
+page title, the meta description and the canonical link — validates against the contracts
+exactly as they were merged. Registering three further `problem_codes` was likewise additive.
+
+**A bound is read from the contract, never copied into a collector.** `text_value` inherits the
+shared single-line bound, and a producer needs that number to decide whether an observed text
+is representable at all. It reads it out of the schema at runtime — the same technique the
+`problem` producer already uses for `errors.maxItems` — so widening the bound in a later
+contract version cannot leave a stale constant behind that silently keeps discarding values the
+contract would now accept.
+
+The rule that follows is the one the vocabulary was built for. An observed text that will not
+fit is **not** shortened and presented as the original: the element's *presence* is still a
+`KNOWN` boolean, and the *value* becomes a performed assessment with `result_state` `UNKNOWN`
+and no `result` at all. The same holds when a response body reached the reader's byte bound —
+an element that was not seen in a truncated document is `UNKNOWN`, never `false`, because
+otherwise a producer's own limit would appear as a defect on the analysed site.
+
+Three outcomes stay carefully distinct, and each has a different token:
+
+```text
+absent          the site declares no title            KNOWN, boolean false
+not applicable  there is no value to read             NOT_APPLICABLE, no result
+unknown         the assessment established nothing    UNKNOWN, no result
+```
+
+None of them is a `not_assessed_reason`, and no `not_assessed_reason` is any of them: a
+provider failure, a timeout, a refused permission and a runtime error say nothing about the
+subject, and a document carrying one is refused a value and a polarity outright.
+
 ## The Problem contract and its producer rule
 
 `problem` is transport-neutral: no HTTP status, no type URI, no other transport binding. The

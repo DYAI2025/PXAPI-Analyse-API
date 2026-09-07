@@ -404,3 +404,46 @@ def test_no_raw_response_body_appears_in_any_normalised_document() -> None:
 
     for member in ("measurements", "website_evidence", "analysis_run_state", "stage_executions"):
         assert marker.decode() not in repr(envelope[member]), member
+
+
+def test_an_undecodable_body_never_becomes_an_absent_element() -> None:
+    """The bug the first real-boundary smoke found, kept fixed.
+
+    A server that returns gzip regardless of what we asked for used to reach the parser as
+    compressed bytes: no title was found, and the run reported that the *site* had no title.
+    An encoding we cannot decode now says so, and asserts nothing about the page.
+    """
+    import gzip
+
+    routes = {
+        "/": Route(
+            body=gzip.compress(FULL_PAGE),
+            headers={"Content-Type": "text/html", "Content-Encoding": "br"},
+        )
+    }
+    envelope = analyse(routes)
+    assert_envelope_validates(envelope)
+    found = measurements_by_metric(envelope)
+
+    for metric in (Metric.PAGE_TITLE_PRESENT, Metric.PAGE_TITLE, Metric.CANONICAL_PRESENT):
+        assert found[metric]["assessment"] == {"not_assessed_reason": "RUNTIME_ERROR"}, metric
+        assert "result" not in found[metric]
+
+    assert found[Metric.HTTP_STATUS]["result"]["integer_value"] == 200
+    for evidence in envelope["website_evidence"]:
+        assert "polarity" not in evidence
+
+
+def test_a_gzip_encoded_page_yields_its_real_facts() -> None:
+    """The capability half: the common case must actually work, not merely fail honestly."""
+    import gzip
+
+    routes = {
+        "/": Route(
+            body=gzip.compress(FULL_PAGE),
+            headers={"Content-Type": "text/html; charset=utf-8", "Content-Encoding": "gzip"},
+        )
+    }
+    found = measurements_by_metric(analyse(routes))
+    assert found[Metric.PAGE_TITLE]["result"]["text_value"] == "Example Domain"
+    assert found[Metric.META_DESCRIPTION]["result"]["text_value"] == "A page used for examples."

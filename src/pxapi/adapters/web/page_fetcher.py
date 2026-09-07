@@ -27,6 +27,7 @@ import http.client
 import socket
 import ssl
 import time
+import zlib
 from collections.abc import Callable
 from urllib.parse import urljoin, urlsplit
 
@@ -164,7 +165,9 @@ class SafePageFetcher:
             # matter. Reading without a bound is what this line exists to prevent.
             raw = response.read(bound + 1)
             truncated = len(raw) > bound
-            body = raw[:bound]
+            body, undecodable, inflated_past_bound = _decoded_content(
+                raw[:bound], response.getheader("Content-Encoding"), bound
+            )
 
             return _Hop(
                 response=PageFetchOutcome(
@@ -174,8 +177,9 @@ class SafePageFetcher:
                     is_https=target.is_https,
                     redirect_count=redirects,
                     body=body,
-                    truncated=truncated,
+                    truncated=truncated or inflated_past_bound,
                     declared_charset=_charset_of(content_type),
+                    undecodable=undecodable,
                 ),
                 redirect_location=None,
             )
@@ -220,6 +224,50 @@ class _Hop:
 
 
 _HopResult = _Hop | PageFetchFailure
+
+
+#: Content encodings we can decode. Anything else is reported as undecodable rather than
+#: parsed as though the compressed bytes were the document.
+_DECODERS: dict[str, int] = {
+    # gzip framing, and raw/zlib-wrapped deflate.
+    "gzip": 16 + zlib.MAX_WBITS,
+    "x-gzip": 16 + zlib.MAX_WBITS,
+    "deflate": zlib.MAX_WBITS,
+}
+
+
+def _decoded_content(raw: bytes, encoding: str | None, bound: int) -> tuple[bytes, bool, bool]:
+    """Decode a response body, returning ``(body, undecodable, inflated_past_bound)``.
+
+    Servers compress even when asked not to, so a fetcher that skipped this would hand the
+    parser gzip bytes, find no title in them, and report that the *site* has no title. That
+    is the exact failure this slice exists to prevent, which is why an encoding we cannot
+    decode is reported as such instead of being parsed anyway.
+
+    Decompression is bounded as well as the read. A small compressed body can inflate to an
+    arbitrarily large one, so the output is capped exactly like the input.
+    """
+    token = (encoding or "").strip().lower()
+    if not token or token == "identity":
+        return raw, False, False
+
+    window = _DECODERS.get(token)
+    if window is None:
+        # Brotli, zstd, or several encodings applied at once. We do not have the document.
+        return b"", True, False
+
+    for wbits in (window, -zlib.MAX_WBITS):
+        try:
+            # `max_length` caps the output: a decompression bomb cannot make us allocate
+            # more than one bounded body.
+            decoded = zlib.decompressobj(wbits).decompress(raw, bound + 1)
+        except zlib.error:
+            continue
+        if not decoded:
+            continue
+        return decoded[:bound], False, len(decoded) > bound
+    # The stream was cut at the read bound, or it is not what it claimed to be.
+    return b"", True, False
 
 
 def _charset_of(content_type: str | None) -> str | None:

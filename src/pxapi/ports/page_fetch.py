@@ -73,6 +73,11 @@ class PageFetchOutcome:
     truncated: bool
     #: The charset declared in ``Content-Type``, or ``None`` when none was declared.
     declared_charset: str | None
+    #: True when the response arrived in a content encoding we could not decode, so ``body``
+    #: is not the document. Load-bearing for the same reason ``truncated`` is: a document we
+    #: could not decode tells us nothing about what it contains, and reporting its elements
+    #: as absent would turn our own gap into a finding about the site.
+    undecodable: bool = False
 
 
 #: What a fetch returns: either a response, or the reason there is none.

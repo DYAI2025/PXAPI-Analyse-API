@@ -403,3 +403,90 @@ def test_the_plain_connection_also_dials_the_pinned_address(monkeypatch) -> None
 
     PinnedHTTPConnection("example.test", "93.184.216.34", 80, 5.0).connect()
     assert dialled == [("93.184.216.34", 80)]
+
+
+# --- content encoding ---------------------------------------------------------------------
+
+
+def _gzipped(payload: bytes) -> bytes:
+    import gzip
+
+    return gzip.compress(payload)
+
+
+def _deflated(payload: bytes) -> bytes:
+    import zlib
+
+    return zlib.compress(payload)
+
+
+def test_a_gzip_encoded_body_is_decoded() -> None:
+    """Servers compress even when asked not to, so this is the ordinary case, not an edge one."""
+    routes = {
+        "/": Route(
+            body=_gzipped(HTML),
+            headers={"Content-Type": "text/html", "Content-Encoding": "gzip"},
+        )
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/"))
+
+    assert isinstance(result, PageFetchOutcome)
+    assert result.body == HTML
+    assert result.undecodable is False
+
+
+def test_a_deflate_encoded_body_is_decoded() -> None:
+    routes = {
+        "/": Route(
+            body=_deflated(HTML),
+            headers={"Content-Type": "text/html", "Content-Encoding": "deflate"},
+        )
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/"))
+    assert isinstance(result, PageFetchOutcome)
+    assert result.body == HTML
+
+
+@pytest.mark.parametrize("encoding", ["br", "zstd", "gzip, br", "exotic"])
+def test_an_encoding_we_cannot_decode_is_reported_rather_than_guessed(encoding: str) -> None:
+    """We do not hold the document, and saying so is the only honest answer."""
+    routes = {
+        "/": Route(
+            body=b"\x00\x01\x02compressed",
+            headers={"Content-Type": "text/html", "Content-Encoding": encoding},
+        )
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/"))
+
+    assert isinstance(result, PageFetchOutcome)
+    assert result.undecodable is True
+    assert result.body == b"", "an undecodable body must not be handed on as if it were the page"
+    assert result.status_code == 200, "the transport facts are still real"
+
+
+def test_an_identity_encoding_is_passed_through() -> None:
+    routes = {
+        "/": Route(body=HTML, headers={"Content-Type": "text/html", "Content-Encoding": "identity"})
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/"))
+    assert isinstance(result, PageFetchOutcome)
+    assert result.body == HTML
+    assert result.undecodable is False
+
+
+def test_a_decompression_bomb_is_bounded_like_any_other_body() -> None:
+    """A small compressed body can inflate without limit; the output is capped too."""
+    bomb = _gzipped(b"a" * 5_000_000)
+    routes = {
+        "/": Route(body=bomb, headers={"Content-Type": "text/html", "Content-Encoding": "gzip"})
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher(limits=FetchLimits(max_response_bytes=10_000)).fetch(server.url("/"))
+
+    assert isinstance(result, PageFetchOutcome)
+    assert len(result.body) <= 10_000, "decompression must not exceed the byte bound"
+    assert result.truncated is True

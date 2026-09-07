@@ -247,16 +247,19 @@ class AnalyzeHomepage:
             for metric in HTML_METRICS:
                 performed(metric, "OBSERVED", "NOT_APPLICABLE")
             html_status = "NOT_APPLICABLE"
+        elif response.undecodable:
+            # The response arrived in a content encoding we cannot decode, so we do not hold
+            # the document at all. Every element would read as absent, and publishing that
+            # would turn a gap in our own capability into a finding about the site.
+            self._runtime_error_for_document(measurements, run_id, source_url, observed_at)
+            html_status = "FAILED"
         else:
             try:
                 observed = self.read_html(response.body, response.declared_charset)
             except HtmlUnreadable:
                 # Our parser failed. That is our runtime, so nothing is asserted about the
                 # page: no absence, no value, no polarity.
-                for metric in HTML_METRICS:
-                    measurements.append(
-                        self._not_assessed(run_id, metric, source_url, observed_at, "RUNTIME_ERROR")
-                    )
+                self._runtime_error_for_document(measurements, run_id, source_url, observed_at)
                 html_status = "FAILED"
             else:
                 self._document_metrics(
@@ -283,6 +286,19 @@ class AnalyzeHomepage:
             measurements=measurements,
             evidence=evidence,
         )
+
+    def _runtime_error_for_document(
+        self,
+        measurements: list[dict[str, Any]],
+        run_id: str,
+        source_url: str,
+        observed_at: str,
+    ) -> None:
+        """Record that *we* could not read the document, for every metric that needs one."""
+        for metric in HTML_METRICS:
+            measurements.append(
+                self._not_assessed(run_id, metric, source_url, observed_at, "RUNTIME_ERROR")
+            )
 
     def _document_metrics(
         self,

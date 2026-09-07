@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "finding_id": "fnd-01JQ8Z4K2M0000000000000001",
+  "rule_id": "HTTP_ERROR_RESPONSE",
+  "rule_version": "1.0.0",
+  "finding_class": "HOMEPAGE_HTTP_ERROR_STATUS",
+  "evidence_refs": ["evd-01JQ8Z4K2M0000000000000001"],
+  "finding_summary": "The analysis client received an HTTP status of 400 or above for the analysed homepage.",
+  "business_impact": "A client receiving this response may not receive the intended homepage content; the effect on real users depends on access, edge, bot and rate-limit policies that were not assessed.",
+  "recommended_action": "Review the homepage response path and access or edge configuration. Treat statuses such as 401, 403 and 429 as potentially intentional or client-specific before changing site behaviour.",
+  "limitation": "This single automated-client response does not prove that the website is generally unavailable, that users cannot access it, or that a historical outage occurred.",
+  "overall_intervention_level": "HIGH"
+}

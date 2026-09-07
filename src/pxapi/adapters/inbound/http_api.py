@@ -32,6 +32,7 @@ OUTPUT_CONTRACTS: dict[str, str] = {
     "stage_executions": "stage-execution-record",
     "measurements": "measurement-record",
     "website_evidence": "website-evidence",
+    "diagnostic_findings": "diagnostic-finding",
 }
 
 #: Problem code to HTTP status. The `problem` contract is transport-neutral by design, so the

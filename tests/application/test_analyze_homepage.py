@@ -19,9 +19,10 @@ from pxapi.adapters.web.page_fetcher import SafePageFetcher
 from pxapi.application.analyze_homepage import AnalyzeHomepage
 from pxapi.config.contract_root import contract_root
 from pxapi.config.fetch_limits import FetchLimits
+from pxapi.domain.findings import RuleId
 from pxapi.domain.observations import Metric
 from pxapi.ports.html_observation import HtmlUnreadable
-from pxapi.ports.page_fetch import FetchFailureKind, PageFetchFailure
+from pxapi.ports.page_fetch import FetchFailureKind, PageFetchFailure, PageFetchOutcome
 from tests.adapters.http_test_server import ControlledHttpServer, Route, loopback_policy
 
 CONTRACTS = ContractRegistry(contract_root())
@@ -42,6 +43,7 @@ MEMBER_CONTRACT = {
     "stage_executions": "stage-execution-record",
     "measurements": "measurement-record",
     "website_evidence": "website-evidence",
+    "diagnostic_findings": "diagnostic-finding",
 }
 
 
@@ -491,7 +493,7 @@ def test_no_raw_response_body_appears_in_any_normalised_document() -> None:
     page = b"<html><head><title>T</title></head><body>" + marker + b"</body></html>"
     envelope = analyse({"/": Route(body=page, headers=HTML_HEADERS)})
 
-    for member in ("measurements", "website_evidence", "analysis_run_state", "stage_executions"):
+    for member in MEMBER_CONTRACT:
         assert marker.decode() not in repr(envelope[member]), member
 
 
@@ -536,3 +538,123 @@ def test_a_gzip_encoded_page_yields_its_real_facts() -> None:
     found = measurements_by_metric(analyse(routes))
     assert found[Metric.PAGE_TITLE]["result"]["text_value"] == "Example Domain"
     assert found[Metric.META_DESCRIPTION]["result"]["text_value"] == "A page used for examples."
+
+
+# --- evidence becomes an actionable finding, and only ever through evidence ------------------
+
+#: The loopback test server speaks plain HTTP, so every run through it legitimately observes a
+#: non-HTTPS final transport. That is a real finding about a real observation, and it is what
+#: makes the integration proofs below exercise the whole path rather than a contrived one.
+LOOPBACK_TRANSPORT_FINDING = RuleId.NON_HTTPS_FINAL_TRANSPORT
+
+
+def findings_of(envelope: dict) -> list[str]:
+    return [finding["rule_id"] for finding in envelope["diagnostic_findings"]]
+
+
+def test_the_envelope_carries_diagnostic_findings_that_validate_on_their_own() -> None:
+    envelope = analyse({"/": Route(body=FULL_PAGE, headers=HTML_HEADERS)})
+    assert_envelope_validates(envelope)
+    assert findings_of(envelope) == [LOOPBACK_TRANSPORT_FINDING]
+
+
+def test_an_error_status_on_the_wire_becomes_a_finding_in_the_pinned_order() -> None:
+    """Two real observations, two findings, emitted in the rule order and not the input order."""
+    envelope = analyse({"/": Route(status=503, body=FULL_PAGE, headers=HTML_HEADERS)})
+    assert_envelope_validates(envelope)
+    assert findings_of(envelope) == [
+        RuleId.HTTP_ERROR_RESPONSE,
+        LOOPBACK_TRANSPORT_FINDING,
+    ]
+
+
+def test_a_missing_title_on_the_wire_becomes_a_finding() -> None:
+    page = b"<!doctype html><html><head></head><body>hello</body></html>"
+    envelope = analyse({"/": Route(body=page, headers=HTML_HEADERS)})
+    assert_envelope_validates(envelope)
+    assert RuleId.MISSING_HOMEPAGE_TITLE in findings_of(envelope)
+
+
+def test_every_emitted_finding_resolves_back_to_a_measured_value() -> None:
+    """The chain the slice exists for, asserted end to end on a real response.
+
+    finding -> evidence_id -> measurement_id -> the value the collector actually recorded.
+    """
+    envelope = analyse({"/": Route(status=503, body=FULL_PAGE, headers=HTML_HEADERS)})
+    by_evidence = {e["evidence_id"]: e for e in envelope["website_evidence"]}
+    by_measurement = {m["measurement_id"]: m for m in envelope["measurements"]}
+
+    assert envelope["diagnostic_findings"], "canary: this run must have produced findings"
+    for finding in envelope["diagnostic_findings"]:
+        assert finding["run_id"] == envelope["analysis_run_state"]["run_id"]
+        assert finding["evidence_refs"], "a finding must name what it rests on"
+        for reference in finding["evidence_refs"]:
+            evidence = by_evidence[reference]
+            assert evidence["run_id"] == finding["run_id"]
+            assert evidence["assessment"]["result_state"] == "KNOWN"
+            assert evidence["measurement_refs"], "the evidence must name a measurement"
+            for measured in evidence["measurement_refs"]:
+                record = by_measurement[measured]
+                assert record["run_id"] == finding["run_id"]
+                assert "result" in record, "the decisive record must carry a value"
+
+
+def test_a_healthy_https_response_produces_no_finding_at_all() -> None:
+    """The counterexample: nothing is wrong, so nothing is said. Empty, never negative."""
+    response = PageFetchOutcome(
+        final_url="https://example.test/",
+        status_code=200,
+        content_type="text/html; charset=utf-8",
+        is_https=True,
+        redirect_count=0,
+        body=FULL_PAGE,
+        truncated=False,
+        declared_charset="utf-8",
+    )
+    envelope = use_case(StubFetcher(response)).run(request_for("https://example.test/"))
+
+    assert_envelope_validates(envelope)
+    assert envelope["diagnostic_findings"] == []
+
+
+@pytest.mark.parametrize("kind", list(TECHNICAL_FAILURES), ids=list(TECHNICAL_FAILURES))
+def test_a_technical_failure_produces_no_finding_whatsoever(kind: str) -> None:
+    """The rule the whole vertical exists for, now also at the finding layer."""
+    failure_kind, _ = TECHNICAL_FAILURES[kind]
+    envelope = use_case(StubFetcher(PageFetchFailure(failure_kind))).run(
+        request_for("https://example.test/")
+    )
+    assert_envelope_validates(envelope)
+    assert envelope["diagnostic_findings"] == []
+
+
+def test_a_body_we_could_not_decode_never_becomes_a_missing_title_finding() -> None:
+    """Our own gap in capability must not arrive as a defect on the customer's site."""
+    import gzip
+
+    routes = {
+        "/": Route(
+            body=gzip.compress(FULL_PAGE),
+            headers={"Content-Type": "text/html", "Content-Encoding": "br"},
+        )
+    }
+    envelope = analyse(routes)
+    assert_envelope_validates(envelope)
+    assert RuleId.MISSING_HOMEPAGE_TITLE not in findings_of(envelope)
+
+
+def test_a_truncated_read_never_becomes_a_missing_title_finding() -> None:
+    """An element we stopped reading before is unknown, and unknown is not absent."""
+    filler = b"<p>" + (b"a" * 4000) + b"</p>"
+    page = b"<html><head>" + filler + b"<title>Late</title></head><body>b</body></html>"
+    envelope = analyse({"/": Route(body=page, headers=HTML_HEADERS)}, max_response_bytes=200)
+    assert_envelope_validates(envelope)
+    assert RuleId.MISSING_HOMEPAGE_TITLE not in findings_of(envelope)
+
+
+def test_a_non_document_response_never_becomes_a_missing_title_finding() -> None:
+    """A PDF has no title element to lack. NOT_APPLICABLE is about the measurement, not the site."""
+    routes = {"/": Route(body=b"%PDF-1.7", headers={"Content-Type": "application/pdf"})}
+    envelope = analyse(routes)
+    assert_envelope_validates(envelope)
+    assert RuleId.MISSING_HOMEPAGE_TITLE not in findings_of(envelope)

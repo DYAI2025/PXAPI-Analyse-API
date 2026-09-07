@@ -3,9 +3,12 @@
 PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 
 > **This repository analyses one public homepage, and nothing more** (slices A3 / PXK-16,
-> PXK-59, PXK-60, PXK-61 and PXK-67). PXK-67 adds the first vertical product path: a real
-> public URL in, real HTTP and HTML observations out, as canonical contract documents. It
-> contains **no** scoring, product diagnosis, customer projection, rendering, delivery,
+> PXK-59, PXK-60, PXK-61, PXK-67 and PXK-20.A). PXK-67 added the first vertical product
+> path: a real public URL in, real HTTP and HTML observations out, as canonical contract
+> documents. PXK-20.A adds the first *actionable* step on that path — three fixed rules turn
+> established website evidence into evidence-bound diagnostic findings. The repository
+> contains **no** scoring, score model, severity, confidence, ranking or intervention level, and
+> no product diagnosis, contextual synthesis, customer projection, rendering, delivery,
 > persistence, queueing, browser execution, SERP or business-context capability, and **no
 > authentication, authorisation, rate limiting or deployment**. It does not crawl: it fetches
 > exactly one page. `contracts/` remains the versioned vocabulary, as data rather than
@@ -27,16 +30,42 @@ curl -sS -X POST localhost:8000/v1/analysis-runs -H 'Content-Type: application/j
 ```
 
 Both return the same canonical envelope — the accepted request, the run state, the stage
-executions, the measurements and the website evidence — in which **every member validates
-against its own merged contract on its own**. The envelope itself is deliberately not a
-registered contract: it adds no analysis meaning, and registering it would create a second
-authority beside the contracts it carries.
+executions, the measurements, the website evidence and the diagnostic findings — in which
+**every member validates against its own merged contract on its own**. The envelope itself
+is deliberately not a registered contract: it adds no analysis meaning, and registering it
+would create a second authority beside the contracts it carries.
 
 **A technical failure is never a finding about the website.** A timeout, a DNS failure, a
 refused target, a broken parser and a response we cannot decode each record why *our process*
 did not measure — carrying no value and no polarity — and fail the run rather than the site.
 Three states are kept apart: *absent* is a fact about the site, *not applicable* a fact about
 the measurement, and *unknown* an assessment that established nothing.
+
+### Findings rest on evidence, and nothing else
+
+A `diagnostic-finding` is the first document allowed to speak about a site in ordinary
+language, so the chain behind it is enforced in code:
+
+```
+DiagnosticFinding.evidence_refs
+  -> WebsiteEvidence.evidence_id
+    -> WebsiteEvidence.measurement_refs
+      -> MeasurementRecord.measurement_id
+```
+
+A finding exists only where the evidence belongs to this run, was itself `KNOWN`, and
+references a measurement of this run that established a value. There is deliberately no path
+from a raw measurement to a conclusion.
+
+Three rules are implemented, each at version `1.0.0`: `HTTP_ERROR_RESPONSE` (a `KNOWN` status
+of 400 or above), `NON_HTTPS_FINAL_TRANSPORT` (a final response `KNOWN` to be plain HTTP) and
+`MISSING_HOMEPAGE_TITLE` (title presence `KNOWN` to be false). Each rule's four product texts —
+summary, business impact, recommended action and limitation — are **constants, not templates**:
+no measured value is interpolated into them, which is why a 418 and a 503 produce byte-identical
+texts and the number stays in the contract-validated measurement record.
+
+**An empty `diagnostic_findings` means only that these three rules emitted nothing.** It never
+means the website is good, complete, compliant or fully assessed.
 
 ### Which destinations may be fetched
 
@@ -164,15 +193,16 @@ for scoring, measurement, synthesis, projection, rendering, persistence or an ad
 by accident. PXK-60 adds the first real module, so the gate is **narrowed rather than dropped**.
 `BEHAVIOR_ALLOWED` in `tests/test_package_scaffold.py` names each authorised module and the
 slice that authorised it; every other module must still be a docstring and nothing else, and an
-entry that is stale, unearned, outside a layer or blanket fails on its own. Today the mapping
-holds exactly one entry:
+entry that is stale, unearned, outside a layer or blanket fails on its own. The mapping reads:
 
 | module | authorised by |
 | --- | --- |
 | `domain/run_state.py` | PXK-60 |
 | `domain/observations.py` | PXK-67 |
+| `domain/findings.py` | PXK-20 |
 | `ports/page_fetch.py`, `ports/html_observation.py` | PXK-67 |
 | `application/analyze_homepage.py` | PXK-67 |
+| `application/derive_findings.py` | PXK-20 |
 | `adapters/contracts/registry.py` | PXK-67 |
 | `adapters/web/*` | PXK-67 |
 | `adapters/inbound/*`, `adapters/composition.py` | PXK-67 |

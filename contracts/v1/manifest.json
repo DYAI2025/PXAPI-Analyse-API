@@ -107,6 +107,20 @@
         "examples/website-evidence.not-applicable.example.json",
         "examples/website-evidence.provider-failure.example.json"
       ]
+    },
+    {
+      "name": "diagnostic-finding",
+      "id": "urn:pxapi:schema:diagnostic-finding:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXK-20",
+      "schema": "schemas/diagnostic-finding.v1.json",
+      "examples": [
+        "examples/diagnostic-finding.example.json",
+        "examples/diagnostic-finding.non-https-transport.example.json",
+        "examples/diagnostic-finding.missing-title.example.json"
+      ]
     }
   ],
   "problem_codes": [

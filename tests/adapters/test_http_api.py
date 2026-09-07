@@ -237,3 +237,62 @@ def test_the_openapi_document_declares_no_request_schema_for_the_endpoint() -> N
     spec = create_app(registry=CONTRACTS).openapi()
     operation = spec["paths"][ENDPOINT]["post"]
     assert "requestBody" not in operation
+
+
+# --- the new canonical member crosses the boundary, and is gated there ----------------------
+
+
+def test_the_endpoint_returns_diagnostic_findings_bound_to_the_evidence_it_served() -> None:
+    """The findings are part of the canonical response, and their chain survives the transport."""
+    with ControlledHttpServer({"/": Route(status=503, body=FULL_PAGE, headers=HTML_HEADERS)}) as s:
+        envelope = client_for(s).post(ENDPOINT, json=request_for(s.url("/"))).json()
+
+    findings = envelope["diagnostic_findings"]
+    assert findings, "a 503 over plain HTTP must produce findings"
+    evidence_ids = {e["evidence_id"] for e in envelope["website_evidence"]}
+    for finding in findings:
+        assert CONTRACTS.validate("diagnostic-finding", finding) == (), finding
+        assert set(finding["evidence_refs"]) <= evidence_ids, (
+            "a finding references phantom evidence"
+        )
+
+
+def test_a_refused_target_returns_no_finding_over_the_wire() -> None:
+    """A permission our process was refused is not something the website did."""
+    envelope = client_for().post(ENDPOINT, json=request_for("http://127.0.0.1:9/")).json()
+    assert envelope["analysis_run_state"]["failure"]["code"] == "TARGET_NOT_PERMITTED"
+    assert envelope["diagnostic_findings"] == []
+
+
+def test_a_finding_that_fails_its_own_contract_is_withheld_rather_than_served() -> None:
+    """The outbound gate covers the new member too, not merely the ones PXK-67 shipped.
+
+    A document this service produced that does not satisfy the contract it claims is a defect
+    in this service. It is reported as one and never returned, so a malformed finding cannot
+    reach a consumer as though it were an analysis result.
+    """
+
+    class BrokenFindings(AnalyzeHomepage):
+        def _findings(self, run_id, measurements, evidence):  # type: ignore[override]
+            # Evidence is the Fact Authority; a finding resting on nothing is exactly the
+            # shape the contract refuses.
+            return [
+                dict(document, evidence_refs=[])
+                for document in super()._findings(run_id, measurements, evidence)
+            ] or [{"schema_version": "1.0.0"}]
+
+    from pxapi.adapters.web.html_observations import read_html
+
+    with ControlledHttpServer({"/": Route(body=FULL_PAGE, headers=HTML_HEADERS)}) as server:
+        analyzer = BrokenFindings(
+            fetcher=SafePageFetcher(policy=loopback_policy()),
+            read_html=read_html,
+            clock=frozen_clock(),
+            new_id=counting_ids(),
+            max_text_length=CONTRACTS.max_single_line_text(),
+        )
+        client = TestClient(create_app(registry=CONTRACTS, analyzer=analyzer))
+        response = client.post(ENDPOINT, json=request_for(server.url("/")))
+
+    document = assert_is_problem(response, "CANONICAL_OUTPUT_INVALID", 500)
+    assert "diagnostic_findings" not in json.dumps(document)

@@ -310,3 +310,96 @@ def test_a_failure_carries_no_free_text_at_all() -> None:
     rendered = repr(result)
     for fragment in ("10.1.2.3", "token.pem", "/var/secrets", "unreadable"):
         assert fragment not in rendered, f"leaked {fragment!r}"
+
+
+# --- the read itself is bounded, not merely the value we keep ---------------------------------
+
+
+def test_the_body_is_read_under_a_bound_rather_than_in_full(monkeypatch) -> None:
+    """Bounding the value we keep is not the same as bounding what we pull off the socket.
+
+    A fetcher that read an unbounded body and then sliced it would satisfy every assertion
+    about the resulting record while still letting a hostile server decide our memory use.
+    """
+    import http.client
+
+    requested: list[int | None] = []
+    original = http.client.HTTPResponse.read
+
+    def spy(self, amt=None):
+        requested.append(amt)
+        return original(self, amt)
+
+    monkeypatch.setattr(http.client.HTTPResponse, "read", spy)
+
+    big = b"a" * 200_000
+    with ControlledHttpServer({"/": Route(body=big, headers=HTML_HEADERS)}) as server:
+        result = fetcher(limits=FetchLimits(max_response_bytes=1_000)).fetch(server.url("/"))
+
+    assert isinstance(result, PageFetchOutcome)
+    assert requested, "canary: the spy saw no read at all"
+    assert all(amt is not None for amt in requested), (
+        f"the body was read without a bound: read({requested})"
+    )
+    assert max(amt for amt in requested if amt is not None) <= 1_001
+
+
+# --- TLS pins the address and still verifies the hostname ---------------------------------------
+
+
+def test_the_tls_connection_dials_the_pinned_address_and_verifies_the_hostname(monkeypatch) -> None:
+    """The two halves of the rebinding defence, asserted separately.
+
+    Dialling the pinned address is what closes the gap between check and connect; verifying
+    the certificate against the *hostname* is what stops that pinning from silently disabling
+    TLS identity. A fetcher that did the first without the second would be worse than neither.
+    """
+    import socket as socket_module
+
+    from pxapi.adapters.web.page_fetcher import PinnedHTTPSConnection
+
+    dialled: list[tuple[str, int]] = []
+    wrapped: list[str] = []
+
+    class FakeSocket:
+        def close(self) -> None: ...
+
+    def fake_create_connection(address, timeout=None, *args, **kwargs):
+        dialled.append(address)
+        return FakeSocket()
+
+    class FakeContext:
+        def wrap_socket(self, sock, server_hostname=None):
+            wrapped.append(server_hostname)
+            return sock
+
+    monkeypatch.setattr(socket_module, "create_connection", fake_create_connection)
+
+    connection = PinnedHTTPSConnection(
+        "example.test",
+        "93.184.216.34",
+        443,
+        5.0,
+        FakeContext(),  # type: ignore[arg-type]
+    )
+    connection.connect()
+
+    assert dialled == [("93.184.216.34", 443)], "the socket must dial the validated address"
+    assert wrapped == ["example.test"], "the certificate must still be checked against the name"
+
+
+def test_the_plain_connection_also_dials_the_pinned_address(monkeypatch) -> None:
+    import socket as socket_module
+
+    from pxapi.adapters.web.page_fetcher import PinnedHTTPConnection
+
+    dialled: list[tuple[str, int]] = []
+
+    def fake_create_connection(address, timeout=None, *args, **kwargs):
+        dialled.append(address)
+        return object()
+
+    monkeypatch.setattr(socket_module, "create_connection", fake_create_connection)
+
+    PinnedHTTPConnection("example.test", "93.184.216.34", 80, 5.0).connect()
+    assert dialled == [("93.184.216.34", 80)]

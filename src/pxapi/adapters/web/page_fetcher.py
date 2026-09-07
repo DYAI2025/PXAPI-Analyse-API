@@ -48,7 +48,7 @@ from pxapi.ports.page_fetch import (
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
-class _PinnedHTTPConnection(http.client.HTTPConnection):
+class PinnedHTTPConnection(http.client.HTTPConnection):
     """Sends ``Host: <hostname>`` but connects to the address the policy validated."""
 
     def __init__(self, host: str, address: str, port: int, connect_timeout: float) -> None:
@@ -59,7 +59,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self.sock = socket.create_connection((self._address, self.port), self.timeout)
 
 
-class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+class PinnedHTTPSConnection(http.client.HTTPSConnection):
     """The same pinning for TLS, with the certificate still checked against the hostname."""
 
     def __init__(
@@ -197,10 +197,10 @@ class SafePageFetcher:
     ) -> http.client.HTTPConnection:
         address = target.addresses[0]
         if target.is_https:
-            return _PinnedHTTPSConnection(
+            return PinnedHTTPSConnection(
                 target.host, address, target.port, connect_timeout, ssl.create_default_context()
             )
-        return _PinnedHTTPConnection(target.host, address, target.port, connect_timeout)
+        return PinnedHTTPConnection(target.host, address, target.port, connect_timeout)
 
     @staticmethod
     def _request_path(url: str) -> str:

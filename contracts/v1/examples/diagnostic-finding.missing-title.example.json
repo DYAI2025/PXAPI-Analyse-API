@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "finding_id": "fnd-01JQ8Z4K2M0000000000000003",
+  "rule_id": "MISSING_HOMEPAGE_TITLE",
+  "rule_version": "1.0.0",
+  "finding_class": "HOMEPAGE_TITLE_MISSING",
+  "evidence_refs": ["evd-01JQ8Z4K2M0000000000000003"],
+  "finding_summary": "No homepage title was observed in the analysed HTML response.",
+  "business_impact": "A missing title removes an explicit page-level label used by browsers and search systems, which can reduce clarity in tabs and search presentation.",
+  "recommended_action": "Add a concise, page-specific HTML title that accurately identifies the homepage.",
+  "limitation": "This finding covers only the analysed homepage response and does not by itself establish search ranking, search visibility or site-wide SEO quality."
+}

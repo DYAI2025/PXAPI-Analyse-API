@@ -1,0 +1,50 @@
+{
+  "contract": "diagnostic-finding",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "finding-summary-missing": {
+      "proves": "Every member of a finding is required. A finding that states no summary is not a partially filled finding, it is a document nobody can act on, so it is refused rather than rendered with a gap.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "limitation-missing": {
+      "proves": "The bound is mandatory. A finding read without what it does not establish is the most likely way this contract gets misused, so the document carries its own limitation rather than relying on a reader to know one.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "business-impact-blank": {
+      "proves": "A product text that is present but empty is not a text. The shared single-line rule refuses it, so an unfilled template cannot travel as though it were an interpretation.",
+      "violations": [{ "pointer": "/business_impact", "keyword": "pattern" }]
+    },
+    "finding-summary-multiline": {
+      "proves": "A finding text stays a single bounded line. A newline would break a renderer, a log line and a header alike, and the shared rule refuses every C0 and C1 control rather than merely CR and LF.",
+      "violations": [{ "pointer": "/finding_summary", "keyword": "pattern" }]
+    },
+    "evidence-refs-empty": {
+      "proves": "The rule this contract exists for: evidence is the Fact Authority. A finding that names no evidence is an assertion about a website nobody established anything about, and it is structurally not representable.",
+      "violations": [{ "pointer": "/evidence_refs", "keyword": "minItems" }]
+    },
+    "evidence-refs-duplicated": {
+      "proves": "The same evidence counted twice would overstate what a finding rests on. Uniqueness makes the reference list a set of distinct facts rather than a weighting.",
+      "violations": [{ "pointer": "/evidence_refs", "keyword": "uniqueItems" }]
+    },
+    "rule-id-lowercase": {
+      "proves": "The rule vocabulary is open but not free text: it keeps a stable upper-snake shape, so a rule a later slice introduces stays a token rather than prose.",
+      "violations": [{ "pointer": "/rule_id", "keyword": "pattern" }]
+    },
+    "unrecognised-future-property": {
+      "proves": "The root is closed. A member a later slice might want cannot arrive early and unreviewed on the strength of a producer having written it.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "score-property": {
+      "proves": "This slice introduces no scoring of any kind. A finding able to carry a score would settle the weighting question by accident, before any score model has been defined or authorised.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "overall-intervention-level-property": {
+      "proves": "No severity, priority or intervention model exists yet. The closed root refuses the member outright, so an urgency nobody has defined cannot be attached to a finding and then read as though it were measured.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "measurement-refs-property": {
+      "proves": "A finding may not bypass website evidence and point straight at a raw measurement. Evidence is where a statement about a site is allowed to be made at all, and the chain stays finding to evidence to measurement.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    }
+  }
+}

@@ -15,6 +15,11 @@ Three distinctions do the work, and they are deliberately kept apart:
 * **unknown** — the assessment ran and established nothing: the text will not fit the contract,
   or the body was truncated before we could have seen the element. Never rendered as absence.
 
+Established evidence is then handed to the finding rules. A finding is emitted only where the
+chain holds — evidence of this run, itself ``KNOWN``, referencing a measurement of this run that
+established a value — so none of the paths above can produce one, and a run that measured
+nothing carries an empty list rather than a verdict.
+
 The layer holds no transport and no parser. It is handed a fetcher, a reader, a clock and an id
 factory, which is what lets one frozen input produce byte-identical documents on every run.
 """
@@ -26,6 +31,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
+from pxapi.application.derive_findings import derive_findings
 from pxapi.domain.observations import (
     COLLECTOR,
     COLLECTOR_VERSION,
@@ -180,6 +186,7 @@ class AnalyzeHomepage:
         final = transition(state, RunState.FAILED)
         return self._envelope(
             request=request,
+            findings=self._findings(run_id, measurements, evidence),
             run_state=self._run_state(
                 run_id,
                 final,
@@ -293,6 +300,7 @@ class AnalyzeHomepage:
         ]
         return self._envelope(
             request=request,
+            findings=self._findings(run_id, measurements, evidence),
             run_state=self._run_state(run_id, final, started, fetch_finished),
             stages=stages,
             measurements=measurements,
@@ -464,6 +472,19 @@ class AnalyzeHomepage:
             "measurement_refs": [measurement["measurement_id"]],
         }
 
+    def _findings(
+        self,
+        run_id: str,
+        measurements: list[dict[str, Any]],
+        evidence: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """The findings the authorised rules emit for what was actually established.
+
+        Derived from the evidence rather than from the measurements, so a conclusion
+        cannot skip the one document type that is allowed to speak about the site.
+        """
+        return derive_findings(run_id, measurements, evidence, self.new_id)
+
     def _run_state(
         self,
         run_id: str,
@@ -502,6 +523,7 @@ class AnalyzeHomepage:
         stages: list[dict[str, Any]],
         measurements: list[dict[str, Any]],
         evidence: list[dict[str, Any]],
+        findings: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """The canonical response: a transport composition of independently valid documents.
 
@@ -515,4 +537,5 @@ class AnalyzeHomepage:
             "stage_executions": stages,
             "measurements": measurements,
             "website_evidence": evidence,
+            "diagnostic_findings": findings,
         }

@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "finding_id": "fnd-01JQ8Z4K2M0000000000000002",
+  "rule_id": "NON_HTTPS_FINAL_TRANSPORT",
+  "rule_version": "1.0.0",
+  "finding_class": "HOMEPAGE_FINAL_TRANSPORT_NOT_HTTPS",
+  "evidence_refs": ["evd-01JQ8Z4K2M0000000000000002"],
+  "finding_summary": "The analysed homepage's final response was observed over HTTP rather than HTTPS.",
+  "business_impact": "Serving the homepage without HTTPS removes TLS transport protection for that response and can trigger browser security indicators.",
+  "recommended_action": "Serve the public homepage over HTTPS and redirect the HTTP entry point to an HTTPS final response.",
+  "limitation": "This observation covers only the analysed homepage response and does not establish the TLS configuration, certificate quality or security posture of the entire site."
+}

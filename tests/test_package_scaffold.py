@@ -22,9 +22,11 @@ LAYERS = ("domain", "ports", "application", "adapters", "config")
 BEHAVIOR_ALLOWED: dict[str, str] = {
     "domain/run_state.py": "PXK-60",
     "domain/observations.py": "PXK-67",
+    "domain/findings.py": "PXK-20",
     "ports/page_fetch.py": "PXK-67",
     "ports/html_observation.py": "PXK-67",
     "application/analyze_homepage.py": "PXK-67",
+    "application/derive_findings.py": "PXK-20",
     "adapters/contracts/registry.py": "PXK-67",
     "adapters/web/target_policy.py": "PXK-67",
     "adapters/web/page_fetcher.py": "PXK-67",

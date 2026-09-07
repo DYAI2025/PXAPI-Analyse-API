@@ -49,6 +49,42 @@ STAGE_TERMINAL: list[str] = [name for name in STAGE_STATUSES if name != "RUNNING
 #: third mode is rejected by the contract before any component could act on it.
 SCAN_MODES: list[str] = ["PUBLIC_NON_INVASIVE", "OWNER_VERIFIED_CONTROLLED"]
 
+#: How a performed assessment collected its result. Neither value means "not assessed": whether
+#: an assessment happened at all is a separate member, so absence is never inferred from a mode.
+COLLECTION_MODES: list[str] = ["MEASURED", "OBSERVED"]
+
+#: What a performed assessment established. ``KNOWN`` is the only state that carries a website
+#: value; the other three are outcomes about the assessment, not findings about the site.
+RESULT_STATES: list[str] = ["KNOWN", "UNKNOWN", "CONFLICT", "NOT_APPLICABLE"]
+
+#: Why an assessment never happened. Every reason names the analysis process — a provider, our
+#: own runtime, a permission, a time budget, an unsupported subject, or nobody having asked —
+#: and none of them says anything about the website. That is what makes the set closed: an open
+#: token could carry a reason that does.
+NOT_ASSESSED_REASONS: list[str] = [
+    "PROVIDER_FAILURE",
+    "RUNTIME_ERROR",
+    "PERMISSION_DENIED",
+    "TIMEOUT",
+    "UNSUPPORTED",
+    "NOT_REQUESTED",
+]
+
+#: Whether evidence speaks for or against the website. There is deliberately no ``NEUTRAL``: a
+#: KNOWN observation carrying no judgement omits the member, so nobody has to decide what a
+#: neutral verdict would mean.
+POLARITIES: list[str] = ["POSITIVE", "NEGATIVE"]
+
+#: The types a measured value may take, chosen by the result's own ``value_type`` discriminator.
+#: The set is closed, which is what keeps the value from becoming an open node.
+VALUE_TYPES: list[str] = ["BOOLEAN", "INTEGER", "TEXT", "URL"]
+
+#: The one result state that carries a value about the website. Both carriers key a conditional
+#: on it — a measurement may hold a result, and evidence may hold a polarity, only here — so it
+#: is stated once and pinned at both sites through the pointer below.
+VALUED_RESULT_STATE = "KNOWN"
+VALUED_STATE_POINTER = "#/allOf/0/if/properties/assessment/properties/result_state/const"
+
 #: Every closed vocabulary this module pins, as ``(schema file, JSON pointer) -> exact value``.
 PINNED: dict[tuple[str, str], Any] = {
     ("analysis-run-request.v1.json", "#/properties/scan_mode/enum"): SCAN_MODES,
@@ -57,6 +93,23 @@ PINNED: dict[tuple[str, str], Any] = {
     ("analysis-run-state.v1.json", "#/allOf/1/if/properties/state/const"): "FAILED",
     ("stage-execution-record.v1.json", "#/properties/status/enum"): STAGE_STATUSES,
     ("stage-execution-record.v1.json", "#/allOf/0/if/properties/status/enum"): STAGE_TERMINAL,
+    ("assessment.v1.json", "#/$defs/collection_mode/enum"): COLLECTION_MODES,
+    ("assessment.v1.json", "#/$defs/result_state/enum"): RESULT_STATES,
+    ("assessment.v1.json", "#/$defs/not_assessed_reason/enum"): NOT_ASSESSED_REASONS,
+    ("measurement-record.v1.json", "#/properties/result/properties/value_type/enum"): VALUE_TYPES,
+    ("measurement-record.v1.json", VALUED_STATE_POINTER): VALUED_RESULT_STATE,
+    ("website-evidence.v1.json", "#/properties/polarity/enum"): POLARITIES,
+    ("website-evidence.v1.json", VALUED_STATE_POINTER): VALUED_RESULT_STATE,
+    # The four value_type branches, derived from the vocabulary rather than listed: this pins
+    # that there is exactly one branch per declared type, in the declared order, so a fifth
+    # type cannot arrive without a branch and a branch cannot be dropped without a red test.
+    **{
+        (
+            "measurement-record.v1.json",
+            f"#/properties/result/allOf/{index}/if/properties/value_type/const",
+        ): value_type
+        for index, value_type in enumerate(VALUE_TYPES)
+    },
 }
 
 #: The one vocabulary a generic registry rule already owns: every contract's ``schema_version``
@@ -137,6 +190,11 @@ def test_a_delegated_vocabulary_names_a_test_that_exists(owner: tuple[str, str])
 
 
 # --- the canaries -----------------------------------------------------------------------------
+
+
+def test_the_valued_result_state_belongs_to_the_result_state_vocabulary() -> None:
+    """The token both carriers key on must be one the vocabulary actually declares."""
+    assert VALUED_RESULT_STATE in RESULT_STATES
 
 
 def test_the_registry_declares_something_to_pin() -> None:

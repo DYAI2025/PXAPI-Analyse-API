@@ -1,0 +1,46 @@
+{
+  "contract": "measurement-record",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "assessment-both-groups": {
+      "proves": "A record cannot claim both that it was performed and that it was never assessed. The two groups are mutually exclusive by structure, so no consumer ever has to decide which half of a contradictory document to believe.",
+      "violations": [{ "pointer": "/assessment", "keyword": "not" }]
+    },
+    "performed-without-result-state": {
+      "proves": "A performed assessment states both how it was collected and what came of it. A collection_mode alone would describe an activity with no outcome, which a reader could only fill in by guessing.",
+      "violations": [{ "pointer": "/assessment", "keyword": "required" }]
+    },
+    "not-assessed-with-website-value": {
+      "proves": "The central rule of this slice: a record that was never assessed carries no website value. A provider failure therefore cannot present itself as a measured fact about the site.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "known-without-result": {
+      "proves": "The converse: a KNOWN result state without a result would assert that something is known while carrying nothing that says what.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "collection-mode-unknown": {
+      "proves": "The collection_mode vocabulary is closed at MEASURED and OBSERVED. An invented third mode is rejected by the contract before any component could act on it.",
+      "violations": [{ "pointer": "/assessment/collection_mode", "keyword": "enum" }]
+    },
+    "result-state-unknown": {
+      "proves": "The result_state vocabulary is closed at four values. A fifth token would give a consumer a state whose polarity rules nobody has decided.",
+      "violations": [{ "pointer": "/assessment/result_state", "keyword": "enum" }]
+    },
+    "not-assessed-reason-unknown": {
+      "proves": "The not_assessed_reason vocabulary is closed at six values. Unlike metric_id, this one is not an open token: every reason must describe the analysis process, and an open set could not guarantee that.",
+      "violations": [{ "pointer": "/assessment/not_assessed_reason", "keyword": "enum" }]
+    },
+    "inline-raw-html": {
+      "proves": "Raw provider payloads never live inline in a normalised record. The closed root refuses the member, so a captured HTML body cannot ride along into everything downstream that reads this contract.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "result-type-mismatch": {
+      "proves": "The result is a discriminated value, not an open node: value_type INTEGER requires integer_value and forbids every other typed member, so the declared type and the carried value cannot disagree.",
+      "violations": [{ "pointer": "/result", "keyword": "required" }]
+    },
+    "metric-id-lowercase": {
+      "proves": "An open vocabulary is not a free-text member: metric_id still has a lexical shape, so any metric a later slice introduces is a stable upper-snake token rather than prose.",
+      "violations": [{ "pointer": "/metric_id", "keyword": "pattern" }]
+    }
+  }
+}

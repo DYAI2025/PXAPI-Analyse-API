@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "measurement_id": "msr-01JQ8Z4K2M0000000000000002",
+  "metric_id": "PAGE_TITLE",
+  "source_url": "https://example.com/",
+  "observed_at": "2026-09-06T09:12:47Z",
+  "collector": "HTML_BASELINE",
+  "collector_version": "1.0.0",
+  "assessment": {
+    "collection_mode": "OBSERVED",
+    "result_state": "KNOWN"
+  },
+  "result": {
+    "value_type": "TEXT",
+    "text_value": "Example Domain"
+  },
+  "raw_artifact_ref": "art-01JQ8Z4K2M0000000000000001"
+}

@@ -310,7 +310,7 @@ No secrets, tokens or raw response bodies were copied into this document.
    canonical link. Fixed in `c205f81`: gzip and deflate are decoded, and an encoding we cannot
    decode is recorded as a runtime error of ours rather than as an absent element. This is the
    strongest argument in this document for keeping the live smoke a delivery requirement —
-   1,050 passing offline tests did not catch it.
+   1,092 passing offline tests did not catch it.
 2. **The reviewability figure is over the convention.** See section E; a Product Owner decision.
 3. **Packaging.** `contracts/v1/` sits outside the wheel's `src/pxapi` package. The runtime
    locates it by path with a `PXAPI_CONTRACTS_DIR` override. Packaging the registry into a

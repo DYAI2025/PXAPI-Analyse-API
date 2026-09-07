@@ -34,6 +34,9 @@ limiting, no persistence and no deployment. See section F.
 | `7552f80` | `test(pxk-67): prove a real response becomes evidence and a failure never does` |
 | `364e2cc` | `test(pxk-67): close the three gaps a countermutation pass exposed` |
 | `c205f81` | `fix(pxk-67): decode compressed responses instead of reporting the site as empty` |
+| `850819f` | `docs(pxk-67): record the real request path, the target boundary and the smoke` |
+| `b16fecf` | `docs(pxk-67): correct the suite size at the moment the smoke found the defect` |
+| `791cea5` | `fix(pxk-67): state the URL each fact was actually observed against` |
 
 The first commit was verified green on its own by moving the not-yet-committed test
 directories aside and running the suite: `830 passed`.
@@ -127,6 +130,49 @@ The `single_line_text` bound is **read out of the schema** at runtime
 (`ContractRegistry.max_single_line_text()`, mirroring the existing `max_problem_errors()`), so
 no collector holds a copy of the number that could disagree with the contract.
 
+### Observation context after a redirect
+
+`measurement-record.v1` defines `source_url` as *the URL the observation was made against*, and
+`website-evidence.v1` as *the URL this evidence is about*. A redirect produces two URLs that
+both answer honestly, to different questions, and the first implementation collapsed them: every
+record took the request's `target_url`, so after `/from` -> `/final` the status, content type,
+transport and every HTML element read off the final response were stated as though the site had
+said them at `/from`. Both documents still validated. **A validator cannot check what a URL
+means**, which is why this had to be pinned by assertion instead. Fixed in `791cea5`.
+
+The contracts define the meaning but not a metric-by-metric table, so the mapping below is a
+bounded Product-Owner interpretation derived from that meaning — not literal schema text.
+
+| Metric | `source_url` context | Why |
+| --- | --- | --- |
+| `FINAL_URL` | requested target | describes how the *submitted* URL resolved |
+| `REDIRECT_COUNT` | requested target | same: an outcome of the path, counted from the start |
+| `HTTP_STATUS` | final response URL | read off the response that arrived |
+| `CONTENT_TYPE` | final response URL | " |
+| `TRANSPORT_IS_HTTPS` | final response URL | " |
+| `PAGE_TITLE_PRESENT` | final response URL | " |
+| `PAGE_TITLE` | final response URL | " |
+| `META_DESCRIPTION_PRESENT` | final response URL | " |
+| `META_DESCRIPTION` | final response URL | " |
+| `CANONICAL_PRESENT` | final response URL | " |
+| `CANONICAL_URL` | final response URL | " |
+
+The final-response context also holds when those metrics become `NOT_APPLICABLE`, performed
+`UNKNOWN`, or `RUNTIME_ERROR` after a response was already obtained: the question was still
+asked of that response.
+
+`WebsiteEvidence.source_url` is **read off the MeasurementRecord it references** rather than
+passed in beside it, so `evidence.source_url == referenced_measurement.source_url` holds by
+construction. The divergence is removed rather than corrected. `analysis_run_request.target_url`
+is untouched and remains the URL that was submitted.
+
+Where nothing was measured there is no second context, and that path is unchanged: with no
+response there is no final URL to name, and per-hop failure provenance is deliberately **not**
+redesigned here (see section G).
+
+For a target that does not redirect, requested and final are the same URL, so observable
+behaviour is unchanged — which is exactly why 1,102 passing tests did not see this either.
+
 ### Public-target boundary
 
 Decided before any socket exists, and again on every redirect hop:
@@ -173,6 +219,7 @@ validation the tests exercise is the code the service runs. It lost 178 lines of
 | After declaring the runtime dependency | `uv run pytest -q` | `4 failed, 740 passed` — only the isolation guard |
 | After the guard was narrowed and modules allowlisted | `uv run pytest -q` | `18 failed, 779 passed` — every failure a module not yet written |
 | Target policy, before implementation | `uv run pytest tests/adapters/test_target_policy.py` | `ModuleNotFoundError` |
+| Redirect provenance, before the repair (`791cea5`) | `uv run pytest tests/application/test_analyze_homepage.py -q` | `2 failed, 39 passed` |
 
 Two real defects were found by the tests during implementation, before any commit: whitespace
 runs were not collapsing (`split(" ")` preserves the empty strings between spaces), and element
@@ -186,8 +233,10 @@ over-long title report as "this page has no title".
 | Lockfile | `uv lock --check` | `Resolved 29 packages` |
 | Lint | `uv run ruff check .` | `All checks passed!` |
 | Format | `uv run ruff format --check .` | `56 files already formatted` |
-| Full suite, Python 3.13 (primary) | `uv run pytest -q` | `1102 passed` |
-| Full suite, Python 3.14 (compat) | `uv run --python 3.14 pytest -q` | `1102 passed` |
+| Full suite, Python 3.13 (primary) | `uv run pytest -q` | `1106 passed` |
+| Full suite, Python 3.14 (compat) | `uv run --python 3.14 pytest -q` | `1106 passed` |
+
+The four added tests are the redirect-provenance regression described in section D.
 
 ### The gates were observed failing, not merely observed green
 
@@ -224,13 +273,34 @@ After the gaps were closed (`364e2cc`), all three were re-run and a fourth added
 | M8′ | TLS connects by hostname | `1 failed` |
 | M9 | TLS verifies the certificate against the pinned address | `1 failed` |
 
+A further round was run against the redirect-provenance repair. Each mutation was applied to a
+**verified-clean** copy of the repaired file, not stacked on the previous one: the first restore
+in this round silently failed (`cp` had written the pristine copy to `$TMPDIR`, not where the
+restore read from), two mutations therefore ran on top of a third, and the resulting reds proved
+nothing. The round was discarded and re-run, with each pass printing a contamination check that
+counts the other two mutations' markers and requires `0`.
+
+| # | Mutation | Result | What it proves |
+| --- | --- | --- | --- |
+| P1 | final-response metrics forced back to the requested URL (the original defect) | `2 failed` | the metric mapping is asserted, not incidental |
+| P2 | evidence stops reading its context off the record it references | `1 failed` | the evidence link is independently pinned |
+| P3 | `PATH_OUTCOME_METRICS` emptied, so `FINAL_URL`/`REDIRECT_COUNT` take the final URL | `2 failed` | the *other* half of the mapping is pinned too |
+
+P2 failing **only** the evidence test, and P3 failing the path-outcome test that P1 leaves
+green, is the evidence that the three rules are separately held rather than one assertion
+covering for the rest. After the round, `diff` against the pristine copy was empty, `grep` for
+every mutation marker across `src/` and `tests/` returned nothing, and the suite was green.
+
 ### Reviewability
 
 | Measurement | Command | Value |
 | --- | --- | --- |
-| Diff size | `git diff --no-ext-diff --unified=0 origin/main...HEAD \| wc -c` | `212242` |
-| Diff size excluding `uv.lock` | same, `-- ':!uv.lock'` | `184496` |
+| Diff size | `git diff --no-ext-diff --unified=0 origin/main...HEAD \| wc -c` | `244423` |
+| Diff size excluding `uv.lock` | same, `-- ':!uv.lock'` | `216677` |
 | Deletions in `contracts/v1/manifest.json` | `git diff -U0 … \| grep -c '^-[^-]'` | `0` |
+
+The figure grew from `212242` as the evidence document was written (`850819f`, `b16fecf`,
+`+26761 B`) and the provenance repair added `8438 B`; no production file grew materially.
 
 **This exceeds the ~140,000-byte convention PXK-59 was measured against, and is flagged rather
 than worked around.** The largest contributors are the use case (20,842 B), the fetcher suite
@@ -265,40 +335,64 @@ network, and `python-compat.yml` has no isolation that would contain a flaky liv
 
 Command: `uv run python -m pxapi.adapters.inbound.cli <url>`
 
-**Required target — `https://example.com/`**, at `2026-09-07T12:36:46Z`:
+Re-run in full on the exact candidate `791cea527c36eb69d930a79e9a94fdd055bac5be` with a clean
+working tree (`git status --porcelain` empty). The previous smoke belongs to the previous head
+and is not evidence for this one.
 
-| Metric | Assessment | Value |
-| --- | --- | --- |
-| `HTTP_STATUS` | `KNOWN` | `200` |
-| `FINAL_URL` | `KNOWN` | `https://example.com/` |
-| `TRANSPORT_IS_HTTPS` | `KNOWN` | `true` |
-| `CONTENT_TYPE` | `KNOWN` | `text/html` |
-| `PAGE_TITLE_PRESENT` | `KNOWN` | `true` |
-| `PAGE_TITLE` | `KNOWN` | `Example Domain` |
-| `META_DESCRIPTION_PRESENT` | `KNOWN` | `false` |
-| `META_DESCRIPTION` | `NOT_APPLICABLE` | — |
-| `CANONICAL_PRESENT` | `KNOWN` | `false` |
-| `CANONICAL_URL` | `NOT_APPLICABLE` | — |
-| `REDIRECT_COUNT` | `KNOWN` | `0` |
+**Required target — `https://example.com/`**, at `2026-09-07T14:11:53Z`:
 
-- run id `px-0bad24f0db884c6396dbab525bbf6bef`, run state `SUCCEEDED`
+| Metric | Assessment | Value | `source_url` |
+| --- | --- | --- | --- |
+| `HTTP_STATUS` | `KNOWN` | `200` | `https://example.com/` |
+| `FINAL_URL` | `KNOWN` | `https://example.com/` | `https://example.com/` |
+| `TRANSPORT_IS_HTTPS` | `KNOWN` | `true` | `https://example.com/` |
+| `REDIRECT_COUNT` | `KNOWN` | `0` | `https://example.com/` |
+| `CONTENT_TYPE` | `KNOWN` | `text/html` | `https://example.com/` |
+| `PAGE_TITLE_PRESENT` | `KNOWN` | `true` | `https://example.com/` |
+| `PAGE_TITLE` | `KNOWN` | `Example Domain` | `https://example.com/` |
+| `META_DESCRIPTION_PRESENT` | `KNOWN` | `false` | `https://example.com/` |
+| `META_DESCRIPTION` | `NOT_APPLICABLE` | — | `https://example.com/` |
+| `CANONICAL_PRESENT` | `KNOWN` | `false` | `https://example.com/` |
+| `CANONICAL_URL` | `NOT_APPLICABLE` | — | `https://example.com/` |
+
+- run id `px-2e4e50e4b6cf47af83d69007ff71c80e`, run state `SUCCEEDED`,
+  `entered_at` `2026-09-07T14:11:53Z`, `finished_at` `2026-09-07T14:11:54Z`
 - collector `HOMEPAGE_BASELINE_COLLECTOR`, method version `1.0.0`
 - 26 documents produced, **0 invalid** against the merged contracts
+- 11 evidence documents, each referencing the `measurement_id` it was derived from; e.g.
+  measurement `px-e3cf259beff841d28850571cfabe8906` -> evidence
+  `px-abfc98fe2664456daeb45c16b6613f56`
+- `evidence.source_url == referenced_measurement.source_url` for **11 of 11** references,
+  checked directly against the emitted JSON rather than through the test suite
 - no evidence document carries a polarity
-- each of the 11 evidence documents references the `measurement_id` it was derived from
 
-**Optional exploratory target — `https://www.python.org/`** (not an acceptance gate and not a
-CI dependency): `PAGE_TITLE` = `Welcome to Python.org`, `META_DESCRIPTION` = `The official home
-of the Python Programming Language`, `CANONICAL_PRESENT` = `false`. 26 documents, 0 invalid.
+This target does not redirect, so requested and final are the same URL and the provenance repair
+is **not observable here** — which is the point of the exploratory target below.
 
-The reported absence of a canonical link was **verified independently** against the raw HTML
-(`grep -ioc 'rel="canonical"'` over the saved response → `0`) rather than trusted from our own
-output, and the title and description were confirmed to match the bytes the server sent.
+**Optional exploratory target — `http://www.python.org/`** (not an acceptance gate and not a CI
+dependency). It answers `301` to `https://www.python.org/`, which is the case the repair exists
+for. 26 documents, 0 invalid, 11 of 11 evidence references matching:
+
+| Metric | Value | `source_url` |
+| --- | --- | --- |
+| `FINAL_URL` | `https://www.python.org/` | `http://www.python.org/` |
+| `REDIRECT_COUNT` | `1` | `http://www.python.org/` |
+| `HTTP_STATUS` | `200` | `https://www.python.org/` |
+| `TRANSPORT_IS_HTTPS` | `true` | `https://www.python.org/` |
+| `CONTENT_TYPE` | `text/html; charset=utf-8` | `https://www.python.org/` |
+| `PAGE_TITLE` | `Welcome to Python.org` | `https://www.python.org/` |
+| `META_DESCRIPTION` | `The official home of the Python Programming Language` | `https://www.python.org/` |
+| `CANONICAL_PRESENT` | `false` | `https://www.python.org/` |
+
+Before the repair this run published `TRANSPORT_IS_HTTPS: true` with
+`source_url: http://www.python.org/` — a record contradicting itself, and one no schema could
+refuse. Both URL contexts now survive into the evidence documents as well.
 
 **Blocked target, live:** `http://169.254.169.254/latest/meta-data/` produced run state
 `FAILED`, `failure.code` `TARGET_NOT_PERMITTED`, every measurement
-`not_assessed_reason: PERMISSION_DENIED`, no `result` on any measurement and no polarity on any
-evidence. 25 documents, 0 invalid. No connection was attempted.
+`not_assessed_reason: PERMISSION_DENIED`, **0** measurements carrying a `result` and **0**
+evidence documents carrying a polarity. 25 documents, 0 invalid. No connection was attempted,
+and the failure path's provenance is unchanged by this repair.
 
 No secrets, tokens or raw response bodies were copied into this document.
 
@@ -311,13 +405,25 @@ No secrets, tokens or raw response bodies were copied into this document.
    decode is recorded as a runtime error of ours rather than as an absent element. This is the
    strongest argument in this document for keeping the live smoke a delivery requirement —
    1,092 passing offline tests did not catch it.
-2. **The reviewability figure is over the convention.** See section E; a Product Owner decision.
-3. **Packaging.** `contracts/v1/` sits outside the wheel's `src/pxapi` package. The runtime
+2. **A second truth defect was found by review, not by the suite: redirect provenance.**
+   Every fact was published against the requested URL rather than the URL it was observed
+   against. Fixed in `791cea5` and described in section D. Like the gzip defect, it survived a
+   full green suite — 1,102 tests — because every offline test fetched a URL that does not
+   redirect, so the two contexts were never distinguishable. The lesson is the same one section
+   G.1 records: a passing suite proves the cases it exercises, and nothing else.
+3. **Per-hop failure provenance was deliberately not redesigned.** Where no response was
+   obtained there is no final URL, and every record keeps the requested URL. That is coherent,
+   but a failure *after* one or more successful hops is not modelled at all: the chain is not
+   represented, so a redirect that succeeded and then timed out reports only the original
+   target. Whether the hop chain should be evidence is a product decision, not an
+   implementation convenience, and is left open rather than settled quietly here.
+4. **The reviewability figure is over the convention.** See section E; a Product Owner decision.
+5. **Packaging.** `contracts/v1/` sits outside the wheel's `src/pxapi` package. The runtime
    locates it by path with a `PXAPI_CONTRACTS_DIR` override. Packaging the registry into a
    distributable artifact is deliberately deferred; deployment is out of scope.
-4. **`brotli` and `zstd` responses are not decodable** and are reported as such. Whether to add
+6. **`brotli` and `zstd` responses are not decodable** and are reported as such. Whether to add
    a decoder is a product decision, not an implementation convenience.
-5. **Evidence is currently one document per measurement.** That establishes the referencing
+7. **Evidence is currently one document per measurement.** That establishes the referencing
    chain honestly but adds no information over the measurements. Whether evidence should
    aggregate is a decision for the slice that first needs a judgement.
 

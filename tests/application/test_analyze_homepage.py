@@ -173,6 +173,95 @@ def test_no_evidence_invents_a_polarity() -> None:
         assert "polarity" not in evidence
 
 
+# --- a redirect keeps two URL contexts apart ------------------------------------------------
+
+REDIRECTED = {
+    "/from": Route(status=302, headers={"Location": "/final"}),
+    "/final": Route(body=FULL_PAGE, headers=HTML_HEADERS),
+}
+
+#: The metrics that describe how the submitted target resolved. Their context is the URL the
+#: caller asked about, because that is where the redirect path began.
+PATH_OUTCOME = (Metric.FINAL_URL, Metric.REDIRECT_COUNT)
+
+#: Everything read off the response that actually arrived. Their context is the URL that
+#: response came from, which after a redirect is not the URL that was submitted.
+FINAL_RESPONSE = (
+    Metric.HTTP_STATUS,
+    Metric.CONTENT_TYPE,
+    Metric.TRANSPORT_IS_HTTPS,
+    Metric.PAGE_TITLE_PRESENT,
+    Metric.PAGE_TITLE,
+    Metric.META_DESCRIPTION_PRESENT,
+    Metric.META_DESCRIPTION,
+    Metric.CANONICAL_PRESENT,
+    Metric.CANONICAL_URL,
+)
+
+
+def analyse_redirected() -> tuple[dict, str, str]:
+    """One run through ``/from`` -> ``/final``, with both URLs to assert against."""
+    with ControlledHttpServer(REDIRECTED) as server:
+        requested, final = server.url("/from"), server.url("/final")
+        envelope = use_case(SafePageFetcher(policy=loopback_policy())).run(request_for(requested))
+    return envelope, requested, final
+
+
+def test_a_redirect_does_not_move_the_request_off_the_submitted_target() -> None:
+    envelope, requested, final = analyse_redirected()
+    assert requested != final, "canary: the two contexts must be distinguishable"
+    assert envelope["analysis_run_request"]["target_url"] == requested
+    assert_envelope_validates(envelope)
+
+
+def test_the_redirect_outcome_is_stated_against_the_submitted_target() -> None:
+    """Where the path ended, and how many hops it took, are answers about what was asked."""
+    envelope, requested, final = analyse_redirected()
+    found = measurements_by_metric(envelope)
+
+    assert found[Metric.FINAL_URL]["result"]["url_value"] == final
+    assert found[Metric.REDIRECT_COUNT]["result"]["integer_value"] == 1
+    for metric in PATH_OUTCOME:
+        assert found[metric]["source_url"] == requested, metric
+
+
+def test_every_fact_read_off_the_response_names_the_url_it_came_from() -> None:
+    """The defect this closes: a fact observed at ``/final`` published as though ``/from``.
+
+    Both documents would still satisfy their schemas, which is exactly why the provenance has
+    to be asserted here: a status, a content type or a title carrying the wrong observation
+    context is a semantically false record that no contract can refuse.
+    """
+    envelope, requested, final = analyse_redirected()
+    assert requested != final, "canary: the two contexts must be distinguishable"
+    found = measurements_by_metric(envelope)
+
+    # The facts are genuinely the final response's, so their context must be too.
+    assert found[Metric.PAGE_TITLE]["result"]["text_value"] == "Example Domain"
+    assert found[Metric.META_DESCRIPTION]["result"]["text_value"] == "A page used for examples."
+    assert found[Metric.CANONICAL_PRESENT]["result"]["boolean_value"] is True
+
+    for metric in FINAL_RESPONSE:
+        assert found[metric]["source_url"] == final, metric
+
+
+def test_evidence_states_the_same_context_as_the_measurement_it_rests_on() -> None:
+    """Evidence takes its context from what it references, so the two cannot drift apart."""
+    envelope, requested, final = analyse_redirected()
+    by_id = {m["measurement_id"]: m for m in envelope["measurements"]}
+
+    assert envelope["website_evidence"], "canary: the run must have produced evidence"
+    for evidence in envelope["website_evidence"]:
+        refs = evidence["measurement_refs"]
+        assert refs, "evidence must name what it rests on"
+        assert set(refs) <= set(by_id), "evidence references a phantom id"
+        for ref in refs:
+            assert evidence["source_url"] == by_id[ref]["source_url"], ref
+
+    contexts = {e["source_url"] for e in envelope["website_evidence"]}
+    assert contexts == {requested, final}, "both contexts must survive into the evidence"
+
+
 # --- the run lifecycle is the accepted one ------------------------------------------------
 
 

@@ -87,6 +87,14 @@ ALL_METRICS = (
     *HTML_METRICS,
 )
 
+#: The metrics that describe how the *submitted* target resolved, rather than what the response
+#: that arrived said. Once a redirect has been followed there are two honest URL contexts, and
+#: collapsing them is how a title read off ``https://b.example/final`` gets published as though
+#: the site said it at ``https://a.example/from``. Both records would still satisfy their
+#: schemas, so nothing but this distinction can refuse the false one. Every metric *not* named
+#: here is a fact read off the final response, and belongs to the URL that response came from.
+PATH_OUTCOME_METRICS = frozenset({Metric.FINAL_URL, Metric.REDIRECT_COUNT})
+
 
 def _instant(moment: datetime) -> str:
     """An RFC 3339 UTC instant with the mandatory Z, to second precision."""
@@ -167,7 +175,7 @@ class AnalyzeHomepage:
             self._not_assessed(run_id, metric, source_url, observed_at, reason)
             for metric in ALL_METRICS
         ]
-        evidence = [self._evidence_for(m, source_url) for m in measurements]
+        evidence = [self._evidence_for(m) for m in measurements]
 
         final = transition(state, RunState.FAILED)
         return self._envelope(
@@ -196,16 +204,20 @@ class AnalyzeHomepage:
         fetch_finished: datetime,
     ) -> dict[str, Any]:
         run_id = request["run_id"]
-        source_url = request["target_url"]
+        requested_url = request["target_url"]
         observed_at = _instant(fetch_finished)
         measurements: list[dict[str, Any]] = []
+
+        def source_for(metric: Metric) -> str:
+            """The URL a record about ``metric`` was actually observed against."""
+            return requested_url if metric in PATH_OUTCOME_METRICS else response.final_url
 
         def known(metric: Metric, mode: str, value_type: str, member: str, value: Any) -> None:
             measurements.append(
                 self._record(
                     run_id,
                     metric,
-                    source_url,
+                    source_for(metric),
                     observed_at,
                     {"collection_mode": mode, "result_state": "KNOWN"},
                     result={"value_type": value_type, member: value},
@@ -217,7 +229,7 @@ class AnalyzeHomepage:
                 self._record(
                     run_id,
                     metric,
-                    source_url,
+                    source_for(metric),
                     observed_at,
                     {"collection_mode": mode, "result_state": result_state},
                 )
@@ -251,7 +263,7 @@ class AnalyzeHomepage:
             # The response arrived in a content encoding we cannot decode, so we do not hold
             # the document at all. Every element would read as absent, and publishing that
             # would turn a gap in our own capability into a finding about the site.
-            self._runtime_error_for_document(measurements, run_id, source_url, observed_at)
+            self._runtime_error_for_document(measurements, run_id, source_for, observed_at)
             html_status = "FAILED"
         else:
             try:
@@ -259,15 +271,15 @@ class AnalyzeHomepage:
             except HtmlUnreadable:
                 # Our parser failed. That is our runtime, so nothing is asserted about the
                 # page: no absence, no value, no polarity.
-                self._runtime_error_for_document(measurements, run_id, source_url, observed_at)
+                self._runtime_error_for_document(measurements, run_id, source_for, observed_at)
                 html_status = "FAILED"
             else:
                 self._document_metrics(
-                    measurements, run_id, source_url, observed_at, observed, response
+                    measurements, run_id, source_for, observed_at, observed, response
                 )
                 html_status = "SUCCEEDED"
 
-        evidence = [self._evidence_for(m, source_url) for m in measurements]
+        evidence = [self._evidence_for(m) for m in measurements]
         final = transition(state, RunState.SUCCEEDED)
         stages = [
             self._stage(run_id, Stage.PAGE_FETCH, "SUCCEEDED", fetch_started, fetch_finished),
@@ -291,20 +303,20 @@ class AnalyzeHomepage:
         self,
         measurements: list[dict[str, Any]],
         run_id: str,
-        source_url: str,
+        source_for: Callable[[Metric], str],
         observed_at: str,
     ) -> None:
         """Record that *we* could not read the document, for every metric that needs one."""
         for metric in HTML_METRICS:
             measurements.append(
-                self._not_assessed(run_id, metric, source_url, observed_at, "RUNTIME_ERROR")
+                self._not_assessed(run_id, metric, source_for(metric), observed_at, "RUNTIME_ERROR")
             )
 
     def _document_metrics(
         self,
         measurements: list[dict[str, Any]],
         run_id: str,
-        source_url: str,
+        source_for: Callable[[Metric], str],
         observed_at: str,
         observed: HtmlObservations,
         response: PageFetchOutcome,
@@ -313,7 +325,7 @@ class AnalyzeHomepage:
 
         def add(metric: Metric, assessment: dict[str, str], result: dict[str, Any] | None) -> None:
             measurements.append(
-                self._record(run_id, metric, source_url, observed_at, assessment, result)
+                self._record(run_id, metric, source_for(metric), observed_at, assessment, result)
             )
 
         def presence_and_value(
@@ -427,8 +439,13 @@ class AnalyzeHomepage:
             run_id, metric, source_url, observed_at, {"not_assessed_reason": reason}
         )
 
-    def _evidence_for(self, measurement: dict[str, Any], source_url: str) -> dict[str, Any]:
+    def _evidence_for(self, measurement: dict[str, Any]) -> dict[str, Any]:
         """Evidence mirroring one measurement, and referencing it.
+
+        Its observation context is read off the measurement it references rather than passed in
+        beside it. Evidence naming a URL the record it rests on never mentioned is a divergence
+        no contract can see, and no caller can supply that URL more truthfully than the record
+        itself already does.
 
         No polarity is ever set. Every fact this slice records — a status code, a content type,
         whether a title exists — is an observation, not a judgement, and inventing a good/bad
@@ -438,7 +455,7 @@ class AnalyzeHomepage:
             "schema_version": "1.0.0",
             "run_id": measurement["run_id"],
             "evidence_id": self.new_id(),
-            "source_url": source_url,
+            "source_url": measurement["source_url"],
             "observed_at": measurement["observed_at"],
             "scenario": SCENARIO_HOMEPAGE_FETCH,
             "collector": COLLECTOR,

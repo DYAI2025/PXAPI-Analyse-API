@@ -23,6 +23,7 @@ BEHAVIOR_ALLOWED: dict[str, str] = {
     "domain/run_state.py": "PXK-60",
     "domain/observations.py": "PXK-67",
     "domain/findings.py": "PXK-20",
+    "domain/indexability.py": "PXK-20.B1",
     "ports/page_fetch.py": "PXK-67",
     "ports/html_observation.py": "PXK-67",
     "application/analyze_homepage.py": "PXK-67",

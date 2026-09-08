@@ -174,6 +174,12 @@ class SafePageFetcher:
                     final_url=target.url,
                     status_code=status,
                     content_type=content_type,
+                    # `get_all` keeps every physical field line; `getheader` would fold them
+                    # into one comma-separated string, and a comma is exactly what separates
+                    # directives inside a single value. Two lines that fold into one are then
+                    # indistinguishable from one line that always said that, which is how a
+                    # generic directive comes to look crawler-scoped.
+                    x_robots_tag=tuple(response.headers.get_all("X-Robots-Tag") or ()),
                     is_https=target.is_https,
                     redirect_count=redirects,
                     body=body,

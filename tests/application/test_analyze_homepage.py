@@ -605,6 +605,7 @@ def test_a_healthy_https_response_produces_no_finding_at_all() -> None:
         final_url="https://example.test/",
         status_code=200,
         content_type="text/html; charset=utf-8",
+        x_robots_tag=(),
         is_https=True,
         redirect_count=0,
         body=FULL_PAGE,
@@ -658,3 +659,395 @@ def test_a_non_document_response_never_becomes_a_missing_title_finding() -> None
     envelope = analyse(routes)
     assert_envelope_validates(envelope)
     assert RuleId.MISSING_HOMEPAGE_TITLE not in findings_of(envelope)
+
+
+# --- indexability: two channels, one combined result, one rule ------------------------------
+
+#: A page that declares a generic noindex, and one that declares the opposite. Both carry a
+#: title so the missing-title rule stays out of the way of what is being asserted.
+NOINDEX_META_PAGE = (
+    b"<!doctype html><html><head><title>Hidden</title>"
+    b'<meta name="robots" content="noindex">'
+    b"</head><body>hello</body></html>"
+)
+INDEXABLE_META_PAGE = (
+    b"<!doctype html><html><head><title>Visible</title>"
+    b'<meta name="robots" content="index, follow">'
+    b"</head><body>hello</body></html>"
+)
+NO_ROBOTS_PAGE = b"<!doctype html><html><head><title>Plain</title></head><body>hi</body></html>"
+
+#: A field value whose scoping genuinely cannot be settled: `unavailable_after` may name a
+#: crawler that scopes the `noindex` after it, or be a directive carrying a value that leaves
+#: that `noindex` generic. Nothing in the syntax decides which.
+AMBIGUOUS_HEADER = "unavailable_after: 2026-06-30, noindex"
+
+
+def robots_route(body: bytes, header_lines: tuple[str, ...] = ()) -> dict[str, Route]:
+    return {
+        "/": Route(
+            body=body,
+            headers=HTML_HEADERS,
+            repeated_headers=tuple(("X-Robots-Tag", line) for line in header_lines),
+        )
+    }
+
+
+def indexability(envelope: dict) -> dict[str, dict]:
+    """The three indexability records, keyed by the short channel name they describe."""
+    found = measurements_by_metric(envelope)
+    return {
+        "meta": found[Metric.META_ROBOTS_GENERIC_NOINDEX_PRESENT],
+        "header": found[Metric.X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT],
+        "combined": found[Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT],
+    }
+
+
+def assert_known(record: dict, value: bool) -> None:
+    assert record["assessment"] == {"collection_mode": "OBSERVED", "result_state": "KNOWN"}
+    assert record["result"] == {"value_type": "BOOLEAN", "boolean_value": value}
+
+
+def assert_established_nothing(record: dict) -> None:
+    assert record["assessment"] == {"collection_mode": "OBSERVED", "result_state": "UNKNOWN"}
+    assert "result" not in record
+
+
+def test_a_generic_noindex_meta_on_the_wire_becomes_a_known_true_on_both_records() -> None:
+    envelope = analyse(robots_route(NOINDEX_META_PAGE))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], True)
+    assert_known(records["header"], False)
+    assert_known(records["combined"], True)
+
+
+def test_an_unscoped_noindex_header_on_the_wire_becomes_a_known_true_on_both_records() -> None:
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, ("noindex",)))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], False)
+    assert_known(records["header"], True)
+    assert_known(records["combined"], True)
+
+
+def test_a_response_declaring_nothing_about_indexing_establishes_a_real_absence() -> None:
+    """Assessed on both channels, and neither carried a directive. That is a fact."""
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], False)
+    assert_known(records["header"], False)
+    assert_known(records["combined"], False)
+
+
+def test_a_generic_robots_declaration_without_noindex_is_still_an_absence() -> None:
+    envelope = analyse(robots_route(INDEXABLE_META_PAGE))
+    records = indexability(envelope)
+    assert_known(records["meta"], False)
+    assert_known(records["combined"], False)
+
+
+@pytest.mark.parametrize(
+    "header_lines",
+    [
+        ("googlebot: noindex",),
+        ("bingbot: noindex",),
+        ("googlebot: noindex", "bingbot: none"),
+    ],
+)
+def test_a_directive_addressed_only_to_named_crawlers_is_absent_and_not_unknown(
+    header_lines: tuple[str, ...],
+) -> None:
+    """The correction that matters: named-agent scoping is a *decided* answer, not a blind one.
+
+    Reading these as UNKNOWN would withhold a verdict the syntax actually settles, and this
+    slice would then say nothing at all about the many sites that scope a directive.
+    """
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, header_lines))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["header"], False)
+    assert_known(records["combined"], False)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+def test_a_named_agent_directive_beside_an_unscoped_noindex_still_establishes_it() -> None:
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, ("googlebot: follow", "noindex")))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["header"], True)
+    assert_known(records["combined"], True)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX in findings_of(envelope)
+
+
+def test_repeated_header_lines_survive_the_whole_path() -> None:
+    """End to end: three physical lines on the socket, one truthful combined record.
+
+    Folded into one value these would read as a single crawler-scoped directive and the run
+    would report the opposite of what the server sent.
+    """
+    lines = ("googlebot: follow", "noindex", "bingbot: nofollow")
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, lines))
+    assert_envelope_validates(envelope)
+    assert_known(indexability(envelope)["combined"], True)
+
+
+def test_an_ambiguous_header_establishes_nothing_rather_than_an_absence() -> None:
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, (AMBIGUOUS_HEADER,)))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], False)
+    assert_established_nothing(records["header"])
+    assert_established_nothing(records["combined"])
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+def test_an_established_directive_outweighs_an_ambiguous_channel() -> None:
+    """``true + unknown`` is ``true``: a channel we could not read cannot un-observe one we did."""
+    envelope = analyse(robots_route(NOINDEX_META_PAGE, (AMBIGUOUS_HEADER,)))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], True)
+    assert_established_nothing(records["header"])
+    assert_known(records["combined"], True)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX in findings_of(envelope)
+
+
+def test_a_truncated_read_never_establishes_the_absence_of_a_declaration() -> None:
+    """Our own byte bound must not become "this site declares no noindex"."""
+    filler = b"<p>" + (b"a" * 4000) + b"</p>"
+    page = (
+        b"<html><head><title>T</title>"
+        + filler
+        + b'<meta name="robots" content="noindex"></head><body>b</body></html>'
+    )
+    envelope = analyse(robots_route(page), max_response_bytes=200)
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_established_nothing(records["meta"])
+    assert_known(records["header"], False)
+    assert_established_nothing(records["combined"])
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+def test_a_truncated_read_still_reports_a_declaration_it_did_see() -> None:
+    """Truncation can hide a declaration; it can never invent one. The capability half."""
+    page = (
+        b'<html><head><meta name="robots" content="noindex"><title>T</title>'
+        + (b"<p>" + b"a" * 4000 + b"</p>")
+        + b"</head><body>b</body></html>"
+    )
+    envelope = analyse(robots_route(page), max_response_bytes=200)
+    assert_envelope_validates(envelope)
+
+    assert_known(indexability(envelope)["meta"], True)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX in findings_of(envelope)
+
+
+def test_a_body_we_could_not_decode_leaves_the_document_channel_unassessed() -> None:
+    """Our gap in capability is recorded as ours, and the combined result withholds a verdict."""
+    import gzip
+
+    routes = {
+        "/": Route(
+            body=gzip.compress(NOINDEX_META_PAGE),
+            headers={"Content-Type": "text/html", "Content-Encoding": "br"},
+        )
+    }
+    envelope = analyse(routes)
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert records["meta"]["assessment"] == {"not_assessed_reason": "RUNTIME_ERROR"}
+    assert "result" not in records["meta"]
+    assert_known(records["header"], False)
+    assert_established_nothing(records["combined"])
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+def test_a_parser_failure_leaves_the_document_channel_unassessed() -> None:
+    def broken(body: bytes, declared_charset: str | None = None):
+        raise HtmlUnreadable("boom")
+
+    with ControlledHttpServer(robots_route(NOINDEX_META_PAGE)) as server:
+        fetcher = SafePageFetcher(policy=loopback_policy())
+        envelope = use_case(fetcher, read=broken).run(request_for(server.url("/")))
+
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+    assert records["meta"]["assessment"] == {"not_assessed_reason": "RUNTIME_ERROR"}
+    assert_established_nothing(records["combined"])
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+def test_an_unreadable_document_beside_a_readable_directive_still_establishes_it() -> None:
+    """``unknown + true`` is ``true``, even when the unknown half is our own failure."""
+
+    def broken(body: bytes, declared_charset: str | None = None):
+        raise HtmlUnreadable("boom")
+
+    with ControlledHttpServer(robots_route(NO_ROBOTS_PAGE, ("noindex",))) as server:
+        fetcher = SafePageFetcher(policy=loopback_policy())
+        envelope = use_case(fetcher, read=broken).run(request_for(server.url("/")))
+
+    assert_envelope_validates(envelope)
+    assert_known(indexability(envelope)["combined"], True)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX in findings_of(envelope)
+
+
+def test_a_non_document_response_with_a_readable_directive_stays_representable() -> None:
+    """No HTML observation is invented, and the header channel still speaks for itself.
+
+    A PDF has no meta declarations to lack, so that channel does not apply — and a channel
+    that does not apply must not hold the combined result open the way a blind one does.
+    """
+    routes = {
+        "/": Route(
+            body=b"%PDF-1.7",
+            headers={"Content-Type": "application/pdf"},
+            repeated_headers=(("X-Robots-Tag", "noindex"),),
+        )
+    }
+    envelope = analyse(routes)
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert records["meta"]["assessment"] == {
+        "collection_mode": "OBSERVED",
+        "result_state": "NOT_APPLICABLE",
+    }
+    assert "result" not in records["meta"]
+    assert_known(records["header"], True)
+    assert_known(records["combined"], True)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX in findings_of(envelope)
+
+
+def test_a_non_document_response_without_a_directive_is_a_plain_absence() -> None:
+    routes = {"/": Route(body=b"%PDF-1.7", headers={"Content-Type": "application/pdf"})}
+    records = indexability(analyse(routes))
+    assert_known(records["header"], False)
+    assert_known(records["combined"], False)
+
+
+@pytest.mark.parametrize(
+    ("kind", "reason"), TECHNICAL_FAILURES.values(), ids=list(TECHNICAL_FAILURES)
+)
+def test_a_fetch_failure_makes_no_claim_about_indexing_at_all(kind, reason) -> None:
+    """No response, so no channel was assessed and no combined value exists to be false."""
+    envelope = use_case(StubFetcher(PageFetchFailure(kind))).run(
+        request_for("https://example.test/")
+    )
+    assert_envelope_validates(envelope)
+
+    for record in indexability(envelope).values():
+        assert record["assessment"] == {"not_assessed_reason": reason}
+        assert "result" not in record
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+# --- the finding, and the chain behind it ---------------------------------------------------
+
+
+def test_an_observed_generic_noindex_becomes_exactly_one_finding() -> None:
+    envelope = analyse(robots_route(NOINDEX_META_PAGE))
+    assert_envelope_validates(envelope)
+
+    emitted = [
+        finding
+        for finding in envelope["diagnostic_findings"]
+        if finding["rule_id"] == RuleId.HOMEPAGE_EXPLICIT_NOINDEX
+    ]
+    assert len(emitted) == 1
+    assert emitted[0]["finding_class"] == "HOMEPAGE_GENERIC_NOINDEX_DIRECTIVE"
+    assert emitted[0]["rule_version"] == "1.0.0"
+
+
+def test_the_noindex_finding_is_emitted_in_the_pinned_rule_order() -> None:
+    """The loopback server speaks plain HTTP, so both rules fire on one real response."""
+    envelope = analyse(robots_route(NOINDEX_META_PAGE))
+    assert findings_of(envelope) == [
+        RuleId.NON_HTTPS_FINAL_TRANSPORT,
+        RuleId.HOMEPAGE_EXPLICIT_NOINDEX,
+    ]
+
+
+def test_the_noindex_finding_resolves_back_to_the_combined_measurement() -> None:
+    """finding -> evidence_id -> measurement_id -> the established combined value."""
+    envelope = analyse(robots_route(NOINDEX_META_PAGE))
+    by_evidence = {e["evidence_id"]: e for e in envelope["website_evidence"]}
+    by_measurement = {m["measurement_id"]: m for m in envelope["measurements"]}
+
+    finding = next(
+        f
+        for f in envelope["diagnostic_findings"]
+        if f["rule_id"] == RuleId.HOMEPAGE_EXPLICIT_NOINDEX
+    )
+    assert len(finding["evidence_refs"]) == 1
+    evidence = by_evidence[finding["evidence_refs"][0]]
+    assert evidence["run_id"] == finding["run_id"]
+    assert evidence["assessment"]["result_state"] == "KNOWN"
+
+    assert len(evidence["measurement_refs"]) == 1
+    record = by_measurement[evidence["measurement_refs"][0]]
+    assert record["run_id"] == finding["run_id"]
+    assert record["metric_id"] == Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT
+    assert record["result"] == {"value_type": "BOOLEAN", "boolean_value": True}
+
+
+def test_two_different_declarations_produce_byte_identical_finding_texts() -> None:
+    """The no-interpolation proof for this rule, on two genuinely different observations.
+
+    One run observed ``<meta name="robots" content="noindex">`` in a document; the other
+    observed ``X-Robots-Tag: none`` on the response. The measurement records differ — that is
+    where the difference belongs — and the findings are byte-identical.
+    """
+    from_meta = analyse(robots_route(NOINDEX_META_PAGE))
+    from_header = analyse(robots_route(NO_ROBOTS_PAGE, ("none",)))
+
+    def noindex_finding(envelope: dict) -> dict:
+        return next(
+            f
+            for f in envelope["diagnostic_findings"]
+            if f["rule_id"] == RuleId.HOMEPAGE_EXPLICIT_NOINDEX
+        )
+
+    meta_finding, header_finding = noindex_finding(from_meta), noindex_finding(from_header)
+    assert indexability(from_meta)["meta"]["result"]["boolean_value"] is True
+    assert indexability(from_header)["header"]["result"]["boolean_value"] is True, (
+        "canary: the two runs must have observed the directive on different channels"
+    )
+
+    for member in ("finding_summary", "business_impact", "recommended_action", "limitation"):
+        assert meta_finding[member] == header_finding[member], member
+
+    # And nothing that could only have come from one of the two observations is in the text.
+    rendered = " ".join(meta_finding[m] for m in ("finding_summary", "business_impact"))
+    for leaked in ("X-Robots-Tag", "googlebot", "<meta", "none"):
+        assert leaked not in rendered, leaked
+
+
+@pytest.mark.parametrize(
+    "routes",
+    [
+        robots_route(NO_ROBOTS_PAGE),
+        robots_route(INDEXABLE_META_PAGE),
+        robots_route(NO_ROBOTS_PAGE, ("googlebot: noindex",)),
+        robots_route(NO_ROBOTS_PAGE, (AMBIGUOUS_HEADER,)),
+        {"/": Route(body=b"%PDF-1.7", headers={"Content-Type": "application/pdf"})},
+    ],
+    ids=["no-declaration", "index-follow", "named-agent-only", "ambiguous", "not-a-document"],
+)
+def test_nothing_short_of_an_established_directive_emits_the_finding(routes: dict) -> None:
+    """Absence, ambiguity and inapplicability all stay silent. Empty is never negative."""
+    envelope = analyse(routes)
+    assert_envelope_validates(envelope)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)

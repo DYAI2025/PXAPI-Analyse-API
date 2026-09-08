@@ -1,7 +1,9 @@
 """Reads the deterministic facts this slice needs out of an HTML document.
 
-Three facts, each of which a visitor could see for themselves: the document's title, its meta
-description, and its canonical link. Nothing here judges any of them.
+Four facts, each of which a visitor could see for themselves: the document's title, its meta
+description, its canonical link, and what its generic robots declarations say. Nothing here
+judges any of them — a robots declaration comes back as the text it carried, and what that text
+*means* is the domain's decision.
 
 The reader is deliberately tolerant. Real homepages are full of unclosed tags, stray markup and
 duplicated elements, and none of that is a defect in the *website* worth reporting — it is
@@ -31,6 +33,7 @@ class _Reader(HTMLParser):
         self.title: str | None = None
         self.meta_description: str | None = None
         self.canonical_href: str | None = None
+        self.robots_meta_contents: list[str] = []
         self._in_title = False
         self._title_parts: list[str] = []
 
@@ -42,11 +45,18 @@ class _Reader(HTMLParser):
 
         attributes = {name.lower(): (value or "") for name, value in attrs}
 
-        if tag == "meta" and self.meta_description is None:
+        if tag == "meta":
             # `name` is compared case-insensitively; `http-equiv` descriptions are not the
             # same declaration and are deliberately not collected.
-            if attributes.get("name", "").strip().lower() == "description":
+            name = attributes.get("name", "").strip().lower()
+            if name == "description" and self.meta_description is None:
                 self.meta_description = attributes.get("content", "")
+            elif name == "robots":
+                # Every generic declaration, not only the first: a document may carry several
+                # and any one of them can be the one that says noindex. A crawler-specific
+                # name such as `googlebot` is a different declaration, and this reader
+                # deliberately does not collect it.
+                self.robots_meta_contents.append(attributes.get("content", ""))
             return
 
         if tag == "link" and self.canonical_href is None:
@@ -111,4 +121,5 @@ def read_html(body: bytes, declared_charset: str | None = None) -> HtmlObservati
         title=title,
         meta_description=reader.meta_description,
         canonical_href=reader.canonical_href,
+        robots_meta_contents=tuple(reader.robots_meta_contents),
     )

@@ -1,4 +1,4 @@
-"""Reading title, meta description and canonical out of real-shaped HTML.
+"""Reading title, meta description, canonical and generic robots declarations out of HTML.
 
 Absence and presence are both facts here, and the tests keep them apart from the third case
 that matters: a document the reader could not process at all, which is a statement about our
@@ -26,12 +26,13 @@ def test_a_complete_document_yields_all_three_facts() -> None:
         title="Example Domain",
         meta_description="An example page.",
         canonical_href="https://example.com/",
+        robots_meta_contents=(),
     )
 
 
-def test_an_empty_document_yields_three_absences() -> None:
+def test_an_empty_document_yields_only_absences() -> None:
     observed = read_html(b"")
-    assert observed == HtmlObservations(None, None, None)
+    assert observed == HtmlObservations(None, None, None, ())
 
 
 # --- title ---------------------------------------------------------------------------------
@@ -88,6 +89,65 @@ def test_the_meta_description_is_read_case_insensitively(html: bytes, expected: 
 )
 def test_a_document_without_a_meta_description_reports_none(html: bytes) -> None:
     assert read_html(html).meta_description is None
+
+
+# --- generic robots meta ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        (b'<meta name="robots" content="noindex">', ("noindex",)),
+        (b'<meta NAME="Robots" CONTENT="NOINDEX">', ("NOINDEX",)),
+        (b"<meta name='robots' content='none'>", ("none",)),
+        (b'<meta name=" robots " content="noindex, nofollow">', ("noindex, nofollow",)),
+        (b'<meta name="robots" content="">', ("",)),
+        (b"<meta name=robots content=noindex>", ("noindex",)),
+        # Every declaration, not only the first: any one of them can be the one that counts.
+        (
+            b'<meta name="robots" content="index"><meta name="robots" content="noindex">',
+            ("index", "noindex"),
+        ),
+    ],
+)
+def test_every_generic_robots_declaration_is_collected_verbatim(
+    html: bytes, expected: tuple[str, ...]
+) -> None:
+    """Verbatim, and in document order: what the tokens *mean* is the domain's decision."""
+    assert read_html(html).robots_meta_contents == expected
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        b"<html><head></head></html>",
+        b'<meta name="description" content="not a robots declaration">',
+        # Crawler-specific declarations are a different vocabulary. This slice states nothing
+        # about how a named crawler behaves, so it does not collect them at all.
+        b'<meta name="googlebot" content="noindex">',
+        b'<meta name="bingbot" content="noindex">',
+        b'<meta name="robotsx" content="noindex">',
+        b'<meta http-equiv="robots" content="noindex">',
+        b'<meta property="robots" content="noindex">',
+    ],
+)
+def test_a_document_with_no_generic_robots_declaration_collects_nothing(html: bytes) -> None:
+    assert read_html(html).robots_meta_contents == ()
+
+
+def test_a_robots_declaration_does_not_displace_the_meta_description() -> None:
+    """The two declarations are independent; collecting one must not consume the other."""
+    html = b'<meta name="robots" content="noindex"><meta name="description" content="Still read.">'
+    observed = read_html(html)
+    assert observed.robots_meta_contents == ("noindex",)
+    assert observed.meta_description == "Still read."
+
+
+def test_a_meta_description_does_not_displace_a_later_robots_declaration() -> None:
+    html = b'<meta name="description" content="First."><meta name="robots" content="noindex">'
+    observed = read_html(html)
+    assert observed.meta_description == "First."
+    assert observed.robots_meta_contents == ("noindex",)
 
 
 # --- canonical --------------------------------------------------------------------------------

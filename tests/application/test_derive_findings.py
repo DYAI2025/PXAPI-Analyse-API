@@ -149,6 +149,13 @@ def title_present(observed: bool) -> tuple[list[dict[str, Any]], list[dict[str, 
     return one_fact(Metric.PAGE_TITLE_PRESENT, {"value_type": "BOOLEAN", "boolean_value": observed})
 
 
+def generic_noindex(observed: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    return one_fact(
+        Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
+        {"value_type": "BOOLEAN", "boolean_value": observed},
+    )
+
+
 def assert_all_valid(findings: Sequence[dict[str, Any]]) -> None:
     for document in findings:
         found = CONTRACTS.validate(FINDING, document)
@@ -165,7 +172,7 @@ def test_the_contract_registry_is_the_real_one() -> None:
 
 
 def test_the_neutrality_matrix_is_not_empty() -> None:
-    assert VALUELESS_STATES and NOT_ASSESSED_REASONS and len(RULES) == 3
+    assert VALUELESS_STATES and NOT_ASSESSED_REASONS and len(RULES) == 4
 
 
 # --- R1: the HTTP error rule -----------------------------------------------------------------
@@ -244,6 +251,69 @@ def test_a_title_observed_as_present_produces_no_finding() -> None:
     assert derive(*title_present(True)) == []
 
 
+# --- R4: the generic noindex directive ---------------------------------------------------------
+
+
+def test_a_generic_noindex_observed_as_present_produces_a_finding() -> None:
+    findings = derive(*generic_noindex(True))
+    assert_all_valid(findings)
+    assert [f["rule_id"] for f in findings] == [RuleId.HOMEPAGE_EXPLICIT_NOINDEX]
+    assert findings[0]["finding_class"] == FindingClass.HOMEPAGE_GENERIC_NOINDEX_DIRECTIVE
+    assert findings[0]["rule_version"] == "1.0.0"
+    assert findings[0]["evidence_refs"] == ["evd-0001"]
+
+
+def test_a_generic_noindex_observed_as_absent_produces_no_finding() -> None:
+    """The site was assessed and declares no such directive. That is not a finding."""
+    assert derive(*generic_noindex(False)) == []
+
+
+def test_a_generic_noindex_that_established_nothing_produces_no_finding() -> None:
+    """The ``UNKNOWN`` combined result: an ambiguous header, or a read that stopped early.
+
+    This is the case that separates R4 from the two absence rules. R2 and R3 fire on an
+    established ``false``; R4 fires on an established ``true``, so the direction in which
+    ``UNKNOWN`` must not be read is the opposite one — and it must not be read either way.
+    """
+    measurements, evidence_documents = one_fact(
+        Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
+        None,
+        measurement_assessment={"collection_mode": "OBSERVED", "result_state": "UNKNOWN"},
+        evidence_assessment={"collection_mode": "OBSERVED", "result_state": "UNKNOWN"},
+    )
+    assert derive(measurements, evidence_documents) == []
+
+
+def test_a_channel_metric_alone_never_produces_the_finding() -> None:
+    """R4 decides on the combined record, never on one channel's own observation.
+
+    A rule reading a channel directly would emit a finding from half the evidence, and the
+    other half is exactly what decides whether the directive applied generically at all.
+    """
+    for channel in (
+        Metric.META_ROBOTS_GENERIC_NOINDEX_PRESENT,
+        Metric.X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT,
+    ):
+        measurements, evidence_documents = one_fact(
+            channel, {"value_type": "BOOLEAN", "boolean_value": True}
+        )
+        assert derive(measurements, evidence_documents) == [], channel
+
+
+def test_the_r4_finding_never_names_where_the_directive_was_declared() -> None:
+    """The channel is in the evidence, never in the prose.
+
+    The word ``noindex`` is in the fixed text on purpose — it names the kind of directive the
+    rule is about. What must never appear is anything that could only come from *this*
+    observation: which channel carried it, or which crawler was addressed.
+    """
+    found = derive(*generic_noindex(True))[0]
+    for member in TEXT_MEMBERS:
+        lowered = found[member].lower()
+        for leaked in ("x-robots-tag", "googlebot", "bingbot", "<meta", "header"):
+            assert leaked not in lowered, f"{member}: {leaked}"
+
+
 def test_an_overlong_but_present_title_is_not_a_missing_title() -> None:
     """The value could not be carried; the *presence* still could, and it says the title is there.
 
@@ -317,12 +387,39 @@ def test_three_simultaneous_findings_are_emitted_in_the_pinned_rule_order() -> N
     assert [f["evidence_refs"] for f in findings] == [["evd-0001"], ["evd-0002"], ["evd-0003"]]
 
 
+def test_every_rule_fires_at_once_in_the_pinned_order() -> None:
+    """The full rule set, from evidence deliberately supplied in the reverse of that order."""
+    facts = [
+        (Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT, {"value_type": "BOOLEAN", "boolean_value": True}),
+        (Metric.PAGE_TITLE_PRESENT, {"value_type": "BOOLEAN", "boolean_value": False}),
+        (Metric.TRANSPORT_IS_HTTPS, {"value_type": "BOOLEAN", "boolean_value": False}),
+        (Metric.HTTP_STATUS, {"value_type": "INTEGER", "integer_value": 500}),
+    ]
+    measurements = [
+        measurement(f"msr-{index:04d}", metric, KNOWN, result)
+        for index, (metric, result) in enumerate(facts, start=1)
+    ]
+    evidence_documents = [
+        evidence(f"evd-{index:04d}", KNOWN, [f"msr-{index:04d}"])
+        for index in range(1, len(facts) + 1)
+    ]
+    findings = derive(measurements, evidence_documents)
+
+    assert_all_valid(findings)
+    assert [f["rule_id"] for f in findings] == [rule.rule_id for rule in RULES]
+    assert len(findings) == len(RULES)
+
+
 # --- a technical failure is never a finding --------------------------------------------------
 
 TRIGGERING_FACTS = {
     "http-error": (Metric.HTTP_STATUS, {"value_type": "INTEGER", "integer_value": 503}),
     "not-https": (Metric.TRANSPORT_IS_HTTPS, {"value_type": "BOOLEAN", "boolean_value": False}),
     "no-title": (Metric.PAGE_TITLE_PRESENT, {"value_type": "BOOLEAN", "boolean_value": False}),
+    "generic-noindex": (
+        Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
+        {"value_type": "BOOLEAN", "boolean_value": True},
+    ),
 }
 FACT_IDS = sorted(TRIGGERING_FACTS)
 

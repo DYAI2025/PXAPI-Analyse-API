@@ -32,6 +32,12 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from pxapi.application.derive_findings import derive_findings
+from pxapi.domain.indexability import (
+    GenericNoindex,
+    combined_generic_noindex,
+    meta_robots_generic_noindex,
+    x_robots_tag_generic_noindex,
+)
 from pxapi.domain.observations import (
     COLLECTOR,
     COLLECTOR_VERSION,
@@ -83,6 +89,16 @@ HTML_METRICS = (
     Metric.CANONICAL_URL,
 )
 
+#: The indexability metrics: one per observation channel, and the combined result a rule may
+#: decide on. The channels stay separately recorded so a reader can see *where* a directive was
+#: observed, and the combined record exists because a rule decides on one measurement rather
+#: than on a correlation of two.
+INDEXABILITY_METRICS = (
+    Metric.META_ROBOTS_GENERIC_NOINDEX_PRESENT,
+    Metric.X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT,
+    Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
+)
+
 #: Every metric this slice reports on, in a fixed order so two runs are diff-able.
 ALL_METRICS = (
     Metric.HTTP_STATUS,
@@ -91,6 +107,7 @@ ALL_METRICS = (
     Metric.TRANSPORT_IS_HTTPS,
     Metric.REDIRECT_COUNT,
     *HTML_METRICS,
+    *INDEXABILITY_METRICS,
 )
 
 #: The metrics that describe how the *submitted* target resolved, rather than what the response
@@ -117,6 +134,20 @@ def media_type_of(content_type: str | None) -> str | None:
 def _is_absolute_web_url(value: str) -> bool:
     parts = urlsplit(value)
     return parts.scheme in {"http", "https"} and bool(parts.netloc)
+
+
+def _meta_robots_channel(observed: HtmlObservations, response: PageFetchOutcome) -> GenericNoindex:
+    """What the document's generic robots declarations established, given how much we read.
+
+    The same rule the document elements follow, for the same reason: we stopped reading at our
+    own byte bound, so a declaration further down would have been missed and "this document
+    declares no generic noindex" is a claim the read cannot support. A directive we *did* see
+    stands regardless — truncation can hide a declaration, never invent one.
+    """
+    observation = meta_robots_generic_noindex(observed.robots_meta_contents)
+    if observation is GenericNoindex.ABSENT and response.truncated:
+        return GenericNoindex.INDETERMINATE
+    return observation
 
 
 class AnalyzeHomepage:
@@ -242,6 +273,33 @@ class AnalyzeHomepage:
                 )
             )
 
+        def noindex(metric: Metric, observation: GenericNoindex) -> None:
+            """One channel's generic-noindex observation, stated in the contract's terms.
+
+            The mapping is the whole point of the five-member vocabulary: only what a channel
+            actually established becomes a value, and the two ways a channel can be closed to
+            us stay apart — a channel that does not apply is a fact about the measurement, and
+            one we could not assess is a fact about our runtime. Neither becomes a ``false``.
+            """
+            if observation is GenericNoindex.UNASSESSED:
+                measurements.append(
+                    self._not_assessed(
+                        run_id, metric, source_for(metric), observed_at, "RUNTIME_ERROR"
+                    )
+                )
+            elif observation is GenericNoindex.INDETERMINATE:
+                performed(metric, "OBSERVED", "UNKNOWN")
+            elif observation is GenericNoindex.NOT_APPLICABLE:
+                performed(metric, "OBSERVED", "NOT_APPLICABLE")
+            else:
+                known(
+                    metric,
+                    "OBSERVED",
+                    "BOOLEAN",
+                    "boolean_value",
+                    observation is GenericNoindex.PRESENT,
+                )
+
         # --- transport facts. Each is a measurement, never a verdict. -------------------
         known(Metric.HTTP_STATUS, "MEASURED", "INTEGER", "integer_value", response.status_code)
         known(Metric.FINAL_URL, "OBSERVED", "URL", "url_value", response.final_url)
@@ -265,12 +323,14 @@ class AnalyzeHomepage:
             # about the measurement, and deliberately not a complaint about the site.
             for metric in HTML_METRICS:
                 performed(metric, "OBSERVED", "NOT_APPLICABLE")
+            meta_noindex = GenericNoindex.NOT_APPLICABLE
             html_status = "NOT_APPLICABLE"
         elif response.undecodable:
             # The response arrived in a content encoding we cannot decode, so we do not hold
             # the document at all. Every element would read as absent, and publishing that
             # would turn a gap in our own capability into a finding about the site.
             self._runtime_error_for_document(measurements, run_id, source_for, observed_at)
+            meta_noindex = GenericNoindex.UNASSESSED
             html_status = "FAILED"
         else:
             try:
@@ -279,12 +339,26 @@ class AnalyzeHomepage:
                 # Our parser failed. That is our runtime, so nothing is asserted about the
                 # page: no absence, no value, no polarity.
                 self._runtime_error_for_document(measurements, run_id, source_for, observed_at)
+                meta_noindex = GenericNoindex.UNASSESSED
                 html_status = "FAILED"
             else:
                 self._document_metrics(
                     measurements, run_id, source_for, observed_at, observed, response
                 )
+                meta_noindex = _meta_robots_channel(observed, response)
                 html_status = "SUCCEEDED"
+
+        # --- indexability: each channel on its own, then the one result a rule may read ----
+        # The header channel is assessable whenever a response arrived, document or not, which
+        # is what keeps a non-HTML response carrying a directive truthfully representable
+        # without inventing an HTML observation nobody made.
+        header_noindex = x_robots_tag_generic_noindex(response.x_robots_tag)
+        noindex(Metric.META_ROBOTS_GENERIC_NOINDEX_PRESENT, meta_noindex)
+        noindex(Metric.X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT, header_noindex)
+        noindex(
+            Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
+            combined_generic_noindex(meta_noindex, header_noindex),
+        )
 
         evidence = [self._evidence_for(m) for m in measurements]
         final = transition(state, RunState.SUCCEEDED)

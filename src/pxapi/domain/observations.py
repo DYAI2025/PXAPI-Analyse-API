@@ -43,6 +43,17 @@ class Metric(StrEnum):
     #: Whether the document declares a canonical link, and where it points.
     CANONICAL_PRESENT = "CANONICAL_PRESENT"
     CANONICAL_URL = "CANONICAL_URL"
+    #: Whether a generically applicable noindex directive was observed in the document's
+    #: `<meta name="robots">` declarations.
+    META_ROBOTS_GENERIC_NOINDEX_PRESENT = "META_ROBOTS_GENERIC_NOINDEX_PRESENT"
+    #: Whether a generically applicable noindex directive was observed in the response's
+    #: `X-Robots-Tag` headers.
+    X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT = "X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT"
+    #: Whether a generically applicable noindex directive was observed in the analysed
+    #: response at all, over both channels above. The two channels stay separately recorded
+    #: so a reader can see *where* the directive was observed, and this one exists because a
+    #: rule must decide on one measurement rather than on a correlation of two.
+    HOMEPAGE_GENERIC_NOINDEX_PRESENT = "HOMEPAGE_GENERIC_NOINDEX_PRESENT"
 
 
 class Stage(StrEnum):

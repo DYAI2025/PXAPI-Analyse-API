@@ -296,6 +296,87 @@ def test_a_response_without_a_content_type_reports_none() -> None:
     assert result.declared_charset is None
 
 
+# --- X-Robots-Tag survives the wire, one entry per physical header line ------------------------
+
+
+def fetch_with_robots_headers(lines: list[str]) -> PageFetchOutcome:
+    routes = {
+        "/": Route(
+            body=HTML,
+            headers=HTML_HEADERS,
+            repeated_headers=tuple(("X-Robots-Tag", line) for line in lines),
+        )
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/"))
+    assert isinstance(result, PageFetchOutcome)
+    return result
+
+
+def test_a_response_without_the_header_reports_no_field_values() -> None:
+    with ControlledHttpServer({"/": Route(body=HTML, headers=HTML_HEADERS)}) as server:
+        result = fetcher().fetch(server.url("/"))
+    assert isinstance(result, PageFetchOutcome)
+    assert result.x_robots_tag == ()
+
+
+def test_one_header_line_arrives_as_one_field_value() -> None:
+    assert fetch_with_robots_headers(["noindex"]).x_robots_tag == ("noindex",)
+
+
+def test_a_single_line_carrying_several_directives_is_not_split() -> None:
+    """Splitting is the domain's decision; the port carries the field value as it arrived."""
+    assert fetch_with_robots_headers(["noindex, nofollow"]).x_robots_tag == ("noindex, nofollow",)
+
+
+def test_repeated_header_lines_each_survive_as_their_own_field_value() -> None:
+    """The property the whole tuple exists for, proven on a real socket rather than a stub.
+
+    Three physical lines must arrive as three entries. Folded into one comma-separated string
+    they would be indistinguishable from a single crawler-scoped value, which is how a generic
+    directive stops looking generic.
+    """
+    lines = ["googlebot: follow", "noindex", "bingbot: noindex"]
+    assert fetch_with_robots_headers(lines).x_robots_tag == tuple(lines)
+
+
+def test_the_field_values_are_an_immutable_tuple() -> None:
+    """An observation that could be edited after it was made is not an observation."""
+    assert isinstance(fetch_with_robots_headers(["noindex"]).x_robots_tag, tuple)
+
+
+def test_the_header_name_is_matched_case_insensitively_on_the_wire() -> None:
+    routes = {
+        "/": Route(
+            body=HTML,
+            headers=HTML_HEADERS,
+            repeated_headers=(("x-robots-tag", "noindex"), ("X-ROBOTS-TAG", "nofollow")),
+        )
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/"))
+    assert isinstance(result, PageFetchOutcome)
+    assert result.x_robots_tag == ("noindex", "nofollow")
+
+
+def test_the_header_is_read_off_the_final_response_and_not_a_redirect() -> None:
+    """A directive on a hop we passed through is not a directive on the page we analysed."""
+    routes = {
+        "/from": Route(
+            status=302,
+            headers={"Location": "/final"},
+            repeated_headers=(("X-Robots-Tag", "noindex"),),
+        ),
+        "/final": Route(body=HTML, headers=HTML_HEADERS),
+    }
+    with ControlledHttpServer(routes) as server:
+        result = fetcher().fetch(server.url("/from"))
+
+    assert isinstance(result, PageFetchOutcome)
+    assert result.redirect_count == 1, "canary: the redirect must actually have been followed"
+    assert result.x_robots_tag == ()
+
+
 # --- a failure carries a category and nothing else --------------------------------------------
 
 

@@ -64,6 +64,16 @@ class PageFetchOutcome:
     status_code: int
     #: The raw ``Content-Type`` header, or ``None`` when the response declared none.
     content_type: str | None
+    #: The raw ``X-Robots-Tag`` field values, one entry per physical header line, in the order
+    #: they arrived. Empty when the response declared none.
+    #:
+    #: A tuple rather than a joined string, and deliberately not part of a general header map.
+    #: The separator between two header lines is the same comma that separates directives
+    #: inside one line, so folding ``googlebot: follow`` and ``noindex`` into one value makes a
+    #: generic directive look crawler-scoped. Only the field this slice reads is exposed: a
+    #: dictionary of arbitrary response headers would be a transport detail the application
+    #: could then depend on without any slice having decided that it may.
+    x_robots_tag: tuple[str, ...]
     #: Whether the final response arrived over TLS.
     is_https: bool
     redirect_count: int

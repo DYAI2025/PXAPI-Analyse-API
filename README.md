@@ -57,15 +57,37 @@ A finding exists only where the evidence belongs to this run, was itself `KNOWN`
 references a measurement of this run that established a value. There is deliberately no path
 from a raw measurement to a conclusion.
 
-Three rules are implemented, each at version `1.0.0`: `HTTP_ERROR_RESPONSE` (a `KNOWN` status
-of 400 or above), `NON_HTTPS_FINAL_TRANSPORT` (a final response `KNOWN` to be plain HTTP) and
-`MISSING_HOMEPAGE_TITLE` (title presence `KNOWN` to be false). Each rule's four product texts —
+Four rules are implemented, each at version `1.0.0`: `HTTP_ERROR_RESPONSE` (a `KNOWN` status
+of 400 or above), `NON_HTTPS_FINAL_TRANSPORT` (a final response `KNOWN` to be plain HTTP),
+`MISSING_HOMEPAGE_TITLE` (title presence `KNOWN` to be false) and `HOMEPAGE_EXPLICIT_NOINDEX`
+(a generic noindex directive `KNOWN` to be present). Each rule's four product texts —
 summary, business impact, recommended action and limitation — are **constants, not templates**:
 no measured value is interpolated into them, which is why a 418 and a 503 produce byte-identical
 texts and the number stays in the contract-validated measurement record.
 
-**An empty `diagnostic_findings` means only that these three rules emitted nothing.** It never
+**An empty `diagnostic_findings` means only that these four rules emitted nothing.** It never
 means the website is good, complete, compliant or fully assessed.
+
+### Homepage indexability is observed on two channels, and combined once
+
+A generically applicable `noindex` directive can arrive in a document's
+`<meta name="robots">` declarations or in the response's `X-Robots-Tag` headers, so each
+channel is recorded on its own — `META_ROBOTS_GENERIC_NOINDEX_PRESENT` and
+`X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT` — and `HOMEPAGE_GENERIC_NOINDEX_PRESENT` carries the one
+result the rule decides on. **Generic means "not addressed to a named crawler"**: an
+`X-Robots-Tag: googlebot: noindex` is outside the generic verdict, which makes that verdict
+`false` rather than unknown, and nothing here infers how any named crawler behaves. The colon
+is placed by the rule name in front of it: a rule that carries its own value — `max-snippet:
+20, noindex` — addresses nobody, so the directives beside it stay generic.
+
+One channel that established the directive settles it; one channel that established *nothing*
+— a header whose syntax is genuinely unresolvable, a read truncated at our byte bound, a
+document we could not decode or parse — forbids concluding an absence. A channel that does not apply, such as an HTML
+declaration in a response that is not a document, does not hold the result open. **No
+`noindex` claim is made about a site whose response never arrived.**
+
+This establishes only that a directive was *observed in this response*. It does not establish
+current index status, rankings or traffic.
 
 ### Which destinations may be fetched
 

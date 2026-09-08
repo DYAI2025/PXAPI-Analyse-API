@@ -1,4 +1,4 @@
-"""The three authorised diagnostic rules: what fires, and what each is allowed to say.
+"""The authorised diagnostic rules: what fires, and what each is allowed to say.
 
 A rule is a decision about **one** measured value, plus four fixed texts. Keeping those two
 things in one small, pure object is what makes the slice's central rule checkable rather than
@@ -43,6 +43,8 @@ class RuleId(StrEnum):
     NON_HTTPS_FINAL_TRANSPORT = "NON_HTTPS_FINAL_TRANSPORT"
     #: The document declared no title.
     MISSING_HOMEPAGE_TITLE = "MISSING_HOMEPAGE_TITLE"
+    #: A generically applicable noindex directive was observed in the analysed response.
+    HOMEPAGE_EXPLICIT_NOINDEX = "HOMEPAGE_EXPLICIT_NOINDEX"
 
 
 class FindingClass(StrEnum):
@@ -51,6 +53,7 @@ class FindingClass(StrEnum):
     HOMEPAGE_HTTP_ERROR_STATUS = "HOMEPAGE_HTTP_ERROR_STATUS"
     HOMEPAGE_FINAL_TRANSPORT_NOT_HTTPS = "HOMEPAGE_FINAL_TRANSPORT_NOT_HTTPS"
     HOMEPAGE_TITLE_MISSING = "HOMEPAGE_TITLE_MISSING"
+    HOMEPAGE_GENERIC_NOINDEX_DIRECTIVE = "HOMEPAGE_GENERIC_NOINDEX_DIRECTIVE"
 
 
 #: The version of every rule in this module. A rule whose trigger condition or whose texts
@@ -107,6 +110,16 @@ def observed_title_absent(result: Mapping[str, Any]) -> bool:
     a title too long for the contract to carry is still a title that is *present*.
     """
     return _boolean_value(result) is False
+
+
+def observed_generic_noindex(result: Mapping[str, Any]) -> bool:
+    """A generically applicable noindex directive was established, and it is present.
+
+    ``is True`` rather than truthiness, and the mirror of the two rules above: a channel we
+    could not inspect arrives as a result that established nothing, and neither that nor an
+    established *absence* may be read as a directive that was there.
+    """
+    return _boolean_value(result) is True
 
 
 @dataclass(frozen=True)
@@ -199,6 +212,31 @@ RULES: Final[tuple[FindingRule, ...]] = (
         limitation=(
             "This finding covers only the analysed homepage response and does not by itself "
             "establish search ranking, search visibility or site-wide SEO quality."
+        ),
+    ),
+    FindingRule(
+        rule_id=RuleId.HOMEPAGE_EXPLICIT_NOINDEX,
+        rule_version=RULE_VERSION,
+        finding_class=FindingClass.HOMEPAGE_GENERIC_NOINDEX_DIRECTIVE,
+        metric=Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
+        triggers=observed_generic_noindex,
+        finding_summary=(
+            "A generically applicable noindex directive was observed in the analysed homepage "
+            "response."
+        ),
+        business_impact=(
+            "If a search engine or crawler respects this directive, the homepage may be "
+            "excluded from its searchable index and search-result presentation."
+        ),
+        recommended_action=(
+            "Confirm that the noindex directive is intentional. If the homepage is intended "
+            "to appear in search, remove the applicable generic noindex directive and verify "
+            "the delivered response again."
+        ),
+        limitation=(
+            "This finding proves only that an applicable noindex directive was observed in "
+            "this response; it does not prove current index status, rankings, traffic impact, "
+            "or how every crawler will behave."
         ),
     ),
 )

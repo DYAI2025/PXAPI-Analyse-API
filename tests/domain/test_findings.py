@@ -1,4 +1,4 @@
-"""The three authorised rules: when each fires, and what each is allowed to say.
+"""The authorised rules: when each fires, and what each is allowed to say.
 
 Two properties are proven here and nowhere else.
 
@@ -35,6 +35,7 @@ EXPECTED_ORDER = (
     RuleId.HTTP_ERROR_RESPONSE,
     RuleId.NON_HTTPS_FINAL_TRANSPORT,
     RuleId.MISSING_HOMEPAGE_TITLE,
+    RuleId.HOMEPAGE_EXPLICIT_NOINDEX,
 )
 
 #: The decisive metric each rule reads. A rule that read a different one would be a different
@@ -43,12 +44,14 @@ EXPECTED_METRIC = {
     RuleId.HTTP_ERROR_RESPONSE: Metric.HTTP_STATUS,
     RuleId.NON_HTTPS_FINAL_TRANSPORT: Metric.TRANSPORT_IS_HTTPS,
     RuleId.MISSING_HOMEPAGE_TITLE: Metric.PAGE_TITLE_PRESENT,
+    RuleId.HOMEPAGE_EXPLICIT_NOINDEX: Metric.HOMEPAGE_GENERIC_NOINDEX_PRESENT,
 }
 
 EXPECTED_CLASS = {
     RuleId.HTTP_ERROR_RESPONSE: FindingClass.HOMEPAGE_HTTP_ERROR_STATUS,
     RuleId.NON_HTTPS_FINAL_TRANSPORT: FindingClass.HOMEPAGE_FINAL_TRANSPORT_NOT_HTTPS,
     RuleId.MISSING_HOMEPAGE_TITLE: FindingClass.HOMEPAGE_TITLE_MISSING,
+    RuleId.HOMEPAGE_EXPLICIT_NOINDEX: FindingClass.HOMEPAGE_GENERIC_NOINDEX_DIRECTIVE,
 }
 
 #: The exact v1 texts, quoted rather than derived. A wording change is a rule version change,
@@ -82,6 +85,18 @@ EXPECTED_TEXTS: dict[RuleId, tuple[str, str, str, str]] = {
         "This finding covers only the analysed homepage response and does not by itself "
         "establish search ranking, search visibility or site-wide SEO quality.",
     ),
+    RuleId.HOMEPAGE_EXPLICIT_NOINDEX: (
+        "A generically applicable noindex directive was observed in the analysed homepage "
+        "response.",
+        "If a search engine or crawler respects this directive, the homepage may be excluded "
+        "from its searchable index and search-result presentation.",
+        "Confirm that the noindex directive is intentional. If the homepage is intended to "
+        "appear in search, remove the applicable generic noindex directive and verify the "
+        "delivered response again.",
+        "This finding proves only that an applicable noindex directive was observed in this "
+        "response; it does not prove current index status, rankings, traffic impact, or how "
+        "every crawler will behave.",
+    ),
 }
 
 
@@ -100,7 +115,7 @@ def boolean(value: bool) -> dict[str, Any]:
 # --- the rule set itself ---------------------------------------------------------------------
 
 
-def test_the_rule_set_is_exactly_the_three_authorised_rules_in_the_pinned_order() -> None:
+def test_the_rule_set_is_exactly_the_authorised_rules_in_the_pinned_order() -> None:
     assert tuple(candidate.rule_id for candidate in RULES) == EXPECTED_ORDER
 
 
@@ -229,6 +244,47 @@ def test_r3_reads_only_a_boolean_presence() -> None:
     assert rule(R3).triggers({"value_type": "TEXT", "text_value": ""}) is False
     assert rule(R3).triggers({"value_type": "BOOLEAN"}) is False
     assert rule(R3).triggers({}) is False
+
+
+# --- R4: the generic noindex directive, from both sides --------------------------------------
+
+R4 = RuleId.HOMEPAGE_EXPLICIT_NOINDEX
+
+
+def test_a_generic_noindex_observed_as_present_fires_r4() -> None:
+    assert rule(R4).triggers(boolean(True)) is True
+
+
+def test_a_generic_noindex_observed_as_absent_does_not_fire_r4() -> None:
+    """The mirror of R2 and R3: this one fires on an established presence, never an absence."""
+    assert rule(R4).triggers(boolean(False)) is False
+
+
+def test_r4_reads_only_a_boolean_presence() -> None:
+    """A value of another type is not a directive: it is no observation of one at all."""
+    assert rule(R4).triggers(integer(1)) is False
+    assert rule(R4).triggers({"value_type": "TEXT", "text_value": "noindex"}) is False
+    assert rule(R4).triggers({"value_type": "BOOLEAN"}) is False
+    assert rule(R4).triggers({}) is False
+
+
+def test_r4_never_quotes_the_observed_directive_in_its_own_texts() -> None:
+    """The texts describe the *kind* of directive, never quote what actually arrived.
+
+    A rule that named the token it saw would need that token to build its prose, and that is
+    the seam through which a header value travels into text no contract validates.
+    """
+    found = rule(R4)
+    for text in (
+        found.finding_summary,
+        found.business_impact,
+        found.recommended_action,
+        found.limitation,
+    ):
+        lowered = text.lower()
+        assert "x-robots-tag" not in lowered, text
+        assert "googlebot" not in lowered, text
+        assert "meta" not in lowered.split(), text
 
 
 # --- the domain ring stays a domain ring -----------------------------------------------------

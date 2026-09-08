@@ -32,6 +32,15 @@ class HtmlObservations:
     title: str | None
     meta_description: str | None
     canonical_href: str | None
+    #: The ``content`` of every *generic* ``<meta name="robots">`` declaration, in document
+    #: order. Empty when the document declared none.
+    #:
+    #: All of them rather than the first, because any one of several declarations can be the
+    #: one that carries a directive. Only the generic name is collected: a crawler-specific
+    #: ``<meta name="googlebot">`` is a different declaration, and this slice states nothing
+    #: about how a named crawler behaves. A tuple, so an observation cannot be edited after it
+    #: was made.
+    robots_meta_contents: tuple[str, ...] = ()
 
 
 class HtmlReader(Protocol):

@@ -40,6 +40,10 @@ class Route:
     status: int = 200
     body: bytes = b""
     headers: dict[str, str] = field(default_factory=dict)
+    #: Header lines emitted verbatim, one per entry, so a field name can genuinely repeat on
+    #: the wire. ``headers`` cannot express that at all: a dict holds one value per name, and
+    #: a response that repeats ``X-Robots-Tag`` is exactly what the fetcher must not fold.
+    repeated_headers: tuple[tuple[str, str], ...] = ()
     #: Seconds to stall before responding, for exercising the read timeout.
     delay: float = 0.0
 
@@ -60,6 +64,8 @@ class _Handler(BaseHTTPRequestHandler):
             time.sleep(route.delay)
         self.send_response(route.status)
         for name, value in route.headers.items():
+            self.send_header(name, value)
+        for name, value in route.repeated_headers:
             self.send_header(name, value)
         if "Content-Length" not in route.headers:
             self.send_header("Content-Length", str(len(route.body)))

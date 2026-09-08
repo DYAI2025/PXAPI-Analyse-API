@@ -8,11 +8,12 @@ Three properties are asserted here, and each is a decision this slice had to mak
 simply *outside* the generic verdict — it does not make the generic verdict true, and it does
 not make it unknown either.
 
-**Ambiguity is a real answer, and it is never "false".** ``X-Robots-Tag`` uses a colon both to
-address a crawler and to give a directive a value, so ``unavailable_after: <date>, noindex``
-has two readings that disagree about whether that ``noindex`` is generic. Where the two
-readings disagree the honest answer is ``INDETERMINATE``, because picking either one would
-either invent a directive or hide one.
+**A colon is placed by the rule name in front of it, not guessed.** ``X-Robots-Tag`` uses a
+colon both to address a crawler and to give a rule a value, and the four rule names whose own
+syntax carries a value are known, so ``max-snippet: 20, noindex`` is a generic rule list and
+``googlebot: follow, noindex`` is scoped to one named crawler. Both are settled answers.
+``INDETERMINATE`` is kept for syntax that really is unresolvable — a colon with no name before
+it, and a rule we model as taking no value being handed one — and it is never "false".
 
 **Nothing here knows about HTTP, HTML or contracts.** The functions take strings and return a
 verdict. Whether a channel could be inspected at all — a truncated read, an unreadable
@@ -25,6 +26,7 @@ from __future__ import annotations
 import pytest
 
 from pxapi.domain.indexability import (
+    VALUE_BEARING_RULES,
     GenericNoindex,
     combined_generic_noindex,
     meta_robots_generic_noindex,
@@ -140,7 +142,6 @@ def test_an_unscoped_noindex_field_value_establishes_the_generic_directive(
         "nofollow",
         "noarchive",
         "index, follow",
-        "max-image-preview: large",
         "googlebot: noindex",
         "googlebot: noindex, nofollow",
         "googlebot:noindex",
@@ -148,6 +149,19 @@ def test_an_unscoped_noindex_field_value_establishes_the_generic_directive(
         "bingbot: noindex",
         "otherbot: none",
         "nofollow, googlebot: noindex",
+        # A whole rule list scoped to one named crawler, however many rules it carries and
+        # wherever the noindex sits in it. The scope is set once, by the first name.
+        "googlebot: follow, noindex",
+        "otherbot: follow, none",
+        "googlebot: nosnippet, noarchive, none",
+        "GoogleBot: Follow, NoIndex",
+        "googlebot: unavailable_after: 2026-06-30, noindex",
+        # A generic rule carrying a value, on a list that then declares no noindex.
+        "max-image-preview: large",
+        "max-snippet: 20, follow",
+        "MAX-SNIPPET: 20, FOLLOW",
+        "unavailable_after: 2026-06-30",
+        "max-video-preview: -1, index, follow",
         "",
         "   ",
         ",,,",
@@ -166,23 +180,75 @@ def test_a_response_that_declared_no_such_header_establishes_absence() -> None:
 @pytest.mark.parametrize(
     "field_value",
     [
-        # Two readings that disagree: `unavailable_after` may be a crawler name scoping the
-        # `noindex` that follows, or a directive carrying a value, leaving that `noindex`
-        # generic. Nothing in the syntax settles it.
         "unavailable_after: 2026-06-30, noindex",
+        "max-snippet: 20, noindex",
+        "max-image-preview: large, none",
+        "max-video-preview: -1, noindex",
         "max-snippet: 20, none",
-        "googlebot: unavailable_after: 2026-06-30, noindex",
-        # A colon with no name before it: neither reading is even available.
-        ": noindex",
-        ":noindex",
-        # `noindex` is not a directive that takes a value, so this is malformed either way.
-        "noindex: yes",
-        "none: 1",
+        # The same, spelled in any case, and without the optional space after the colon.
+        "MAX-SNIPPET: 20, NOINDEX",
+        "Unavailable_After: 2026-06-30, None",
+        "max-snippet:20,noindex",
+        # More than one rule carries a value, and the noindex is last. Still generic.
+        "max-snippet: 20, unavailable_after: 2026-06-30, noindex",
+        # And the value-bearing rule need not lead for the list to stay generic.
+        "noindex, max-snippet: 20",
     ],
 )
-def test_genuinely_ambiguous_scoping_establishes_nothing(field_value: str) -> None:
+def test_a_generic_rule_carrying_a_value_leaves_the_rules_after_it_generic(
+    field_value: str,
+) -> None:
+    """The repair: a rule name whose own syntax uses ``:`` addresses no crawler.
+
+    Withholding these would turn our own parser's gap into ``UNKNOWN`` on a field value whose
+    syntax is well formed and whose ``noindex`` is generically applicable.
+    """
+    assert x_robots_tag_generic_noindex([field_value]) is PRESENT
+
+
+@pytest.mark.parametrize(
+    "field_value",
+    [
+        # A colon with no name before it: nothing is named and nothing is declared.
+        ": noindex",
+        ":noindex",
+        # `noindex` and `none` take no value, so a value makes this malformed however it is
+        # read. It must not silently become a crawler named `noindex` either.
+        "noindex: yes",
+        "none: 1",
+        "NOINDEX: YES",
+        "None: 1",
+        "noindex: yes, none",
+        "noindex: yes, follow",
+    ],
+)
+def test_genuinely_unresolvable_syntax_establishes_nothing(field_value: str) -> None:
     """Never ``false``: hiding a directive we could not place would be the worse error."""
     assert x_robots_tag_generic_noindex([field_value]) is INDETERMINATE
+
+
+def test_the_value_bearing_rule_vocabulary_is_exactly_these_four_names() -> None:
+    """Canary: this bounded set is what places a colon, so widening it silently changes verdicts.
+
+    Pinned as a whole set rather than by sampling a member, so adding a fifth name is a
+    deliberate, visible change to rule version ``1.0.0`` rather than a passing test.
+    """
+    known_in_this_rule_version = frozenset(
+        {"unavailable_after", "max-snippet", "max-image-preview", "max-video-preview"}
+    )
+    assert known_in_this_rule_version == VALUE_BEARING_RULES
+
+
+def test_an_unrecognised_name_before_a_colon_is_read_as_a_crawler_scope() -> None:
+    """The stated boundary of that bounded vocabulary, asserted rather than left implicit.
+
+    A name this rule version does not know as value-bearing is read as a named crawler, so a
+    colon-valued rule introduced *after* this rule version would be read as a scope and answer
+    ``ABSENT``. That is version work, not something the parser guesses at run time.
+    """
+    assert x_robots_tag_generic_noindex(["otherbot: follow, none"]) is ABSENT
+    assert x_robots_tag_generic_noindex(["max-audio-preview: 5, noindex"]) is ABSENT
+    assert x_robots_tag_generic_noindex(["nofollow: yes, noindex"]) is ABSENT
 
 
 def test_repeated_header_lines_are_each_evaluated_and_any_one_can_establish_it() -> None:
@@ -199,15 +265,18 @@ def test_an_ambiguous_line_beside_a_clear_one_does_not_erase_the_clear_one() -> 
 
 
 @pytest.mark.parametrize(
-    "lines",
+    ("lines", "once_folded"),
     [
-        # The join lets a crawler name appear to scope a directive that arrived generic.
-        ["googlebot: follow", "noindex"],
-        # And here it lets a directive's own value appear to be a crawler name.
-        ["unavailable_after: 2026-06-30", "noindex"],
+        # The join lets a crawler name scope a directive that arrived generic, and the result
+        # is not merely unknown — it is the opposite of what the server sent.
+        (["googlebot: follow", "noindex"], ABSENT),
+        # And here it lets a malformed leading rule swallow a directive that arrived clear.
+        (["noindex: yes", "noindex"], INDETERMINATE),
     ],
 )
-def test_joining_repeated_headers_destroys_an_established_directive(lines: list[str]) -> None:
+def test_joining_repeated_headers_destroys_an_established_directive(
+    lines: list[str], once_folded: GenericNoindex
+) -> None:
     """Why folding is refused: the separator between lines is the separator inside one.
 
     ``getheader`` folds repeated field lines into one comma-separated string, and a comma is
@@ -215,7 +284,7 @@ def test_joining_repeated_headers_destroys_an_established_directive(lines: list[
     directive as they arrived and stop establishing it once folded.
     """
     assert x_robots_tag_generic_noindex(lines) is PRESENT
-    assert x_robots_tag_generic_noindex([", ".join(lines)]) is INDETERMINATE
+    assert x_robots_tag_generic_noindex([", ".join(lines)]) is once_folded
 
 
 # --- combining the channels ----------------------------------------------------------------

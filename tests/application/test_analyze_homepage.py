@@ -677,10 +677,17 @@ INDEXABLE_META_PAGE = (
 )
 NO_ROBOTS_PAGE = b"<!doctype html><html><head><title>Plain</title></head><body>hi</body></html>"
 
-#: A field value whose scoping genuinely cannot be settled: `unavailable_after` may name a
-#: crawler that scopes the `noindex` after it, or be a directive carrying a value that leaves
-#: that `noindex` generic. Nothing in the syntax decides which.
-AMBIGUOUS_HEADER = "unavailable_after: 2026-06-30, noindex"
+#: A field value whose syntax genuinely cannot be settled: `noindex` takes no value, so this is
+#: malformed however it is read — a broken directive, or a crawler nobody would name `noindex`.
+AMBIGUOUS_HEADER = "noindex: yes"
+
+#: A well-formed generic rule list whose first rule carries a value. The `noindex` after it is
+#: generically applicable, and withholding it would be our parser's gap, not the site's silence.
+VALUE_BEARING_NOINDEX_HEADER = "max-snippet: 20, noindex"
+
+#: A well-formed rule list scoped to one named crawler. The `noindex` in it is addressed to
+#: `googlebot` alone, so the *generic* verdict is a decided absence.
+NAMED_AGENT_RULE_LIST_HEADER = "googlebot: follow, noindex"
 
 
 def robots_route(body: bytes, header_lines: tuple[str, ...] = ()) -> dict[str, Route]:
@@ -771,6 +778,45 @@ def test_a_directive_addressed_only_to_named_crawlers_is_absent_and_not_unknown(
     assert_envelope_validates(envelope)
     records = indexability(envelope)
 
+    assert_known(records["header"], False)
+    assert_known(records["combined"], False)
+    assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
+
+
+def test_a_generic_rule_carrying_a_value_reaches_the_finding_end_to_end() -> None:
+    """One physical header, well formed, whose first rule uses ``:`` for its own value.
+
+    The whole chain has to agree that this ``noindex`` is generic: the header record, the
+    combined record, and the one finding that rests on the combined measurement.
+    """
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, (VALUE_BEARING_NOINDEX_HEADER,)))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], False)
+    assert_known(records["header"], True)
+    assert_known(records["combined"], True)
+
+    emitted = [
+        finding
+        for finding in envelope["diagnostic_findings"]
+        if finding["rule_id"] == RuleId.HOMEPAGE_EXPLICIT_NOINDEX
+    ]
+    assert len(emitted) == 1
+    assert emitted[0]["rule_version"] == "1.0.0"
+
+
+def test_a_rule_list_scoped_to_one_named_crawler_is_a_decided_absence_end_to_end() -> None:
+    """A scoped list of several rules is ``KNOWN false``, not ``UNKNOWN``, and emits nothing.
+
+    Nothing is inferred about how ``googlebot`` actually behaves — only that this response
+    declared no *generically* applicable directive.
+    """
+    envelope = analyse(robots_route(NO_ROBOTS_PAGE, (NAMED_AGENT_RULE_LIST_HEADER,)))
+    assert_envelope_validates(envelope)
+    records = indexability(envelope)
+
+    assert_known(records["meta"], False)
     assert_known(records["header"], False)
     assert_known(records["combined"], False)
     assert RuleId.HOMEPAGE_EXPLICIT_NOINDEX not in findings_of(envelope)
@@ -1041,10 +1087,18 @@ def test_two_different_declarations_produce_byte_identical_finding_texts() -> No
         robots_route(NO_ROBOTS_PAGE),
         robots_route(INDEXABLE_META_PAGE),
         robots_route(NO_ROBOTS_PAGE, ("googlebot: noindex",)),
+        robots_route(NO_ROBOTS_PAGE, (NAMED_AGENT_RULE_LIST_HEADER,)),
         robots_route(NO_ROBOTS_PAGE, (AMBIGUOUS_HEADER,)),
         {"/": Route(body=b"%PDF-1.7", headers={"Content-Type": "application/pdf"})},
     ],
-    ids=["no-declaration", "index-follow", "named-agent-only", "ambiguous", "not-a-document"],
+    ids=[
+        "no-declaration",
+        "index-follow",
+        "named-agent-only",
+        "named-agent-rule-list",
+        "ambiguous",
+        "not-a-document",
+    ],
 )
 def test_nothing_short_of_an_established_directive_emits_the_finding(routes: dict) -> None:
     """Absence, ambiguity and inapplicability all stay silent. Empty is never negative."""

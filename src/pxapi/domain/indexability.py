@@ -13,13 +13,20 @@ crawler and is therefore *outside* the generic verdict — it does not establish
 not withhold it either. This slice deliberately infers nothing about how any named crawler
 behaves.
 
-**A colon is ambiguous, and ambiguity is answered honestly.** ``X-Robots-Tag`` uses ``:`` both
-to address a crawler and to give a directive a value, so ``unavailable_after: <date>, noindex``
-has two readings: one where a crawler named ``unavailable_after`` scopes everything after it,
-and one where that ``noindex`` is generic. Settling it would need a registry of every serving
-directive, which this slice does not build. Where the two readings disagree the answer is
-``INDETERMINATE`` — never ``ABSENT``, because hiding a directive we could not place is the
-error that turns our own uncertainty into a claim about the site.
+**A colon is placed by the name in front of it, and what is left over is answered honestly.**
+``X-Robots-Tag`` uses ``:`` both to address a crawler and to give a rule its own value, and the
+rule names that carry a value are known — this version knows the four in
+:data:`VALUE_BEARING_RULES`. So ``max-snippet: 20, noindex`` is a generic rule list whose
+``noindex`` applies, and ``googlebot: follow, noindex`` is a rule list scoped to one crawler
+that declares nothing generic. Both are settled. ``INDETERMINATE`` is kept for syntax that
+genuinely is not: a colon with no name before it, and a rule we model as taking no value being
+handed one. It is never ``ABSENT``, because hiding a directive we could not place is the error
+that turns our own uncertainty into a claim about the site.
+
+That vocabulary is a bounded parsing aid for this rule version, not a robots registry and not a
+scoring model — it says only which names are followed by their own value. Its boundary is a
+real limit rather than a hidden one: a colon-valued rule this version does not know is read as
+a crawler name, and teaching the parser a new one is version work.
 
 **A channel that could not be inspected never becomes an absence.** ``NOT_APPLICABLE`` and
 ``UNASSESSED`` are produced by the caller, not here — only the caller knows whether the
@@ -64,6 +71,15 @@ class GenericNoindex(StrEnum):
 #: this short, because modelling every robots serving directive is not what B1 is for.
 NOINDEX_DIRECTIVES: Final[frozenset[str]] = frozenset({"noindex", "none"})
 
+#: The robots rule names whose own valid syntax carries a value after a colon, as of rule
+#: version ``1.0.0``. This is the *whole* syntax knowledge needed to tell a rule's value from a
+#: crawler's name, and deliberately nothing more: it is not a scoring registry, and it models no
+#: rule's meaning — only that these names are followed by their own value rather than by a rule
+#: list addressed to them. Compared case-insensitively.
+VALUE_BEARING_RULES: Final[frozenset[str]] = frozenset(
+    {"unavailable_after", "max-snippet", "max-image-preview", "max-video-preview"}
+)
+
 
 def _directives(declaration: str) -> list[str]:
     """The comma-separated directives of one declaration, blanks dropped.
@@ -100,17 +116,23 @@ def meta_robots_generic_noindex(contents: Sequence[str]) -> GenericNoindex:
 def _field_value_generic_noindex(field_value: str) -> GenericNoindex:
     """The verdict for one physical ``X-Robots-Tag`` field value.
 
-    Only the first directive may carry a crawler name, and it does so as ``name:``. The same
-    syntax is how a directive carries a value, so the field value is read *both* ways and the
-    two readings are compared:
+    Only the first rule may carry a crawler name, and it does so as ``name:``. The same syntax
+    is how a rule carries its own value, so the name in front of the colon is what places it,
+    and it is read against what rule version ``1.0.0`` knows:
 
-    * **scoped** — ``name`` addresses a crawler, so every directive here is addressed to it
-      and none of them is generic. This reading always yields ``ABSENT``.
-    * **unscoped** — ``name`` is itself a directive carrying a value, so no crawler is named
-      and every directive here is generic.
+    * **no leading colon** — no crawler can be named here, so every rule is generic;
+    * **a name in** :data:`VALUE_BEARING_RULES` — the first rule carries its own value and
+      addresses nobody, so the rules after it are generic too;
+    * **a name in** :data:`NOINDEX_DIRECTIVES` — a rule we model as taking no value was handed
+      one. It is malformed whichever way it is read, and it must not quietly become either a
+      crawler of that name or a directive we honour, so it establishes nothing;
+    * **any other name** — it addresses a crawler, and the whole rule list on this physical
+      value is scoped to it. Nothing generic is declared here, which is a decided ``ABSENT``
+      and never an inference about how that crawler behaves.
 
-    Agreeing readings are the answer. Disagreeing readings mean the syntax genuinely does not
-    say whether the directive is generic, and that is ``INDETERMINATE``.
+    The vocabulary is bounded on purpose, and the boundary is a real limit: a colon-valued rule
+    this version does not know would be read as a crawler name. Teaching the parser a new rule
+    is version work, not something it may guess at run time.
     """
     directives = _directives(field_value)
     if not directives:
@@ -120,23 +142,24 @@ def _field_value_generic_noindex(field_value: str) -> GenericNoindex:
 
     name, colon, _ = directives[0].partition(":")
     if not colon:
-        # No crawler name is possible here, so there is only one reading.
+        # No crawler name is possible here, so every rule on this value is generic.
         return GenericNoindex.PRESENT if _states_noindex(directives) else GenericNoindex.ABSENT
 
-    scope = name.strip()
+    scope = name.strip().lower()
     if not scope:
-        # A colon with nothing before it names no crawler and is no directive either.
+        # A colon with nothing before it names no crawler and is no rule either.
         return GenericNoindex.INDETERMINATE
-
-    scoped_reading = GenericNoindex.ABSENT
-    unscoped_reading = (
-        GenericNoindex.PRESENT
-        if _states_noindex([scope, *directives[1:]])
-        else GenericNoindex.ABSENT
-    )
-    if scoped_reading is unscoped_reading:
-        return scoped_reading
-    return GenericNoindex.INDETERMINATE
+    if scope in NOINDEX_DIRECTIVES:
+        # `noindex: yes`. Malformed under both readings, so neither may be reported.
+        return GenericNoindex.INDETERMINATE
+    if scope in VALUE_BEARING_RULES:
+        # `max-snippet: 20, noindex`. The first rule consumed the colon for its own value, so
+        # it is itself generic and so is everything after it — but its *value* is not a rule,
+        # which is why only the rules after it are examined.
+        return GenericNoindex.PRESENT if _states_noindex(directives[1:]) else GenericNoindex.ABSENT
+    # `googlebot: follow, noindex`. Addressed to one named crawler, and therefore outside the
+    # generic verdict rather than establishing or withholding it.
+    return GenericNoindex.ABSENT
 
 
 def x_robots_tag_generic_noindex(field_values: Sequence[str]) -> GenericNoindex:

@@ -76,11 +76,13 @@ channel is recorded on its own — `META_ROBOTS_GENERIC_NOINDEX_PRESENT` and
 `X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT` — and `HOMEPAGE_GENERIC_NOINDEX_PRESENT` carries the one
 result the rule decides on. **Generic means "not addressed to a named crawler"**: an
 `X-Robots-Tag: googlebot: noindex` is outside the generic verdict, which makes that verdict
-`false` rather than unknown, and nothing here infers how any named crawler behaves.
+`false` rather than unknown, and nothing here infers how any named crawler behaves. The colon
+is placed by the rule name in front of it: a rule that carries its own value — `max-snippet:
+20, noindex` — addresses nobody, so the directives beside it stay generic.
 
 One channel that established the directive settles it; one channel that established *nothing*
-— an ambiguously scoped header, a read truncated at our byte bound, a document we could not
-decode or parse — forbids concluding an absence. A channel that does not apply, such as an HTML
+— a header whose syntax is genuinely unresolvable, a read truncated at our byte bound, a
+document we could not decode or parse — forbids concluding an absence. A channel that does not apply, such as an HTML
 declaration in a response that is not a document, does not hold the result open. **No
 `noindex` claim is made about a site whose response never arrived.**
 

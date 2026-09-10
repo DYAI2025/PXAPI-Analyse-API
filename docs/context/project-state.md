@@ -1,9 +1,9 @@
 # PXAPI Project State
 
 **Snapshot date:** 2026-09-10  
-**Execution mode:** governance rebaseline / anti-drift intake  
+**Execution mode:** post-governance closeout / PXAPI-19 pre-implementation  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
-**Bound base:** `main@3a52929ad1ce8b56278344d37feaf0ce68f31289`
+**Reconciled base/snapshot:** `8be473456f090a56b355e3e1a9981ba216bde783`
 
 ## Purpose
 
@@ -29,13 +29,15 @@ This file is a compact rehydration snapshot for delivery gates. It does not repl
 - Crawl4AI is an adapter candidate, not domain authority.
 - WIP limit: 1 mutating implementation theme.
 
-## Live code snapshot at rebaseline
+## Current code truth
 
-Verified `main` head at snapshot creation:
+At the reconciled base/snapshot above, PXAPI still analyzes one public homepage only. The governance merge added only these context documents and changed no runtime, API contract, score or acquisition behavior:
 
-`3a52929ad1ce8b56278344d37feaf0ce68f31289`
+- `docs/context/project-state.md`
+- `docs/context/decision-ledger.md`
+- `docs/context/contradiction-ledger.md`
 
-Current README explicitly states the implementation analyzes one public homepage only. Current registered contracts at that SHA are:
+Current registered application contracts remain:
 
 - `problem`
 - `analysis-run-request`
@@ -47,14 +49,26 @@ Current README explicitly states the implementation analyzes one public homepage
 
 No current implementation claim is made here for multi-page acquisition, Crawl4AI/browser execution, PostgreSQL queueing, scoring, customer projection or production deployment.
 
+## Completed prerequisite
+
+`PXAPI-4` — Skill Capability Baseline & Parity Gap Contract — is **Erledigt** as of 2026-09-10 for its discovery/contract scope.
+
+Accepted source-bound baseline:
+
+- Confluence page `54362137` — `PXAPI — Skill V2.1 Capability Baseline & Parity Gap Matrix — 2026-09-10`;
+- Skill artifact `pixelkiez-website-diagnosis_V2.1.zip`;
+- Skill ZIP SHA-256 `ab8bba6d1bbd23179b7a9761767971def54986a8e398da38919ea37c23ebb060`;
+- Skill package artifact digest `959ea94775c147ca3d6c197a4cc62f4e603557b53ec6bf8ca236a67ffabee13b`.
+
+This completion proves the source-bound parity/gap decision artifact, not implementation parity.
+
 ## Current prioritized delivery sequence
 
-1. Verify/freeze Skill Capability Baseline and Parity Gap (`PXAPI-4`).
-2. Implement Acquisition Method, Site Inventory & Sampling Manifest v1 (`PXAPI-19`) as next bounded implementation slice.
-3. Implement Multi-Page Static Acquisition & Canonical Evidence Population v1 (`PXAPI-20`).
-4. Re-measure evidence gain before paying browser/async complexity.
-5. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
-6. Strategic lever / impact verification contracts (`PXAPI-24`) later.
+1. `PXAPI-19` — Acquisition Method, Site Inventory & Sampling Manifest v1.
+2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1.
+3. Re-measure evidence gain before paying browser/async complexity.
+4. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
+5. Strategic lever / impact verification contracts (`PXAPI-24`) later.
 
 The 80/20 expectation is a Product Owner hypothesis, not production-measured fact.
 
@@ -62,16 +76,18 @@ The 80/20 expectation is a Product Owner hypothesis, not production-measured fac
 
 ### AD-001 — stale legacy PR
 
-GitHub PR #5 (`PXK-17 (A4): define Contracts v1 and the Analysis Run state machine`) is still open from an old base SHA, has 252 changed files and is currently non-mergeable. It is treated as historical/stale delivery drift and is not the active PXAPI WIP. No merge or deletion is authorized by this snapshot.
+GitHub PR #5 (`PXK-17 (A4): define Contracts v1 and the Analysis Run state machine`) remains stale legacy drift: old base, large scope and non-current delivery lineage. It is not active WIP. A separate reconcile is required before any close/merge decision.
 
-### AD-002 — governance intake gap being closed by this branch
+### AD-002 — governance intake gap closed
 
-Before this branch, `docs/context/project-state.md` and repository Decision/Contradiction ledgers were absent on current `main`. This branch introduces those context artifacts only. Their existence is not proof that the wider project is drift-free; live reconciliation remains mandatory.
+The repository context gap is **RESOLVED** by merged PR #12, merge commit `8be473456f090a56b355e3e1a9981ba216bde783`. The presence of these documents is not proof that the project is globally drift-free; live reconciliation remains mandatory.
 
 ## Current Jira focus
 
-- `PXAPI-4` — Skill Capability Baseline & Parity Gap Contract — discovery/contracting; must be accepted from source-bound evidence, not chat memory.
-- `PXAPI-19` — Acquisition Method, Site Inventory & Sampling Manifest v1 — planned P0 slice; must not start as READY until `PXAPI-4` and governance readiness are accepted and exact base SHA is re-read.
+- `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
+- `PXAPI-19` — next planned P0 implementation slice and only candidate for active mutating WIP after PRE_IMPLEMENTATION gate.
+
+No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.
 
 ## Delivery gate rules
 

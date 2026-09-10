@@ -204,6 +204,36 @@ def test_the_two_digests_document_different_roles(contract: str) -> None:
         )
 
 
+#: Values that are not a canonical digest. Upper-case hexadecimal is refused so that one byte
+#: sequence has exactly one written digest; a bare hex string is refused so no reader has to
+#: assume an algorithm; a foreign prefix is refused because a later algorithm is a new contract
+#: version rather than a widened shape.
+MALFORMED_DIGESTS = [
+    "ab" * 32,
+    "sha256:" + "AB" * 32,
+    "sha512:" + "ab" * 32,
+    "sha256:" + "ab" * 31,
+    "sha256:" + "ab" * 33,
+    "sha256:",
+    "",
+]
+
+
+@pytest.mark.parametrize("contract", CONTRACT_NAMES)
+@pytest.mark.parametrize("member", REQUIRED_DIGESTS)
+@pytest.mark.parametrize("value", MALFORMED_DIGESTS, ids=repr)
+def test_a_value_outside_the_canonical_digest_shape_is_refused(
+    contract: str, member: str, value: str
+) -> None:
+    document = dict(examples_of(contract)[0], **{member: value})
+    keys = {violation.key for violation in CONTRACTS.validate(contract, document)}
+    assert keys & {
+        (f"/{member}", "pattern"),
+        (f"/{member}", "minLength"),
+        (f"/{member}", "maxLength"),
+    }, f"{contract}.{member} accepted {value!r}"
+
+
 @pytest.mark.parametrize("contract", CONTRACT_NAMES)
 def test_no_declared_member_admits_a_floating_point_number(contract: str) -> None:
     """A digest over a float is not portable between producers, so none is representable."""

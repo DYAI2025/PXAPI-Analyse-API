@@ -79,11 +79,89 @@ POLARITIES: list[str] = ["POSITIVE", "NEGATIVE"]
 #: The set is closed, which is what keeps the value from becoming an open node.
 VALUE_TYPES: list[str] = ["BOOLEAN", "INTEGER", "TEXT", "URL"]
 
+#: What became of an attempted discovery source. Every token names the analysis process — a
+#: source that was read, was well formed and declared nothing, was not served, could not be
+#: parsed, declared no sitemap, hit one of our own bounds, was refused by our own target policy,
+#: failed in a provider or in our own runtime, or ran out of time. The set is closed because
+#: each token carries its own rule about whether a non-zero admitted count is even possible, and
+#: because an open token could arrive carrying a reason that describes the website instead.
+SOURCE_OUTCOMES: list[str] = [
+    "USED",
+    "EMPTY",
+    "ABSENT",
+    "MALFORMED",
+    "NO_SITEMAP_DECLARATION",
+    "BUDGET_EXHAUSTED",
+    "TARGET_POLICY_REFUSED",
+    "PROVIDER_FAILURE",
+    "RUNTIME_ERROR",
+    "TIMEOUT",
+]
+
+#: The outcomes under which the inventory could actually have admitted a candidate from the
+#: source: it was read, or it was cut short part-way by one of our bounds or by the clock. Every
+#: other outcome is pinned to an admitted count of zero, so an absent, malformed, undeclared,
+#: refused or failed source is structurally incapable of reporting that it contributed pages.
+#: Derived by membership rather than restated, so the subset cannot drift from the vocabulary.
+ADMITTING_SOURCE_OUTCOMES: list[str] = [
+    outcome for outcome in SOURCE_OUTCOMES if outcome in {"USED", "BUDGET_EXHAUSTED", "TIMEOUT"}
+]
+
+#: What every other outcome's admitted count is pinned to.
+NO_ADMISSION_COUNT = 0
+
+#: Whether a discovered candidate is a technically admissible acquisition target. Two values,
+#: and an admissibility statement only: EXCLUDED means this analysis will not fetch it, never
+#: that the page is deficient.
+ELIGIBILITY_STATES: list[str] = ["ELIGIBLE", "EXCLUDED"]
+
+#: The one state that may carry a reason. Stated once and pinned at the conditional below.
+EXCLUDED_ELIGIBILITY_STATE = "EXCLUDED"
+
+#: Why a discovered candidate is not a technically admissible target. Every token names this
+#: analysis or the discovery boundary it was authorised for, never a quality of the page.
+CANDIDATE_EXCLUSION_REASONS: list[str] = [
+    "OFF_ORIGIN",
+    "NON_PAGE_RESOURCE",
+    "TARGET_POLICY_REFUSED",
+    "BUDGET_EXHAUSTED",
+    "UNSUPPORTED",
+]
+
+#: How a sampling manifest's population was chosen. The threshold at which a site moves from a
+#: census to a sample is deliberately absent from the contracts and from this module: it is an
+#: open, benchmark-dependent policy decision, and STRATIFIED_SAMPLE existing in the vocabulary
+#: is not a claim that a benchmark-authorised sample can currently be produced.
+SAMPLING_MODES: list[str] = ["CENSUS", "STRATIFIED_SAMPLE"]
+
+#: Why a deterministic policy took one candidate. None of the three ranks a page above another.
+SELECTION_REASONS: list[str] = ["SEED", "CENSUS", "STRATUM_QUOTA"]
+
+#: Why inventory candidates were not selected. Not being selected is a fact about this run's
+#: method and budgets, never a defect of the pages concerned.
+SELECTION_EXCLUSION_REASONS: list[str] = [
+    "NOT_SELECTED_BY_POLICY",
+    "SELECTION_BUDGET_EXHAUSTED",
+    "INELIGIBLE_IN_INVENTORY",
+]
+
 #: The one result state that carries a value about the website. Both carriers key a conditional
 #: on it — a measurement may hold a result, and evidence may hold a polarity, only here — so it
 #: is stated once and pinned at both sites through the pointer below.
 VALUED_RESULT_STATE = "KNOWN"
 VALUED_STATE_POINTER = "#/allOf/0/if/properties/assessment/properties/result_state/const"
+
+#: Where the inventory's source and eligibility vocabularies live. They are stated here rather
+#: than inline in the pin table because each is long enough that an inline literal would hide
+#: which vocabulary is being pinned.
+_SOURCE_ITEM = "#/properties/sources/items"
+_ELIGIBILITY = "#/properties/candidates/items/properties/eligibility"
+SOURCE_OUTCOME_POINTER = f"{_SOURCE_ITEM}/properties/outcome/enum"
+ADMITTING_OUTCOME_POINTER = f"{_SOURCE_ITEM}/allOf/0/if/properties/outcome/enum"
+NO_ADMISSION_POINTER = f"{_SOURCE_ITEM}/allOf/0/else/properties/candidate_count/const"
+ELIGIBILITY_STATE_POINTER = f"{_ELIGIBILITY}/properties/state/enum"
+CANDIDATE_EXCLUSION_POINTER = f"{_ELIGIBILITY}/properties/exclusion_reason/enum"
+EXCLUDED_STATE_POINTER = f"{_ELIGIBILITY}/allOf/0/if/properties/state/const"
 
 #: Every closed vocabulary this module pins, as ``(schema file, JSON pointer) -> exact value``.
 PINNED: dict[tuple[str, str], Any] = {
@@ -100,6 +178,15 @@ PINNED: dict[tuple[str, str], Any] = {
     ("measurement-record.v1.json", VALUED_STATE_POINTER): VALUED_RESULT_STATE,
     ("website-evidence.v1.json", "#/properties/polarity/enum"): POLARITIES,
     ("website-evidence.v1.json", VALUED_STATE_POINTER): VALUED_RESULT_STATE,
+    ("site-inventory.v1.json", SOURCE_OUTCOME_POINTER): SOURCE_OUTCOMES,
+    ("site-inventory.v1.json", ADMITTING_OUTCOME_POINTER): ADMITTING_SOURCE_OUTCOMES,
+    ("site-inventory.v1.json", NO_ADMISSION_POINTER): NO_ADMISSION_COUNT,
+    ("site-inventory.v1.json", ELIGIBILITY_STATE_POINTER): ELIGIBILITY_STATES,
+    ("site-inventory.v1.json", CANDIDATE_EXCLUSION_POINTER): CANDIDATE_EXCLUSION_REASONS,
+    ("site-inventory.v1.json", EXCLUDED_STATE_POINTER): EXCLUDED_ELIGIBILITY_STATE,
+    ("sampling-manifest.v1.json", "#/properties/mode/enum"): SAMPLING_MODES,
+    ("sampling-manifest.v1.json", "#/$defs/selection_reason/enum"): SELECTION_REASONS,
+    ("sampling-manifest.v1.json", "#/$defs/exclusion_reason/enum"): SELECTION_EXCLUSION_REASONS,
     # The four value_type branches, derived from the vocabulary rather than listed: this pins
     # that there is exactly one branch per declared type, in the declared order, so a fifth
     # type cannot arrive without a branch and a branch cannot be dropped without a red test.
@@ -190,6 +277,23 @@ def test_a_delegated_vocabulary_names_a_test_that_exists(owner: tuple[str, str])
 
 
 # --- the canaries -----------------------------------------------------------------------------
+
+
+def test_the_admitting_outcomes_are_a_proper_subset_of_the_source_vocabulary() -> None:
+    """A subset that grew to the whole set would exempt every outcome from the zero rule."""
+    assert ADMITTING_SOURCE_OUTCOMES, "no outcome may admit a candidate; the rule is vacuous"
+    assert set(ADMITTING_SOURCE_OUTCOMES) < set(SOURCE_OUTCOMES)
+
+
+def test_the_excluded_state_belongs_to_the_eligibility_vocabulary() -> None:
+    """The token the eligibility conditional keys on must be one the vocabulary declares."""
+    assert EXCLUDED_ELIGIBILITY_STATE in ELIGIBILITY_STATES
+
+
+def test_no_sampling_vocabulary_encodes_a_census_threshold() -> None:
+    """The census-to-sampling threshold is MISSING and must not arrive as a token or a number."""
+    assert all(not token.strip("_").isdigit() for token in SAMPLING_MODES + SELECTION_REASONS)
+    assert SAMPLING_MODES == ["CENSUS", "STRATIFIED_SAMPLE"]
 
 
 def test_the_valued_result_state_belongs_to_the_result_state_vocabulary() -> None:

@@ -1,0 +1,46 @@
+{
+  "contract": "sampling-manifest",
+  "note": "Targeted invalid sampling manifests, in the same structural form as every other expectation index here. The digests are synthetic fixture data.",
+  "cases": {
+    "input-digest-missing": {
+      "proves": "A manifest always states what its selection was decided from; the input digest is mandatory rather than optional.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "output-digest-missing": {
+      "proves": "The selection semantics always carry their own digest, so two manifests can be compared without re-deriving the selection.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "content-digest-property": {
+      "proves": "D-PXAPI19-PO-004: input and output are the whole digest topology here too, and the closed root refuses a third member.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "inventory-output-digest-missing": {
+      "proves": "The binding to the exact inventory output is mandatory, because this manifest's own input digest is computed over it: without it the input digest would cover a population nobody can identify.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "selection-complete-missing": {
+      "proves": "selection_complete is mandatory, so a bounded selection can never be read as a complete one.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "mode-provider-owned": {
+      "proves": "Selection is Pixelkiez methodology. The mode vocabulary is closed at CENSUS and STRATIFIED_SAMPLE, so no manifest can record that a crawl provider chose the pages.",
+      "violations": [{ "pointer": "/mode", "keyword": "enum" }]
+    },
+    "census-threshold-property": {
+      "proves": "The census-to-sampling threshold is MISSING and is not invented here. The closed root refuses a member that would carry a number a reader could mistake for it.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "selections-empty": {
+      "proves": "A manifest that selected nothing would read as a successful analysis of no pages. At least one selection is required, for the same reason the inventory refuses an empty candidate list.",
+      "violations": [{ "pointer": "/selections", "keyword": "minItems" }]
+    },
+    "exclusion-reason-website-quality": {
+      "proves": "Not being selected is a fact about this run's method and budgets. The closed vocabulary refuses a reason that describes the pages instead.",
+      "violations": [{ "pointer": "/exclusions/0/reason", "keyword": "enum" }]
+    },
+    "excluded-url-list-property": {
+      "proves": "D-PXAPI19-PO-007: arbitrary rejected URL strings are not persisted merely so a digest can be recomputed. Exclusions are a bounded per-reason summary and the closed root refuses a URL list.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    }
+  }
+}

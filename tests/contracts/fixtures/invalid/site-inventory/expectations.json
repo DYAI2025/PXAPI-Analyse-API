@@ -1,0 +1,62 @@
+{
+  "contract": "site-inventory",
+  "note": "Targeted invalid site inventories, each the smallest document that carries the rule it breaks. Violations are (pointer, keyword) pairs only; a validator's free text is never recorded. The digests here are synthetic fixture data — no digest is recomputed over an invalid document.",
+  "cases": {
+    "input-digest-missing": {
+      "proves": "Both digests are mandatory: an inventory with no binding to the discovery input it was built from cannot be reproduced, so the member is required rather than optional.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "output-digest-missing": {
+      "proves": "The output digest is mandatory too, so an inventory always states an identity for its own semantics that a sampling manifest can bind to.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "content-digest-property": {
+      "proves": "D-PXAPI19-PO-004 fixes the digest topology at input and output. A third content_digest is refused by the closed root, so a second unowned notion of this document's identity cannot appear.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "digest-not-algorithm-prefixed": {
+      "proves": "A digest carries its algorithm in the value. A bare hexadecimal string is refused, so no reader has to guess which algorithm produced it.",
+      "violations": [{ "pointer": "/input_digest", "keyword": "pattern" }]
+    },
+    "sitemap-state-property": {
+      "proves": "D-PXAPI19-PO-005: sources is the single authority on source state. A root-level sitemap_state would be a second account of the same fact, and the closed root refuses it.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "robots-state-property": {
+      "proves": "The same rule for robots: no root-level parallel authority beside sources.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    },
+    "source-outcome-website-polarity": {
+      "proves": "A source outcome is a technical process state and never a website judgement. The vocabulary is closed, so a polarity token cannot be smuggled in as an outcome.",
+      "violations": [{ "pointer": "/sources/0/outcome", "keyword": "enum" }]
+    },
+    "absent-source-claims-candidates": {
+      "proves": "A source that was never served cannot report having contributed pages. Every outcome under which admission was impossible is pinned to zero.",
+      "violations": [{ "pointer": "/sources/0/candidate_count", "keyword": "const" }]
+    },
+    "candidates-empty": {
+      "proves": "D-PXAPI19-PO-006: an apparently successful inventory with no candidate is not representable. An inventory exists only after a canonical origin was established, so it always holds at least the seed.",
+      "violations": [{ "pointer": "/candidates", "keyword": "minItems" }]
+    },
+    "eligible-with-exclusion-reason": {
+      "proves": "An admissible candidate may not carry a reason it was excluded for; the two halves of the eligibility statement cannot contradict each other.",
+      "violations": [{ "pointer": "/candidates/0/eligibility", "keyword": "not" }]
+    },
+    "excluded-without-exclusion-reason": {
+      "proves": "An excluded candidate must name the technical reason, so an exclusion is never an unexplained verdict a reader could take for a defect of the page.",
+      "violations": [{ "pointer": "/candidates/0/eligibility", "keyword": "required" }]
+    },
+    "credential-bearing-url-key": {
+      "proves": "D-PXAPI19-PO-007: a credential-bearing URL never becomes persisted canonical contract data. The identity shape excludes userinfo outright.",
+      "violations": [{ "pointer": "/candidates/0/url_key", "keyword": "pattern" }]
+    },
+    "anchor-label-property": {
+      "proves": "D-PXAPI19-PO-007: raw anchor labels are transient PXAPI-19.B input and are not part of this canonical contract. The closed candidate object refuses one.",
+      "violations": [{ "pointer": "/candidates/0", "keyword": "additionalProperties" }]
+    },
+    "score-property": {
+      "proves": "An inventory is not a score authority. No score, severity or grade member exists, and the closed root refuses one, so discovery cannot become a verdict.",
+      "violations": [{ "pointer": "", "keyword": "additionalProperties" }]
+    }
+  }
+}

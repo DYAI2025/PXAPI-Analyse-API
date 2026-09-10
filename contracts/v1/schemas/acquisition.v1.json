@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:acquisition:1.0.0",
+  "title": "PXAPI shared acquisition definitions v1",
+  "description": "Reusable lexical $defs the two acquisition contracts both need. This file is not a contract: no document validates against it as a whole, and it carries no analysis meaning of its own. It exists rather than an extension of common.v1.json because common's $id pins it at 1.0.0 and every registered contract references that exact URI: adding a definition there would either leave the version lying about the file's content or break every existing reference. It holds only what site-inventory.v1 and sampling-manifest.v1 both reference; a vocabulary belonging to one carrier alone is declared in that carrier, where its rules live.",
+  "$defs": {
+    "public_url": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https?://[^\\u0000-\\u0020\\u007F-\\u009F\\u2028\\u2029/?#@]{1,253}(?:[/?#][^\\u0000-\\u0020\\u007F-\\u009F\\u2028\\u2029]{0,1790})?(?!\\n)$",
+      "description": "An absolute http or https URL that carries no userinfo component, as a structural shape only. It differs from common#/$defs/url in exactly one respect, and deliberately: the authority segment excludes '@', so a credential-bearing URL such as https://user:secret@example.com/ cannot become persisted canonical contract data. An empty userinfo ('https://@example.com/') is refused for the same reason. The '@' stays legal after the first '/', '?' or '#', because a path or query may contain one and nothing is being smuggled there. Everything else remains out of scope here: reachability, canonicalisation, redirect policy, egress rules, loopback and private ranges, and robots handling belong to the slice that owns the acquisition runtime, never to a contract. The authority and remainder are bounded separately and the group repeats at most once, so a hostile value cannot make matching super-linear."
+    },
+    "url_key": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_url",
+      "description": "The canonical identity of one discovered URL: the value under which observations that collapse to the same target are aggregated. It is a public_url, so an identity can never carry a credential. The rules by which two observed forms reduce to one key are the producer's canonicalisation method, which is named and versioned by the carrier rather than fixed here — this definition fixes the identity's lexical shape and nothing about how it was derived."
+    },
+    "digest": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[0-9a-f]{64}(?!\\n)$",
+      "description": "A canonical content digest, written with its algorithm in the value: 'sha256:' followed by 64 lower-case hexadecimal characters. The algorithm is carried rather than implied, so a document never has to be read against an assumption about how its digest was produced, and a later algorithm is a new version of the carrying contract rather than an ambiguous hex string of a different length. Upper-case hexadecimal is refused so that one byte sequence has exactly one written digest. What the digest is computed over is stated by the member that carries it; this definition fixes only the shape."
+    }
+  }
+}

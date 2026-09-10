@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000019",
+  "inventory_id": "inv-01JQ8Z4K2M0000000000000019",
+  "generated_at": "2026-09-10T08:41:12Z",
+  "target_origin": "https://example.com/",
+  "discovery_method": "SAME_ORIGIN_PUBLIC_DISCOVERY",
+  "discovery_method_version": "1.0.0",
+  "classifier": "PAGE_TYPE_BASELINE",
+  "classifier_version": "1.0.0",
+  "sources": [
+    { "source_id": "CANONICAL_SEED", "outcome": "USED", "candidate_count": 1 },
+    { "source_id": "ROBOTS_DECLARATION", "outcome": "USED", "candidate_count": 0 },
+    { "source_id": "SITEMAP", "outcome": "USED", "candidate_count": 4 },
+    { "source_id": "SAME_ORIGIN_PAGE_LINKS", "outcome": "USED", "candidate_count": 3 }
+  ],
+  "candidates": [
+    {
+      "url_key": "https://example.com/",
+      "observed_forms": ["https://example.com", "https://example.com/"],
+      "provenance": ["CANONICAL_SEED", "SAME_ORIGIN_PAGE_LINKS", "SITEMAP"],
+      "page_type": "HOMEPAGE",
+      "eligibility": { "state": "ELIGIBLE" }
+    },
+    {
+      "url_key": "https://example.com/leistungen",
+      "observed_forms": [
+        "https://example.com/leistungen",
+        "https://example.com/leistungen?utm_source=newsletter"
+      ],
+      "provenance": ["SAME_ORIGIN_PAGE_LINKS", "SITEMAP"],
+      "page_type": "OFFER",
+      "eligibility": { "state": "ELIGIBLE" }
+    },
+    {
+      "url_key": "https://example.com/referenzen",
+      "observed_forms": ["https://example.com/referenzen"],
+      "provenance": ["SITEMAP"],
+      "page_type": "PROOF",
+      "eligibility": { "state": "ELIGIBLE" }
+    },
+    {
+      "url_key": "https://example.com/kontakt",
+      "observed_forms": ["https://example.com/kontakt"],
+      "provenance": ["SAME_ORIGIN_PAGE_LINKS"],
+      "page_type": "CONTACT",
+      "eligibility": { "state": "ELIGIBLE" }
+    },
+    {
+      "url_key": "https://example.com/broschuere.pdf",
+      "observed_forms": ["https://example.com/broschuere.pdf"],
+      "provenance": ["SITEMAP"],
+      "eligibility": { "state": "EXCLUDED", "exclusion_reason": "NON_PAGE_RESOURCE" }
+    }
+  ],
+  "input_digest": "sha256:75a45a81ef50d5beeab0080f699f40baa28bb6cae29e7f9e384747fb5c49a75b",
+  "output_digest": "sha256:adfe03a2515a73525877d130817f70827e9cff592505cd9aef0fef9885028bbc"
+}

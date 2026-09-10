@@ -19,6 +19,12 @@
       "id": "urn:pxapi:schema:assessment:1.0.0",
       "version": "1.0.0",
       "schema": "schemas/assessment.v1.json"
+    },
+    {
+      "name": "acquisition",
+      "id": "urn:pxapi:schema:acquisition:1.0.0",
+      "version": "1.0.0",
+      "schema": "schemas/acquisition.v1.json"
     }
   ],
   "contracts": [
@@ -120,6 +126,34 @@
         "examples/diagnostic-finding.example.json",
         "examples/diagnostic-finding.non-https-transport.example.json",
         "examples/diagnostic-finding.missing-title.example.json"
+      ]
+    },
+    {
+      "name": "site-inventory",
+      "id": "urn:pxapi:schema:site-inventory:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXAPI-19.A",
+      "schema": "schemas/site-inventory.v1.json",
+      "examples": [
+        "examples/site-inventory.example.json",
+        "examples/site-inventory.homepage-only.example.json",
+        "examples/site-inventory.discovery-unavailable.example.json"
+      ]
+    },
+    {
+      "name": "sampling-manifest",
+      "id": "urn:pxapi:schema:sampling-manifest:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXAPI-19.A",
+      "schema": "schemas/sampling-manifest.v1.json",
+      "examples": [
+        "examples/sampling-manifest.example.json",
+        "examples/sampling-manifest.stratified-sample.example.json",
+        "examples/sampling-manifest.bounded-selection.example.json"
       ]
     }
   ],

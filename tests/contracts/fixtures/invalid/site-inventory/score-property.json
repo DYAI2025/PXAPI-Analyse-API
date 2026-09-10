@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000019",
+  "inventory_id": "inv-01JQ8Z4K2M0000000000000019",
+  "generated_at": "2026-09-10T08:41:12Z",
+  "target_origin": "https://example.com/",
+  "discovery_method": "SAME_ORIGIN_PUBLIC_DISCOVERY",
+  "discovery_method_version": "1.0.0",
+  "classifier": "PAGE_TYPE_BASELINE",
+  "classifier_version": "1.0.0",
+  "sources": [{ "source_id": "CANONICAL_SEED", "outcome": "USED", "candidate_count": 1 }],
+  "candidates": [
+    {
+      "url_key": "https://example.com/",
+      "observed_forms": ["https://example.com/"],
+      "provenance": ["CANONICAL_SEED"],
+      "page_type": "HOMEPAGE",
+      "eligibility": { "state": "ELIGIBLE" }
+    }
+  ],
+  "input_digest": "sha256:abababababababababababababababababababababababababababababababab",
+  "output_digest": "sha256:abababababababababababababababababababababababababababababababab",
+  "score": 42
+}

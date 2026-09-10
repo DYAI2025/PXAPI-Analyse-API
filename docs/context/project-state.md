@@ -3,7 +3,7 @@
 **Snapshot date:** 2026-09-10  
 **Execution mode:** post-governance closeout / PXAPI-19 pre-implementation  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
-**Current reconciled main:** `8be473456f090a56b355e3e1a9981ba216bde783`
+**Reconciled base/snapshot:** `8be473456f090a56b355e3e1a9981ba216bde783`
 
 ## Purpose
 
@@ -31,7 +31,7 @@ This file is a compact rehydration snapshot for delivery gates. It does not repl
 
 ## Current code truth
 
-At the reconciled main above, PXAPI still analyzes one public homepage only. The governance merge added only these context documents and changed no runtime, API contract, score or acquisition behavior:
+At the reconciled base/snapshot above, PXAPI still analyzes one public homepage only. The governance merge added only these context documents and changed no runtime, API contract, score or acquisition behavior:
 
 - `docs/context/project-state.md`
 - `docs/context/decision-ledger.md`

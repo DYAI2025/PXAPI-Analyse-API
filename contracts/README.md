@@ -232,6 +232,154 @@ None of them is a `not_assessed_reason`, and no `not_assessed_reason` is any of 
 provider failure, a timeout, a refused permission and a runtime error say nothing about the
 subject, and a document carrying one is refused a value and a polarity outright.
 
+## Site inventory and sampling manifest
+
+PXAPI-19.A adds the two contracts that make the analysed page population itself reproducible,
+and registers **no producer for either**. `site-inventory.v1` is the provider-neutral population
+of publicly discovered targets for one site; `sampling-manifest.v1` records which of that
+population an Analysis Run set out to analyse, and why. Both are technical artifacts: neither
+carries a score, a severity, a polarity or a finding, and the closed roots refuse an added one.
+
+`acquisition.v1.json` is a **third shared-definitions file**, not an extension of
+`common.v1.json`. `common`'s `$id` pins it at `1.0.0` and every registered contract references
+that exact URI, so adding a definition there would either leave the version lying about the
+file's content or break every existing reference. It holds only what both new contracts
+reference: `public_url`, `url_key` and `digest`.
+
+`public_url` differs from `common#/$defs/url` in exactly one respect. Its authority segment
+excludes `@`, so a credential-bearing URL such as `https://user:secret@example.com/` **cannot
+become persisted canonical contract data**. Every URL-valued member of both contracts resolves
+to this shape or to `url_key`, which is built on it; a test asserts that neither contract
+references the userinfo-permitting shape at all, so a member somebody forgets cannot become the
+way userinfo is persisted. `digest` carries its algorithm in the value — `sha256:` plus 64
+lower-case hex characters — so a document is never read against an assumption about how its
+digest was produced, and a later algorithm is a new contract version rather than a longer string.
+
+### The digest topology
+
+Each contract carries **exactly two** digests. There is deliberately no third `content_digest`:
+a third member would create a second, unowned notion of a document's identity.
+
+| Digest | Computed over | Never participates |
+| --- | --- | --- |
+| `site-inventory.input_digest` | the admitted discovery observations, which this document does not carry | envelope ids, `generated_at`, both digest members |
+| `site-inventory.output_digest` | target origin, discovery method and version, classifier and version, source outcomes, normalised candidates | the same |
+| `sampling-manifest.input_digest` | `inventory_ref`, `inventory_output_digest`, `policy_id`, `policy_version`, declared `budgets` | the same |
+| `sampling-manifest.output_digest` | `mode`, `selection_complete`, the selections in rank order, the exclusion summary | the same |
+
+The canonical form is deterministic UTF-8 JSON with sorted keys, no insignificant whitespace and
+**no floating-point member anywhere** — a digest over a float is not portable between producers,
+so no member of either contract admits one. Re-emitting the same semantics under a new id at a
+new instant leaves both digests unchanged, which is what makes them comparable across runs.
+
+**Semantic ordering must not make an order-independent input order-dependent.** The two contracts
+therefore differ deliberately: the inventory's candidates, their `observed_forms` and their
+`provenance`, and the `sources` list are **sets** the contract renders as arrays, so the
+projection sorts them and the digest cannot depend on the sequence a producer happened to visit
+sources in. A manifest's selection order **is** semantic, and it is carried by an explicit
+`selection_rank` rather than by the array position — so re-serialising a manifest in another
+array order cannot change what it means, while permuting the ranks does.
+
+`tests/acquisition/digests.py` is the reference implementation of these rules. It is test code
+because PXAPI-19.A ships no producer, and its member classification is derived against the
+schemas: a member added later without a decision about whether it participates in a digest turns
+the suite red rather than silently digesting or silently escaping.
+
+### One authority for discovery source state
+
+`sources[]` is the **single** authority on what became of each attempted discovery source. There
+is deliberately no root-level `sitemap_state` or `robots_state` beside it, because two accounts
+of one fact can disagree and a reader would then have to choose. Each entry names the source as
+an **open** token — a source a later slice introduces validates without a schema change, and the
+same token is what a candidate's `provenance` names — plus a **closed** outcome:
+
+```text
+USED                    read, and its entries enumerated
+EMPTY                   read, well formed, and declared nothing
+ABSENT                  not served where it would be declared
+MALFORMED               served, but not parseable as the source kind it claims
+NO_SITEMAP_DECLARATION  an applicable source was present and declared no sitemap
+BUDGET_EXHAUSTED        one of our own declared bounds stopped the read
+TARGET_POLICY_REFUSED   our own target policy refused the fetch
+PROVIDER_FAILURE        a component outside our runtime failed
+RUNTIME_ERROR           our own runtime failed
+TIMEOUT                 a time budget elapsed
+```
+
+Every one of the ten names the **analysis process**, and none is a website-quality polarity. The
+vocabulary is closed for two reasons: an open token could arrive carrying a reason that describes
+the site, and each token carries its own rule about the admitted count. `candidate_count` is how
+many candidates *this inventory admitted from that source* — never a count of what the source or
+the website contains — and only `USED`, `BUDGET_EXHAUSTED` and `TIMEOUT` may report a non-zero
+one. Every other outcome is pinned to zero, so **an absent, malformed, undeclared, refused or
+failed source is structurally incapable of reporting that it contributed pages.**
+
+`PROVIDER_FAILURE` and `RUNTIME_ERROR` are kept apart exactly as
+`assessment#/$defs/not_assessed_reason` keeps them apart, and `PROVIDER_FAILURE` deliberately
+stays a *source outcome*: attributing a failure to a component is the opposite of handing that
+component a decision.
+
+### Bootstrap truth
+
+An inventory exists **only after** a canonical public target origin has been established, so it
+always contains at least the canonical target seed, whose `url_key` is `target_origin`. There is
+deliberately no representable successful zero-candidate inventory: such a document would read as
+"this site has no pages" when what actually happened is that discovery never started. A bootstrap
+that cannot establish the origin produces **no inventory and no manifest** — a neutral technical
+run failure whose wiring belongs to PXAPI-19.B.
+
+A discovery that found nothing beyond the homepage is therefore a **one-candidate** inventory
+with neutral source outcomes, which is what `site-inventory.homepage-only.example.json` is; there
+is no `empty-discovery` example, and a test asserts there never is. JSON Schema cannot compare two
+members of one document, so the seed-identity rule is enforced over every registered example
+rather than by the schema; the schema enforces the part it can, that the list is never empty.
+`sampling-manifest.v1` applies the same rule to its own selections for the same reason.
+
+### Duplicate, rejected and transient URL truth
+
+Accepted observations that canonicalise to the same identity are **one candidate with aggregated
+provenance**, never several. `observed_forms` holds the distinct accepted forms that were seen and
+`provenance` the `source_id` values that contributed them, both as unordered sets. Duplication is
+**not** a website defect, not a score signal and not automatically an exclusion, and there is no
+`DUPLICATE_URL_KEY` token anywhere in either contract — a test asserts that too, so introducing
+one is a reviewed change rather than an accident.
+
+An arbitrary rejected URL string is deliberately **not persisted** merely so that a digest can be
+recomputed: the manifest's `exclusions` is a bounded per-reason count summary and the closed roots
+refuse a URL list. Raw anchor labels remain transient PXAPI-19.B input and are not part of the
+19.A canonical contract; the closed candidate object refuses one.
+
+A candidate's `page_type` is **optional**, and its absence means the classifier assigned no type.
+It never means the page is irrelevant, wrong or excluded — and the absence of a member is
+structurally incapable of carrying a judgement. The taxonomy itself stays an open token: fixing a
+stratum or page-type set is versioned classification work, not a set invented by this slice.
+
+### Sampling semantics
+
+`mode` is closed at `CENSUS | STRATIFIED_SAMPLE`. **The census-to-sampling threshold is
+`MISSING`** (contradiction ledger `C-PXAPI-005`) and is not invented here: the only numeric
+constant either contract declares is the zero that pins a non-admitting source's count, and a
+test asserts it. `STRATIFIED_SAMPLE` existing in the vocabulary lets a manifest say which method
+was used; it is **not** a claim that a benchmark-authorised sample can currently be produced.
+
+Selection is Pixelkiez methodology. `policy_id` and `policy_version` are both required, so a
+selection is always attributable to a versioned method, and no member name or selection token
+names a crawl provider — a test scans for that. `selection_complete` is **mandatory and neutral
+in both values**: `false` means the selection was bounded or stopped early and is a statement
+about this analysis; it never means the site is small, thin or incompletely built, and nothing
+downstream may treat it as a penalty. A manifest binds `inventory_output_digest` to the exact
+inventory output it selected against, so it can never be read as a selection over a population it
+did not see.
+
+### What these two contracts do not prove
+
+A valid inventory or manifest proves a document shape and nothing else. It does not prove that
+site discovery runs, that same-origin traversal, sitemap or robots handling is implemented, that
+a producer canonicalises or deduplicates, that a sampling planner exists, that the sampling
+threshold is known, that any page was fetched, or that any URL was reachable, safe or permitted.
+Acquiring a selected page is PXAPI-20's decision and `page-acquisition-record.v1` is not part of
+this slice.
+
 ## The Problem contract and its producer rule
 
 `problem` is transport-neutral: no HTTP status, no type URI, no other transport binding. The

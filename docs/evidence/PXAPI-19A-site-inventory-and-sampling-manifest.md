@@ -50,7 +50,7 @@ performed; Confluence `55050241` and `54362115` were read only.
 | `contracts/README.md` | contract documentation, additive section |
 | `docs/evidence/PXAPI-19A-…md` | this document |
 
-42 files, 3 pre-existing files touched, **0 deleted lines in any pre-existing file**
+43 files, 3 pre-existing files touched, **0 deleted lines in any pre-existing file**
 (`git diff -U0 … | grep -c '^-[^-]'` = `0` for `manifest.json`, `contracts/README.md` and
 `tests/test_closed_vocabularies.py`).
 
@@ -166,19 +166,34 @@ result would have read as three genuine gaps in the neutrality guards.
 
 ### Reviewability
 
+A document cannot state its own contribution to a diff without changing it, so the figure below
+is measured **excluding `docs/evidence`** — the convention this repository already used for
+PXK-61 — and this document's own size is given separately.
+
 | Measurement | Command | Value |
 | --- | --- | --- |
-| Diff size | `git diff --no-ext-diff --unified=0 origin/main...HEAD \| wc -c` | `169594` |
+| Diff size, everything except this document | `git diff --no-ext-diff --unified=0 origin/main...HEAD -- . ':!docs/evidence' \| wc -c` | `169594` |
 | Convention | Confluence `45907970` craftsmanship correction 6 | `< 140000` |
-| Files changed | `git diff --name-only origin/main...HEAD \| wc -l` | `42` |
+| This document | `git diff --no-ext-diff --unified=0 origin/main...HEAD -- docs/evidence \| wc -c` | about `22000` |
+| Files changed | `git diff --name-only origin/main...HEAD \| wc -l` | `43` |
 
-**This exceeds the ~140,000-byte reviewability convention by about 21%, and is flagged rather
-than concealed.** The convention was measured against slices that register one contract; this
-increment registers **two** contracts plus a shared-definitions file, because Confluence
-`55050241` scopes 19.A as both. The largest contributors are the two semantics suites
-(`55 kB` combined), the two schemas (`31 kB`) and the 24 fixtures with their two expectation
-indexes (`38 kB`). Fixture bases were already minimised once during this slice, which removed
-`7 kB`.
+**Excluding this document the diff is about 21% over the ~140,000-byte reviewability convention,
+and roughly 37% over with it. That is flagged rather than concealed.** The convention was
+measured against slices that register one contract; this increment registers **two** contracts
+plus a shared-definitions file, because Confluence `55050241` scopes 19.A as both. Measured by
+group:
+
+| Group | Bytes |
+| --- | --- |
+| the two semantics suites | `56271` |
+| the 24 fixtures and their two expectation indexes | `38135` |
+| this document and the contracts README section | `32068` |
+| the two contract schemas | `31504` |
+| the digest reference implementation | `10662` |
+| examples, manifest registration, vocabulary pins, shared definitions | `22462` |
+
+Fixture bases were minimised once during this slice, which removed `7 kB`; nothing else was
+trimmed, because every remaining byte is either a contract, a proof or the record of one.
 
 **The concrete split point, if a Product Owner prefers two reviews:** `site-inventory.v1` with
 `acquisition.v1.json`, its examples, its 14 fixtures and the neutrality/bootstrap/provenance

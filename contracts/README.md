@@ -243,17 +243,28 @@ carries a score, a severity, a polarity or a finding, and the closed roots refus
 `acquisition.v1.json` is a **third shared-definitions file**, not an extension of
 `common.v1.json`. `common`'s `$id` pins it at `1.0.0` and every registered contract references
 that exact URI, so adding a definition there would either leave the version lying about the
-file's content or break every existing reference. It holds only what both new contracts
-reference: `public_url`, `url_key` and `digest`.
+file's content or break every existing reference. It holds the lexical URL and digest shapes of
+the acquisition slice: `public_url`, `public_origin`, `url_key` and `digest`.
 
 `public_url` differs from `common#/$defs/url` in exactly one respect. Its authority segment
 excludes `@`, so a credential-bearing URL such as `https://user:secret@example.com/` **cannot
 become persisted canonical contract data**. Every URL-valued member of both contracts resolves
-to this shape or to `url_key`, which is built on it; a test asserts that neither contract
-references the userinfo-permitting shape at all, so a member somebody forgets cannot become the
-way userinfo is persisted. `digest` carries its algorithm in the value — `sha256:` plus 64
-lower-case hex characters — so a document is never read against an assumption about how its
-digest was produced, and a later algorithm is a new contract version rather than a longer string.
+to this shape, to `public_origin` or to `url_key`, both of which are built on it; a test asserts
+that neither contract references the userinfo-permitting shape at all, so a member somebody
+forgets cannot become the way userinfo is persisted. `digest` carries its algorithm in the value
+— `sha256:` plus 64 lower-case hex characters — so a document is never read against an assumption
+about how its digest was produced, and a later algorithm is a new contract version rather than a
+longer string.
+
+`public_origin` is `public_url` **narrowed to an origin**: scheme, authority (legal port form
+included) and at most the normalised root slash. A path beyond the root, a query and a fragment
+are each refused. `site-inventory.target_origin` uses it, because that member is the canonical
+site authority and the seed identity — a member every consumer reads as "the site" must not be
+able to hold one page of the site. It is referenced by the inventory alone today and still lives
+in the shared file, because it narrows the very authority segment `public_url` declares beside
+it, and one authority shape stated twice is how the two drift apart. It stays **lexical**: DNS
+resolution, reachability, redirect policy, egress rules, loopback and private ranges and robots
+handling remain PXAPI-19.B and runtime concerns, and a valid value proves none of them.
 
 ### The digest topology
 
@@ -265,7 +276,7 @@ a third member would create a second, unowned notion of a document's identity.
 | `site-inventory.input_digest` | the admitted discovery observations, which this document does not carry | envelope ids, `generated_at`, both digest members |
 | `site-inventory.output_digest` | target origin, discovery method and version, classifier and version, source outcomes, normalised candidates | the same |
 | `sampling-manifest.input_digest` | `inventory_ref`, `inventory_output_digest`, `policy_id`, `policy_version`, declared `budgets` | the same |
-| `sampling-manifest.output_digest` | `mode`, `selection_complete`, the selections in rank order, the exclusion summary | the same |
+| `sampling-manifest.output_digest` | `mode`, `selection_complete`, `incompleteness` when present, the selections in rank order, the exclusion summary | the same |
 
 The canonical form is deterministic UTF-8 JSON with sorted keys, no insignificant whitespace and
 **no floating-point member anywhere** — a digest over a float is not portable between producers,
@@ -284,6 +295,38 @@ array order cannot change what it means, while permuting the ranks does.
 because PXAPI-19.A ships no producer, and its member classification is derived against the
 schemas: a member added later without a decision about whether it participates in a digest turns
 the suite red rather than silently digesting or silently escaping.
+
+### Semantic keys, and why the digest fails closed
+
+The canonical ordering sorts each order-independent collection by a **semantic key** — a source's
+`source_id`, a candidate's `url_key`, a selection's `selection_rank`, an exclusion's `reason`.
+Five relationships follow from that, and **JSON Schema states none of them**:
+
+| Rule | What it keeps unambiguous |
+| --- | --- |
+| `source_id` unique per inventory | a candidate's `provenance` resolves to one outcome |
+| candidate `url_key` unique | observations that share an identity aggregate onto one candidate |
+| selected `url_key` unique per manifest | the selection set is a set; the accounting does not double-count |
+| `selection_rank` unique **and dense** (`1..n`) | the order authority names one real position per selection |
+| exclusion `reason` unique per manifest | a reader never adds two partial counts of one reason |
+
+`uniqueItems` does not cover these: it compares **whole items**, so two sources with one
+`source_id` and different outcomes, or two selections at one rank with different identities, pass
+it. This is stated rather than glossed over — **no claim is made anywhere that JSON Schema
+enforces these relationships.**
+
+Ambiguity is not cosmetic. `sorted` is stable, so two equal keys keep whatever order the producer
+emitted, and the "canonical" digest of an ambiguous document silently depends on serialisation
+order. `tests/acquisition/semantics.py` is the contract-semantic layer that refuses such a
+document, and the digest projections call it **before** ordering anything, so no digest is ever
+produced for a document that has no canonical order. Every counterexample under
+`tests/acquisition/fixtures/semantic-invalid/` is asserted **schema-valid first** and semantically
+invalid second — that pairing is the evidence — and the unguarded ordering is reconstructed in the
+tests and shown producing two different digests for two serialisations of one document.
+
+PXAPI-19.A authorises no production validator, so this layer is test code and no `src/pxapi`
+module is added for it. **Equivalent producer-side enforcement is mandatory in PXAPI-19.B:**
+nothing in this slice prevents a producer from emitting a document no consumer can order.
 
 ### One authority for discovery source state
 
@@ -354,29 +397,78 @@ It never means the page is irrelevant, wrong or excluded — and the absence of 
 structurally incapable of carrying a judgement. The taxonomy itself stays an open token: fixing a
 stratum or page-type set is versioned classification work, not a set invented by this slice.
 
+A manifest's `stratum` is deliberately the **opposite**: required on every selection. The
+asymmetry is not an oversight. A candidate is a page discovery merely found, and whether the
+classifier reached it is a fact about the classifier; a **selected** page is one this analysis
+committed to, and PXAPI-19 AC4 requires every one of them to carry Page-Type/Stratum, a selection
+reason and a stable reference. An absent stratum on a selection would also be read two ways —
+"counted under no stratum" by one consumer, "nothing worth counting" by the next — so a selection
+the classification could not place is recorded under the neutral token **`UNCLASSIFIED`** instead.
+The taxonomy stays open around it: the member still resolves to `common#/$defs/code`, declares no
+`enum`, and no member of the contract keys on the token, so nothing in the schema can treat an
+unclassified page differently from any other. It is not a quality, not an exclusion, not a lower
+rank and not a weight, and a test asserts the token appears exactly once in the schema file — in
+the description that names it, and never in an `enum`, a `const` or a conditional.
+
 ### Sampling semantics
 
-`mode` is closed at `CENSUS | STRATIFIED_SAMPLE`. **The census-to-sampling threshold is
-`MISSING`** (contradiction ledger `C-PXAPI-005`) and is not invented here: the only numeric
-constant either contract declares is the zero that pins a non-admitting source's count, and a
-test asserts it. `STRATIFIED_SAMPLE` existing in the vocabulary lets a manifest say which method
-was used; it is **not** a claim that a benchmark-authorised sample can currently be produced.
+`mode` is closed at `CENSUS | STRATIFIED_SAMPLE`, and each token names an **intent, not an
+achievement**. `CENSUS` means the policy set out to select every eligible candidate exhaustively;
+whether it got there is `selection_complete`'s statement and never the mode's:
+
+```text
+CENSUS + selection_complete: true    the census completed — the only combination that says so
+CENSUS + selection_complete: false   valid and authorised: the census was bounded or interrupted,
+                                     and it carries the technical limitation that stopped it
+```
+
+Reading `CENSUS` alone as "every eligible page was selected" is wrong in exactly the case the
+pair exists to record, and a test refuses the absolute phrasing returning to the description.
+**The census-to-sampling threshold is `MISSING`** (contradiction ledger `C-PXAPI-005`) and is not
+invented here: the only numeric constant either contract declares is the zero that pins a
+non-admitting source's count, and a test asserts it. `STRATIFIED_SAMPLE` existing in the
+vocabulary lets a manifest say which method was used; it is **not** a claim that a
+benchmark-authorised sample can currently be produced.
 
 Selection is Pixelkiez methodology. `policy_id` and `policy_version` are both required, so a
 selection is always attributable to a versioned method, and no member name or selection token
 names a crawl provider — a test scans for that. `selection_complete` is **mandatory and neutral
 in both values**: `false` means the selection was bounded or stopped early and is a statement
 about this analysis; it never means the site is small, thin or incompletely built, and nothing
-downstream may treat it as a penalty. A manifest binds `inventory_output_digest` to the exact
-inventory output it selected against, so it can never be read as a selection over a population it
-did not see.
+downstream may treat it as a penalty.
+
+That neutrality is **structural rather than promised**. `false` is admissible only alongside
+`incompleteness`, the smallest root object that can carry a technical cause — one closed member,
+and nothing that could describe, measure or rank the site:
+
+```text
+SELECTION_BUDGET_EXHAUSTED  one of our own declared selection budgets was reached
+SAFETY_LIMIT_REACHED        one of our own safety bounds stopped the selection
+RUNTIME_LIMIT_REACHED       our own runtime stopped it — a time budget, or a failure
+```
+
+Two root conditionals bind it: `false` **requires** the member, `true` **refuses** it — a
+completed selection that also claimed a cause for not completing would be two contradictory
+statements in one document — and `SELECTION_BUDGET_EXHAUSTED` additionally requires `budgets`, so
+a bound named as the cause can be read rather than merely asserted. `budgets` is therefore
+`Conditional`, not `Optional`. Coupling `selection_complete` to the existing `exclusions` summary
+instead would have been the smaller change, and it is not available: the repository's schema
+meta-rule (`SchemaWalk` in `tests/contracts/support.py`) forbids a conditional that reaches into
+array items, so a root member cannot be coupled to an item. That constraint, not a preference,
+is why a root-level object exists.
+
+A manifest binds `inventory_output_digest` to the exact inventory output it selected against, so
+it can never be read as a selection over a population it did not see.
 
 ### What these two contracts do not prove
 
-A valid inventory or manifest proves a document shape and nothing else. It does not prove that
+A valid inventory or manifest proves a document shape and nothing else — **including that it does
+not prove the semantic-key rules above.** Those are checked by a separate layer, and a producer
+that never runs it can emit a schema-valid document no consumer can order. It does not prove that
 site discovery runs, that same-origin traversal, sitemap or robots handling is implemented, that
 a producer canonicalises or deduplicates, that a sampling planner exists, that the sampling
 threshold is known, that any page was fetched, or that any URL was reachable, safe or permitted.
+A valid `target_origin` proves a lexical shape and no DNS, SSRF, egress or reachability decision.
 Acquiring a selected page is PXAPI-20's decision and `page-acquisition-record.v1` is not part of
 this slice.
 

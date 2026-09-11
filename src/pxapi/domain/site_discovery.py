@@ -119,6 +119,8 @@ class BootstrapFailure(StrEnum):
     UNREACHABLE = "UNREACHABLE"
     #: A time budget elapsed before the origin could be established.
     TIMEOUT = "TIMEOUT"
+    #: Our own runtime failed in a way it did not anticipate before an origin was established.
+    RUNTIME_ERROR = "RUNTIME_ERROR"
 
 
 class DiscoveryStage(StrEnum):

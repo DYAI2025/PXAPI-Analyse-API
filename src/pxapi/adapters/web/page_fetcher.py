@@ -123,6 +123,11 @@ class SafePageFetcher:
                 target = self.policy.validate(current)
             except TargetRefused as refused:
                 return PageFetchFailure(refused.kind)
+            except ValueError:
+                # A URL the standard library cannot even split — an unterminated IPv6 literal,
+                # an authority invalid under NFKC — is not a permitted target, and must never
+                # escape as an exception that takes the whole analysis down with it.
+                return PageFetchFailure(FetchFailureKind.BLOCKED_TARGET)
 
             if self.clock() >= deadline:
                 return PageFetchFailure(FetchFailureKind.TIMEOUT)
@@ -138,8 +143,13 @@ class SafePageFetcher:
             if redirects >= self.limits.max_redirects:
                 return PageFetchFailure(FetchFailureKind.TOO_MANY_REDIRECTS)
 
-            nxt = urljoin(target.url, location)
-            if not urlsplit(nxt).scheme:
+            try:
+                nxt = urljoin(target.url, location)
+                scheme = urlsplit(nxt).scheme
+            except ValueError:
+                # A Location the standard library cannot split is not a redirect we can follow.
+                return PageFetchFailure(FetchFailureKind.INVALID_REDIRECT)
+            if not scheme:
                 return PageFetchFailure(FetchFailureKind.INVALID_REDIRECT)
             current = nxt
             redirects += 1
@@ -211,6 +221,11 @@ class SafePageFetcher:
         except ssl.SSLError:
             return PageFetchFailure(FetchFailureKind.PROTOCOL_ERROR)
         except http.client.HTTPException:
+            return PageFetchFailure(FetchFailureKind.PROTOCOL_ERROR)
+        except ValueError:
+            # A request line http.client refuses to encode — a raw non-ASCII path a server
+            # redirected to without escaping it, which RFC 3986 does not allow in a Location —
+            # is a request we could not make, reported in our terms rather than raised.
             return PageFetchFailure(FetchFailureKind.PROTOCOL_ERROR)
         except OSError:
             # Every remaining socket-level problem: refused, reset, unreachable. The text is

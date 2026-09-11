@@ -333,6 +333,7 @@ def test_a_credential_bearing_observation_is_never_persisted_or_digested() -> No
         (BootstrapFailure.TARGET_REFUSED, "TARGET_NOT_PERMITTED"),
         (BootstrapFailure.UNREACHABLE, "SITE_DISCOVERY_TARGET_UNREACHABLE"),
         (BootstrapFailure.TIMEOUT, "SITE_DISCOVERY_TIMEOUT"),
+        (BootstrapFailure.RUNTIME_ERROR, "SITE_DISCOVERY_RUNTIME_ERROR"),
         (None, "SITE_DISCOVERY_BOOTSTRAP_FAILED"),
     ],
 )
@@ -448,3 +449,20 @@ def test_no_failed_run_produces_a_verdict_of_any_kind() -> None:
 def test_the_verdict_scan_finds_a_planted_verdict() -> None:
     """Canary: the neutrality walk is proved to see a verdict wherever one is nested."""
     assert verdict_keys_in({"a": [{"b": {"polarity": "NEGATIVE"}}]}) == {"polarity"}
+
+
+class _ExplodingDiscovery:
+    def discover(self, target_url: str) -> DiscoveryReport:
+        raise RuntimeError("a provider broke its port contract")
+
+
+def test_a_provider_that_raises_ends_the_run_as_our_runtime_error() -> None:
+    use = DiscoverSite(_ExplodingDiscovery(), FIXED_CLOCK, counting_ids(), SelectionBudgets(25))
+    envelope = use.run({"run_id": "run-1", "target_url": ORIGIN})
+    assert "site_inventory" not in envelope and "sampling_manifest" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_DISCOVERY_RUNTIME_ERROR"}
+    assert_every_document_satisfies_its_contract(envelope)
+
+
+def test_every_bootstrap_failure_has_a_run_failure_code() -> None:
+    assert set(use_case.BOOTSTRAP_FAILURE_CODE) == set(BootstrapFailure)

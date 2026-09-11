@@ -41,6 +41,7 @@ from urllib.parse import urljoin
 from xml.etree.ElementTree import ParseError, XMLPullParser
 
 from pxapi.adapters.web.html_links import read_links
+from pxapi.adapters.web.html_observations import decode_body
 from pxapi.adapters.web.page_fetcher import SafePageFetcher
 from pxapi.adapters.web.target_policy import PublicTargetPolicy
 from pxapi.config.discovery_limits import DEFAULT_DISCOVERY_LIMITS, DiscoveryLimits
@@ -128,6 +129,20 @@ def _status_outcome(status: int) -> SourceOutcome | None:
     if 200 <= status < 300:
         return None
     return SourceOutcome.ABSENT if status in _ABSENT_STATUSES else SourceOutcome.PROVIDER_FAILURE
+
+
+def _guarded[T](step: Callable[[], T], failed: T) -> T:
+    """``step()``, or ``failed`` when it raised.
+
+    Each source is read under this guard so that a defect in one — a parser path nobody
+    anticipated, a provider breaking its own contract — ends that source as our
+    ``RUNTIME_ERROR`` and lets the others run. What it discards is only what the failed source
+    had collected, which is exactly right: a source reported as failed admits nothing.
+    """
+    try:
+        return step()
+    except Exception:  # any defect in one source is one category to us
+        return failed
 
 
 class _Budget:
@@ -266,7 +281,12 @@ class HttpSiteDiscovery:
         # The bootstrap is deliberately unscoped: it is what *establishes* the origin, so a
         # redirect from http://example.com to https://www.example.com must be followable. Each
         # hop is still re-validated and re-resolved by the policy.
-        seed = self.fetcher_factory(None).fetch(submitted_origin)
+        try:
+            seed = self.fetcher_factory(None).fetch(submitted_origin)
+        except Exception:
+            # The port reports outcomes, never exceptions: a defect our runtime did not
+            # anticipate is our runtime's failure, and it establishes no origin.
+            return DiscoveryReport(None, bootstrap_failure=BootstrapFailure.RUNTIME_ERROR)
         if isinstance(seed, PageFetchFailure):
             return DiscoveryReport(None, bootstrap_failure=self._bootstrap_failure(seed.kind))
 
@@ -282,15 +302,20 @@ class HttpSiteDiscovery:
         observations = [DiscoveryObservation(origin, SourceId.CANONICAL_SEED.value)]
         attempts = [SourceAttempt(SourceId.CANONICAL_SEED.value, SourceOutcome.USED)]
 
-        link_outcome, links = self._links(seed, in_origin)
+        link_outcome, links = _guarded(
+            lambda: self._links(seed, in_origin), (SourceOutcome.RUNTIME_ERROR, [])
+        )
         observations += links
         attempts.append(SourceAttempt(SourceId.SAME_ORIGIN_PAGE_LINKS.value, link_outcome))
 
-        robots_outcome, declared = self._robots(scoped, origin, budget)
+        robots_outcome, declared = _guarded(
+            lambda: self._robots(scoped, origin, budget), (SourceOutcome.RUNTIME_ERROR, [])
+        )
         attempts.append(SourceAttempt(SourceId.ROBOTS_DECLARATION.value, robots_outcome))
 
-        sitemap_outcome, entries, off_origin = self._sitemaps(
-            scoped, origin, declared, in_origin, budget
+        sitemap_outcome, entries, off_origin = _guarded(
+            lambda: self._sitemaps(scoped, origin, declared, in_origin, budget),
+            (SourceOutcome.RUNTIME_ERROR, [], False),
         )
         observations += entries
         attempts.append(SourceAttempt(SourceId.SITEMAP.value, sitemap_outcome))
@@ -389,7 +414,9 @@ class HttpSiteDiscovery:
             return SourceOutcome.MALFORMED, []
 
         declared: list[str] = []
-        text = response.body.decode(response.declared_charset or "utf-8", errors="replace")
+        # The shared decoder, not ``bytes.decode``: a declared charset nobody has heard of is
+        # the server's typo, and it must fall back to UTF-8 rather than raise ``LookupError``.
+        text = decode_body(response.body, response.declared_charset)
         for line in text.splitlines():
             field_name, separator, value = line.split("#", 1)[0].partition(":")
             if separator and field_name.strip().lower() == "sitemap" and value.strip():

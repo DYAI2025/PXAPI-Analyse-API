@@ -71,6 +71,7 @@ BOOTSTRAP_FAILURE_CODE: dict[BootstrapFailure, str] = {
     BootstrapFailure.TARGET_REFUSED: "TARGET_NOT_PERMITTED",
     BootstrapFailure.UNREACHABLE: "SITE_DISCOVERY_TARGET_UNREACHABLE",
     BootstrapFailure.TIMEOUT: "SITE_DISCOVERY_TIMEOUT",
+    BootstrapFailure.RUNTIME_ERROR: "SITE_DISCOVERY_RUNTIME_ERROR",
 }
 
 #: A provider that reported no origin and no reason is a provider defect, not a site fact.
@@ -125,7 +126,12 @@ class DiscoverSite:
         run_id = request["run_id"]
         state = transition(transition(RunState.CREATED, RunState.QUEUED), RunState.RUNNING)
         started = self.clock()
-        report = self.discovery.discover(request["target_url"])
+        try:
+            report = self.discovery.discover(request["target_url"])
+        except Exception:
+            # The port contract is outcomes, not exceptions. A provider that breaks it is a
+            # defect of ours, recorded as our runtime's failure rather than taking the run down.
+            report = DiscoveryReport(None, bootstrap_failure=BootstrapFailure.RUNTIME_ERROR)
         discovered = self.clock()
 
         origin = canonical_origin(report.target_origin) if report.target_origin else None

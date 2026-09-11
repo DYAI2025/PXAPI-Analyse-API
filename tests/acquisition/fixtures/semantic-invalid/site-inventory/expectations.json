@@ -1,0 +1,14 @@
+{
+  "contract": "site-inventory",
+  "note": "Documents that satisfy site-inventory.v1 completely and are still ambiguous. Each one is the smallest inventory carrying the semantic-key rule it breaks, and each is asserted schema-valid before it is asserted semantically invalid — that assertion is the proof that JSON Schema does not enforce these relationships and that uniqueItems would not help. Violations are (pointer, rule) pairs only; no free text is recorded. The digests are synthetic fixture data, and a document in this directory cannot have a real one: the whole point is that it has no canonical ordering to digest.",
+  "cases": {
+    "duplicate-source-id": {
+      "proves": "One attempted discovery source is reported once. Two entries for SITEMAP with different outcomes satisfy the schema — the array carries no uniqueItems, and uniqueItems would not catch this anyway because the entries differ as whole objects — while leaving a candidate's provenance naming SITEMAP resolvable to two contradictory outcomes and the canonical ordering of sources with a tie it can only break by input order.",
+      "violations": [{ "pointer": "/sources/2", "rule": "unique_source_id" }]
+    },
+    "duplicate-candidate-url-key": {
+      "proves": "One canonical identity appears once in the candidate population, because observations that share an identity aggregate onto one candidate. Two candidates carrying the same url_key with different observed_forms are distinct whole objects, so uniqueItems passes, and the population is left with two entries a consumer must choose between and an output digest that depends on which order the producer emitted them in.",
+      "violations": [{ "pointer": "/candidates/1", "rule": "unique_candidate_url_key" }]
+    }
+  }
+}

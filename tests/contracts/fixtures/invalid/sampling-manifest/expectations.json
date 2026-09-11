@@ -18,6 +18,26 @@
       "proves": "The binding to the exact inventory output is mandatory, because this manifest's own input digest is computed over it: without it the input digest would cover a population nobody can identify.",
       "violations": [{ "pointer": "", "keyword": "required" }]
     },
+    "incomplete-selection-without-cause": {
+      "proves": "PXAPI-19 AC9: selection_complete false must stay structurally traceable to a technical limitation of this run. A bare false, with no cause, is a shortfall a reader can attribute to anything — including the customer's website — so the conditional requires the incompleteness object and the root 'required' fires without it.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "complete-selection-claiming-a-cause": {
+      "proves": "The mirror rule: a selection that ran to its own defined end may not simultaneously state why it did not. The else branch refuses the member outright, so the two statements can never appear in one document.",
+      "violations": [{ "pointer": "", "keyword": "not" }]
+    },
+    "budget-cause-without-declared-budget": {
+      "proves": "Naming a declared budget as the cause obliges the manifest to carry that budget. Without it the document asserts a bound nobody can read, which is exactly the unfalsifiable claim the incompleteness rule exists to remove.",
+      "violations": [{ "pointer": "", "keyword": "required" }]
+    },
+    "incompleteness-cause-website-quality": {
+      "proves": "The incompleteness vocabulary is closed so that the member whose whole job is to keep an incomplete selection attributable to a bound of ours cannot be handed a reason that describes the site.",
+      "violations": [{ "pointer": "/incompleteness/cause", "keyword": "enum" }]
+    },
+    "selection-without-stratum": {
+      "proves": "PXAPI-19 AC4: every selected page carries its stratum. An absent member would be read by one consumer as 'counted under no stratum' and by the next as 'nothing worth counting'; a page the classification could not place is recorded under the neutral UNCLASSIFIED token instead.",
+      "violations": [{ "pointer": "/selections/0", "keyword": "required" }]
+    },
     "selection-complete-missing": {
       "proves": "selection_complete is mandatory, so a bounded selection can never be read as a complete one.",
       "violations": [{ "pointer": "", "keyword": "required" }]

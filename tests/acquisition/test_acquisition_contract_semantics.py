@@ -32,13 +32,20 @@ import pytest
 from tests.contracts.support import CONTRACTS, load_json
 from tests.test_closed_vocabularies import (
     ADMITTING_SOURCE_OUTCOMES,
+    BUDGET_INCOMPLETENESS_CAUSE,
     CANDIDATE_EXCLUSION_REASONS,
     ELIGIBILITY_STATES,
+    INCOMPLETENESS_CAUSES,
     SAMPLING_MODES,
     SELECTION_EXCLUSION_REASONS,
     SELECTION_REASONS,
     SOURCE_OUTCOMES,
 )
+
+#: The neutral stratum token the contract names for a selection the classification could not
+#: place. It is a value, not a vocabulary: the taxonomy stays open, and this token is the one
+#: point in it the contract fixes so that "could not place" has a single agreed spelling.
+UNCLASSIFIED = "UNCLASSIFIED"
 
 INVENTORY = "site-inventory"
 MANIFEST = "sampling-manifest"
@@ -48,12 +55,9 @@ CONTRACT_NAMES = (INVENTORY, MANIFEST)
 #: The shapes a URL-valued member of these contracts may use. ``common#/$defs/url`` is
 #: deliberately not among them: it permits userinfo, which D-PXAPI19-PO-007 forbids from ever
 #: becoming persisted canonical data.
-URL_REFS = frozenset(
-    {
-        "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_url",
-        "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key",
-    }
-)
+PAGE_REF = "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_url"
+ORIGIN_REF = "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_origin"
+URL_REFS = frozenset({PAGE_REF, ORIGIN_REF, "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key"})
 WEAKER_URL_REF = "urn:pxapi:schema:common:1.0.0#/$defs/url"
 
 CREDENTIAL_URL = "https://admin:s3cret@example.com/"
@@ -106,6 +110,11 @@ def examples_of(contract: str) -> list[dict[str, Any]]:
     return [load_json(path) for path in CONTRACTS.example_paths(contract)]
 
 
+def json_text(contract: str) -> str:
+    """The schema file as written, for the rules that are about where a token may appear."""
+    return CONTRACTS.schema_path(contract).read_text(encoding="utf-8")
+
+
 def _example_named(contract: str, fragment: str) -> dict[str, Any]:
     path = next(p for p in CONTRACTS.example_paths(contract) if fragment in p.name)
     return load_json(path)
@@ -140,6 +149,34 @@ def candidate(**overrides: Any) -> dict[str, Any]:
         "eligibility": {"state": "ELIGIBLE"},
     }
     return dict(base, **overrides)
+
+
+def selection(**overrides: Any) -> dict[str, Any]:
+    """One valid selection. Every member the contract requires is present by default.
+
+    ``stratum`` is among them: PXAPI-19 AC4 requires every selected page to carry one, so a
+    builder that omitted it would make every proof below start from an invalid document.
+    """
+    base = {
+        "url_key": "https://example.com/",
+        "selection_rank": 1,
+        "selection_reason": "SEED",
+        "stratum": "HOMEPAGE",
+    }
+    return dict(base, **overrides)
+
+
+def bounded(cause: str = "SELECTION_BUDGET_EXHAUSTED", **overrides: Any) -> dict[str, Any]:
+    """A manifest whose selection stopped short, with the technical cause the contract requires.
+
+    ``selection_complete: false`` is inadmissible on its own, so the incomplete state has exactly
+    one valid shape and every proof about it starts from that shape rather than from a document
+    the schema would refuse for an unrelated reason.
+    """
+    document = manifest(selection_complete=False, incompleteness={"cause": cause}, **overrides)
+    if cause == "SELECTION_BUDGET_EXHAUSTED":
+        document.setdefault("budgets", {"max_selected_pages": 2})
+    return document
 
 
 def _keys(contract: str, document: Any) -> set[tuple[str, str]]:
@@ -400,9 +437,10 @@ NEUTRAL_CONDITIONS: list[tuple[str, str, dict[str, Any]]] = (
         for reason in CANDIDATE_EXCLUSION_REASONS
     ]
     + [(INVENTORY, "unclassified-candidate", inventory(candidates=[candidate()]))]
+    + [(MANIFEST, f"bounded-selection-{cause}", bounded(cause)) for cause in INCOMPLETENESS_CAUSES]
     + [
-        (MANIFEST, "bounded-selection", manifest(selection_complete=False)),
         (MANIFEST, "complete-selection", manifest(selection_complete=True)),
+        (MANIFEST, "unclassified-stratum", manifest(selections=[selection(stratum=UNCLASSIFIED)])),
     ]
     + [
         (
@@ -422,6 +460,7 @@ def test_the_neutrality_matrix_is_not_empty() -> None:
         len(SOURCE_OUTCOMES)
         + len(CANDIDATE_EXCLUSION_REASONS)
         + 1
+        + len(INCOMPLETENESS_CAUSES)
         + 2
         + len(SELECTION_EXCLUSION_REASONS)
     )
@@ -568,8 +607,7 @@ def test_a_credential_bearing_url_is_refused_wherever_a_url_appears(
 
 
 def test_a_credential_bearing_url_is_refused_in_a_selection_too() -> None:
-    selections = [{"url_key": CREDENTIAL_URL, "selection_rank": 1, "selection_reason": "SEED"}]
-    document = manifest(selections=selections)
+    document = manifest(selections=[selection(url_key=CREDENTIAL_URL)])
     assert ("/selections/0/url_key", "pattern") in _keys(MANIFEST, document)
 
 
@@ -666,9 +704,13 @@ def test_the_manifest_always_states_its_method_and_its_completeness(member: str)
     assert member in schema_of(MANIFEST)["required"]
 
 
-@pytest.mark.parametrize("value", [True, False])
-def test_selection_complete_is_neutral_in_both_values(value: bool) -> None:
-    assert _valid(MANIFEST, manifest(selection_complete=value))
+def test_selection_complete_is_neutral_in_both_values() -> None:
+    """Both values remain representable. ``false`` is admissible in exactly one shape — with the
+    technical cause that stopped the selection — and that shape is neutral too."""
+    assert _valid(MANIFEST, manifest(selection_complete=True))
+    for cause in INCOMPLETENESS_CAUSES:
+        document = bounded(cause)
+        assert _valid(MANIFEST, document), f"{cause}: {sorted(_keys(MANIFEST, document))}"
 
 
 @pytest.mark.parametrize("token", ["COMPLETE", "yes", 1, None])
@@ -678,10 +720,7 @@ def test_selection_complete_is_a_boolean_and_never_a_vocabulary(token: Any) -> N
 
 @pytest.mark.parametrize("reason", SELECTION_REASONS)
 def test_each_declared_selection_reason_is_representable(reason: str) -> None:
-    selections = [
-        {"url_key": "https://example.com/", "selection_rank": 1, "selection_reason": reason}
-    ]
-    assert _valid(MANIFEST, manifest(selections=selections))
+    assert _valid(MANIFEST, manifest(selections=[selection(selection_reason=reason)]))
 
 
 def test_a_manifest_that_selected_nothing_is_refused() -> None:
@@ -691,27 +730,15 @@ def test_a_manifest_that_selected_nothing_is_refused() -> None:
 @pytest.mark.parametrize("rank", [0, -1])
 def test_a_selection_rank_below_one_is_refused(rank: int) -> None:
     """The rank carries the deterministic order, so it must be a real position."""
-    selections = [
-        {"url_key": "https://example.com/", "selection_rank": rank, "selection_reason": "SEED"}
-    ]
     assert ("/selections/0/selection_rank", "minimum") in _keys(
-        MANIFEST, manifest(selections=selections)
+        MANIFEST, manifest(selections=[selection(selection_rank=rank)])
     )
 
 
 def test_a_selection_may_not_grow_a_score_or_a_fetch_result() -> None:
     for member in ("score", "priority", "http_status", "raw_html"):
-        selections = [
-            {
-                "url_key": "https://example.com/",
-                "selection_rank": 1,
-                "selection_reason": "SEED",
-                member: 1,
-            }
-        ]
-        assert ("/selections/0", "additionalProperties") in _keys(
-            MANIFEST, manifest(selections=selections)
-        ), member
+        document = manifest(selections=[selection(**{member: 1})])
+        assert ("/selections/0", "additionalProperties") in _keys(MANIFEST, document), member
 
 
 def test_an_exclusion_summary_entry_must_account_for_at_least_one_candidate() -> None:
@@ -740,6 +767,269 @@ def test_a_manifest_with_no_declared_budget_is_valid() -> None:
     document = manifest()
     del document["budgets"]
     assert _valid(MANIFEST, document)
+
+
+# --- AC9: an incomplete selection names the technical limitation that stopped it ---------------
+
+
+def test_an_incomplete_selection_without_a_technical_cause_is_refused() -> None:
+    """The hole this rule closes: ``selection_complete: false`` used to be admissible on its own,
+    with no budget and no exclusion — a bare shortfall a reader could fill in with any reason,
+    including one about the customer's website."""
+    document = manifest(selection_complete=False)
+    assert "incompleteness" not in document, "canary: the document must actually lack the cause"
+    assert ("", "required") in _keys(MANIFEST, document)
+
+
+def test_a_complete_selection_may_not_claim_an_incompleteness_cause() -> None:
+    """The mirror rule: a selection that ran to its end and also states why it did not would be
+    two contradictory statements in one document."""
+    document = manifest(selection_complete=True, incompleteness={"cause": INCOMPLETENESS_CAUSES[0]})
+    assert ("", "not") in _keys(MANIFEST, document)
+
+
+@pytest.mark.parametrize("cause", INCOMPLETENESS_CAUSES)
+def test_every_declared_incompleteness_cause_is_representable(cause: str) -> None:
+    """A limitation that could not be recorded at all would be recorded as something else."""
+    document = bounded(cause)
+    assert _valid(MANIFEST, document), f"{cause}: {sorted(_keys(MANIFEST, document))}"
+
+
+def test_a_budget_exhaustion_cause_requires_the_declared_budget() -> None:
+    """Naming a declared bound as the cause obliges the manifest to carry the bound: otherwise
+    the claim is a bound nobody can read, which is the unfalsifiable statement this rule is for."""
+    document = bounded(BUDGET_INCOMPLETENESS_CAUSE)
+    del document["budgets"]
+    assert ("", "required") in _keys(MANIFEST, document)
+
+
+@pytest.mark.parametrize(
+    "cause", [c for c in INCOMPLETENESS_CAUSES if c != BUDGET_INCOMPLETENESS_CAUSE]
+)
+def test_a_non_budget_cause_does_not_require_a_declared_budget(cause: str) -> None:
+    """The budget rule must not have made every incompleteness depend on a declared budget: a
+    safety bound and a runtime limit are reached whether or not one was declared."""
+    document = bounded(cause)
+    document.pop("budgets", None)
+    assert _valid(MANIFEST, document), f"{cause}: {sorted(_keys(MANIFEST, document))}"
+
+
+def test_the_causes_that_do_not_require_a_budget_are_not_empty() -> None:
+    """Canary: if every cause required a budget, the test above would prove nothing."""
+    assert [c for c in INCOMPLETENESS_CAUSES if c != BUDGET_INCOMPLETENESS_CAUSE]
+
+
+@pytest.mark.parametrize(
+    "token", ["THIN_SITE", "SITE_TOO_SMALL", "LOW_QUALITY", "POOR_STRUCTURE", "budget", ""]
+)
+def test_an_incompleteness_cause_outside_the_closed_vocabulary_is_refused(token: str) -> None:
+    """The vocabulary is closed exactly so that a reason describing the website cannot arrive
+    through the member whose whole job is to keep the state attributable to a bound of ours."""
+    document = manifest(selection_complete=False, incompleteness={"cause": token})
+    assert ("/incompleteness/cause", "enum") in _keys(MANIFEST, document)
+
+
+def test_an_incompleteness_object_must_name_its_cause() -> None:
+    """An empty object would satisfy "present" while stating nothing, which is the original hole
+    in a new place."""
+    document = manifest(selection_complete=False, incompleteness={})
+    assert ("/incompleteness", "required") in _keys(MANIFEST, document)
+
+
+@pytest.mark.parametrize("member", ["polarity", "score", "severity", "site_quality", "detail"])
+def test_the_incompleteness_object_carries_nothing_beside_its_cause(member: str) -> None:
+    """It is the smallest object that can carry a technical cause. A closed object with one
+    member cannot become the place a verdict — or a free-text explanation — is smuggled in."""
+    document = bounded()
+    document["incompleteness"] = dict(document["incompleteness"], **{member: "NEGATIVE"})
+    assert ("/incompleteness", "additionalProperties") in _keys(MANIFEST, document)
+
+
+def test_incompleteness_is_not_a_second_authority_on_why_candidates_were_not_selected() -> None:
+    """``exclusions`` counts why individual candidates were not taken; ``incompleteness`` states
+    why the taking stopped. Neither may grow the other's members."""
+    declared = schema_of(MANIFEST)["properties"]["incompleteness"]["properties"]
+    assert set(declared) == {"cause"}, f"incompleteness declares {sorted(declared)}"
+
+
+# --- AC9 and the CENSUS semantics -------------------------------------------------------------
+
+
+def test_a_bounded_census_is_valid_and_carries_its_technical_limitation() -> None:
+    """``CENSUS`` names the intent to select exhaustively, not the achievement of it. The pair
+    ``CENSUS`` + ``selection_complete: false`` is a valid, authorised state."""
+    document = bounded(mode="CENSUS")
+    assert document["mode"] == "CENSUS" and document["selection_complete"] is False
+    assert _valid(MANIFEST, document), sorted(_keys(MANIFEST, document))
+
+
+def test_a_bounded_census_without_its_limitation_is_still_refused() -> None:
+    """The authorised pair is authorised only in its explained shape."""
+    document = manifest(mode="CENSUS", selection_complete=False)
+    assert ("", "required") in _keys(MANIFEST, document)
+
+
+def test_the_mode_description_does_not_claim_that_census_means_completed() -> None:
+    """The defect this repairs was documentary: the description said CENSUS *means* every
+    eligible candidate was selected, which contradicts the valid CENSUS + false state. The
+    description must tie completion to ``selection_complete`` instead, and must not re-acquire
+    the absolute phrasing."""
+    description = schema_of(MANIFEST)["properties"]["mode"]["description"]
+    assert "selection_complete" in description, "the mode must defer completion to that member"
+    assert "set out to select every eligible candidate" in description
+    assert "means every eligible candidate of the bound inventory was selected" not in description
+
+
+def test_the_registered_bounded_example_is_a_bounded_census_with_its_cause() -> None:
+    """The example a reader copies must itself be the repaired shape."""
+    document = _example_named(MANIFEST, "bounded-selection")
+    assert document["selection_complete"] is False
+    assert document["incompleteness"]["cause"] in INCOMPLETENESS_CAUSES
+    if document["incompleteness"]["cause"] == BUDGET_INCOMPLETENESS_CAUSE:
+        assert document["budgets"], "a declared-budget cause must carry the declared budget"
+
+
+def test_no_registered_manifest_claims_completeness_and_a_cause_at_once() -> None:
+    for document in examples_of(MANIFEST):
+        if document["selection_complete"]:
+            assert "incompleteness" not in document, document["sampling_manifest_id"]
+        else:
+            assert document["incompleteness"]["cause"], document["sampling_manifest_id"]
+
+
+# --- AC4: every selected page carries a stratum ------------------------------------------------
+
+
+def test_a_selected_page_without_a_stratum_is_refused() -> None:
+    """AC4 requires every selected page to carry Page-Type/Stratum, a selection reason and a
+    stable reference. An absent stratum is read by one consumer as 'counted nowhere' and by the
+    next as 'nothing worth counting', so it is not representable."""
+    incomplete = selection()
+    del incomplete["stratum"]
+    assert ("/selections/0", "required") in _keys(MANIFEST, manifest(selections=[incomplete]))
+
+
+def test_a_selection_the_classifier_could_not_place_is_representable_and_neutral() -> None:
+    """Requiring the stratum must not make an unclassifiable page unrepresentable; the neutral
+    token is what keeps 'could not place' a fact about the classification."""
+    document = manifest(selections=[selection(stratum=UNCLASSIFIED)])
+    assert _valid(MANIFEST, document), sorted(_keys(MANIFEST, document))
+
+
+@pytest.mark.parametrize("verdict", [("polarity", "NEGATIVE"), ("score", 12), ("severity", "HIGH")])
+def test_an_unclassified_selection_cannot_be_given_a_verdict(verdict: tuple[str, Any]) -> None:
+    """The neutrality guarantee for the token, at the level it lives on: the selection object is
+    closed, so an unclassified page cannot acquire a polarity, a score or a severity beside it."""
+    member, value = verdict
+    document = manifest(selections=[selection(stratum=UNCLASSIFIED, **{member: value})])
+    assert ("/selections/0", "additionalProperties") in _keys(MANIFEST, document)
+
+
+def test_the_unclassified_token_carries_no_rule_that_ranks_it_below_another_stratum() -> None:
+    """Neutrality is structural rather than promised: no member of the contract keys on the
+    token, so nothing in the schema can treat it differently from any other stratum."""
+    schema = json_text(MANIFEST)
+    assert schema.count(UNCLASSIFIED) == 1, (
+        "UNCLASSIFIED must appear once, in the stratum description that names it, and never in "
+        "an enum, a const or a conditional that would give it a rule of its own"
+    )
+
+
+def test_requiring_the_stratum_did_not_close_the_stratum_taxonomy() -> None:
+    """The taxonomy stays versioned methodology work. Requiring the member must not have turned
+    it into a set invented by this slice."""
+    declared = schema_of(MANIFEST)["properties"]["selections"]["items"]["properties"]["stratum"]
+    assert "enum" not in declared and "const" not in declared
+    assert declared["$ref"] == "urn:pxapi:schema:common:1.0.0#/$defs/code"
+
+
+@pytest.mark.parametrize("token", ["HOMEPAGE", UNCLASSIFIED, "IMPRESSUM", "LANDING_PAGE_DE"])
+def test_any_stable_stratum_token_validates(token: str) -> None:
+    assert _valid(MANIFEST, manifest(selections=[selection(stratum=token)]))
+
+
+@pytest.mark.parametrize("token", ["homepage", "Home page", "OFFER!", ""])
+def test_a_stratum_stays_a_stable_token_rather_than_prose(token: str) -> None:
+    document = manifest(selections=[selection(stratum=token)])
+    assert ("/selections/0/stratum", "pattern") in _keys(MANIFEST, document)
+
+
+def test_every_selection_of_every_registered_manifest_carries_a_stratum() -> None:
+    for document in examples_of(MANIFEST):
+        for entry in document["selections"]:
+            assert entry["stratum"], f"{document['sampling_manifest_id']}: {entry['url_key']}"
+
+
+# --- the target origin is an origin, not a page ------------------------------------------------
+
+
+def test_the_target_origin_uses_the_origin_shape_and_not_the_page_shape() -> None:
+    """The member is called an Origin and is used as the canonical site authority. Before this
+    repair it referenced the generic page shape, which admits a path, a query and a fragment."""
+    declared = schema_of(INVENTORY)["properties"]["target_origin"]
+    assert declared["$ref"] == ORIGIN_REF
+    assert declared["$ref"] != PAGE_REF
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://example.org/",
+        "https://example.org",
+        "http://example.org/",
+        "https://example.org:8443/",
+        "https://sub.example.org/",
+    ],
+)
+def test_a_root_public_origin_is_accepted(value: str) -> None:
+    assert _valid(INVENTORY, inventory(target_origin=value)), sorted(
+        _keys(INVENTORY, inventory(target_origin=value))
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://example.org/leistungen",
+        "https://example.org/a/b",
+        "https://example.org//",
+        "https://example.org/?utm_source=mail",
+        "https://example.org?utm_source=mail",
+        "https://example.org/#top",
+        "https://example.org#top",
+        "ftp://example.org/",
+        "example.org",
+    ],
+)
+def test_a_target_origin_that_is_not_a_bare_origin_is_refused(value: str) -> None:
+    """A path beyond the root, a query, a fragment and a non-http scheme are each refused, so the
+    field every consumer reads as 'the site' cannot hold one page of the site."""
+    assert ("/target_origin", "pattern") in _keys(INVENTORY, inventory(target_origin=value))
+
+
+def test_the_origin_narrowing_did_not_leak_into_the_page_shaped_members() -> None:
+    """Candidates are pages and must keep accepting a path, a query and a fragment; narrowing the
+    origin must not have narrowed the population."""
+    page = "https://example.org/leistungen?utm_source=mail"
+    assert _valid(INVENTORY, inventory(candidates=[candidate(url_key=page, observed_forms=[page])]))
+
+
+def test_the_origin_shape_refuses_a_credential_exactly_as_the_page_shape_does() -> None:
+    """The narrowing inherits the userinfo rule rather than restating it, and there is no
+    remainder after the authority in which an '@' could become legal again."""
+    assert ("/target_origin", "pattern") in _keys(
+        INVENTORY, inventory(target_origin=CREDENTIAL_URL)
+    )
+    assert ("/target_origin", "pattern") in _keys(
+        INVENTORY, inventory(target_origin="https://@example.org/")
+    )
+
+
+def test_the_origin_shape_is_lexical_and_declares_no_reachability_rule() -> None:
+    """19.B keeps DNS, SSRF, egress and reachability. A contract that started deciding them would
+    be claiming a guarantee a document shape cannot give."""
+    declared = load_json(CONTRACTS.schema_path(SHARED))["$defs"]["public_origin"]
+    assert set(declared) == {"type", "maxLength", "pattern", "description"}
 
 
 # --- the registered examples are coherent, not merely valid -----------------------------------

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:pxapi:schema:sampling-manifest:1.0.0",
   "title": "PXAPI sampling manifest v1",
-  "description": "Which population of one site's pages an Analysis Run actually set out to analyse, and why — bound to the exact inventory it was selected from and to the exact policy version that selected it. It exists so that every later measurement, evidence item and finding can be traced back to the page population it was drawn from, rather than to an unrecorded choice. Selection is Pixelkiez methodology: no member of this contract names, admits or defers to a crawl provider, and nothing here lets a provider decide which pages become diagnosis-relevant. It is not a score authority and not an assessment: mode, selection_complete, every selection reason and every exclusion reason are statements about this analysis, and none of them may be read as a judgement of the website. selection_complete is mandatory and neutral in both values: false means the selection was bounded or otherwise incomplete, never that the site is deficient. The census-to-sampling threshold is deliberately absent — STRATIFIED_SAMPLE exists in the vocabulary so that a manifest can say which method was used, and its presence in this contract is not a claim that a benchmark-authorised sample can currently be produced.",
+  "description": "Which population of one site's pages an Analysis Run actually set out to analyse, and why — bound to the exact inventory it was selected from and to the exact policy version that selected it. It exists so that every later measurement, evidence item and finding can be traced back to the page population it was drawn from, rather than to an unrecorded choice. Selection is Pixelkiez methodology: no member of this contract names, admits or defers to a crawl provider, and nothing here lets a provider decide which pages become diagnosis-relevant. It is not a score authority and not an assessment: mode, selection_complete, every incompleteness cause, every selection reason and every exclusion reason are statements about this analysis, and none of them may be read as a judgement of the website. selection_complete is mandatory and neutral in both values, and false is never merely asserted: a selection that stopped short must name the technical limitation of this run that stopped it, in incompleteness, so an incomplete selection is always traceable to a bound of ours rather than standing as an unexplained shortfall a reader could attribute to the site. The census-to-sampling threshold is deliberately absent — STRATIFIED_SAMPLE exists in the vocabulary so that a manifest can say which method was used, and its presence in this contract is not a claim that a benchmark-authorised sample can currently be produced. Several relationships this document depends on are not expressible in JSON Schema — that a selected identity appears once, that the ranks are a dense sequence, that an exclusion reason is summarised once — and they are stated in the members that carry them and enforced by the contract-semantic layer named there; a document that satisfies this schema is not thereby free of them.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -40,7 +40,7 @@
     },
     "budgets": {
       "type": "object",
-      "description": "Optional. The decision-relevant bounds the policy was run under, present if and only if at least one was declared. Every member is a whole number: a bound expressed as a floating-point value could not be digested deterministically, so none is representable here. Absent means no bound was declared for this selection, which says nothing about the site.",
+      "description": "Conditional. The decision-relevant bounds the policy was run under. It is present if and only if at least one was declared, and it is mandatory when this manifest states that a declared budget is what stopped the selection: an incompleteness cause of SELECTION_BUDGET_EXHAUSTED without the budget it exhausted would name a bound nobody can read, which is the same unfalsifiable claim as an unexplained incomplete selection. Every member is a whole number: a bound expressed as a floating-point value could not be digested deterministically, so none is representable here. Absent means no bound was declared for this selection, which says nothing about the site.",
       "properties": {
         "max_selected_pages": {
           "type": "integer",
@@ -59,11 +59,24 @@
     "mode": {
       "type": "string",
       "enum": ["CENSUS", "STRATIFIED_SAMPLE"],
-      "description": "Required. Which selection method produced this manifest. The vocabulary is closed at two values: CENSUS means every eligible candidate of the bound inventory was selected, and STRATIFIED_SAMPLE means a deterministic policy drew a subset across strata. The threshold at which a population moves from one to the other is deliberately not stated by this contract and is not derivable from it: it remains an open, benchmark-dependent policy decision, and this contract carries no number that could be mistaken for it."
+      "description": "Required. Which selection method the policy applied. The vocabulary is closed at two values, and each names an intent rather than an achieved result: CENSUS means the policy set out to select every eligible candidate of the bound inventory exhaustively, and STRATIFIED_SAMPLE means a deterministic policy set out to draw a subset across strata. Whether the intent was carried through is selection_complete's statement and never this member's. CENSUS together with selection_complete true is the only combination that asserts a completed census; CENSUS together with selection_complete false is a valid and authorised state meaning the census was bounded or interrupted, and it carries the technical limitation that stopped it in incompleteness. Reading CENSUS alone as 'every eligible page was selected' is therefore wrong in exactly the case the pair exists to record. The threshold at which a population moves from one method to the other is deliberately not stated by this contract and is not derivable from it: it remains an open, benchmark-dependent policy decision, and this contract carries no number that could be mistaken for it."
     },
     "selection_complete": {
       "type": "boolean",
-      "description": "Required. Whether the policy ran to its own defined end over the bound inventory. It is mandatory rather than optional because a selection read without this fact is the most likely way this contract gets misused: a partial selection would otherwise look like a complete one. Both values are neutral. false means the selection was bounded or otherwise incomplete — a budget was reached, or the policy stopped early — and it is a statement about this analysis; it never means the site is small, thin, deficient or incompletely built, and nothing downstream may treat it as a penalty."
+      "description": "Required. Whether the policy ran to its own defined end over the bound inventory. It is mandatory rather than optional because a selection read without this fact is the most likely way this contract gets misused: a partial selection would otherwise look like a complete one. Both values are neutral. false means the selection was bounded or otherwise incomplete and is a statement about this analysis; it never means the site is small, thin, deficient or incompletely built, and nothing downstream may treat it as a penalty. Neutrality is not left to the reader's goodwill: false is admissible only alongside incompleteness, which names the technical limitation of this run that stopped the selection, so the state cannot exist as a bare shortfall anyone could fill in with a reason of their own. true is refused that member for the mirror reason — a completed selection that also claimed a cause for not completing would be two contradictory statements in one document."
+    },
+    "incompleteness": {
+      "type": "object",
+      "description": "Conditional. Present if and only if selection_complete is false, and refused outright when it is true. It is the structured technical reason this run's selection stopped before the policy's own defined end, and it is deliberately the smallest object that can carry one: a single closed cause, and nothing that could describe, measure or rank the site. It is not an error report and not an exclusion summary — exclusions counts why individual candidates were not taken, while this states why the taking stopped — and it is not a second authority on either.",
+      "properties": {
+        "cause": {
+          "type": "string",
+          "enum": ["SELECTION_BUDGET_EXHAUSTED", "SAFETY_LIMIT_REACHED", "RUNTIME_LIMIT_REACHED"],
+          "description": "Required. Which technical limitation of this run stopped the selection. The vocabulary is closed, because the whole purpose of the member is to keep an incomplete selection attributable to a limitation of ours: an open token could arrive carrying a reason that describes the website, which is precisely what this rule exists to prevent. SELECTION_BUDGET_EXHAUSTED means one of our own declared selection budgets was reached, and the declared budgets are then required so the bound can be read rather than merely asserted. SAFETY_LIMIT_REACHED means one of our own safety bounds — the target policy, an authorisation boundary, a protective ceiling of this analysis — stopped the selection. RUNTIME_LIMIT_REACHED means our own runtime stopped it: a time budget elapsed, or the component failed. None of the three is a property of the site, and none may be rendered as one: a bounded census is a fact about how far this run was allowed to go."
+        }
+      },
+      "required": ["cause"],
+      "additionalProperties": false
     },
     "selections": {
       "type": "array",
@@ -73,12 +86,12 @@
         "properties": {
           "url_key": {
             "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key",
-            "description": "Required. The canonical identity of the selected candidate, as carried by the bound inventory. It is an identity and not a fetch instruction: acquiring it is a later slice's decision and this manifest proves no fetch."
+            "description": "Required. The canonical identity of the selected candidate, as carried by the bound inventory. It is an identity and not a fetch instruction: acquiring it is a later slice's decision and this manifest proves no fetch. One identity is selected at most once per manifest. JSON Schema cannot state that: uniqueItems on the enclosing array compares whole selection objects, so the same identity at two different ranks satisfies it, and a canonical projection that then orders by identity would order two equal keys by whichever sequence it was handed. The rule is therefore enforced by the contract-semantic layer in tests/acquisition/semantics.py, which refuses such a document before any digest is computed, and a producer-side check is mandatory in PXAPI-19.B."
           },
           "selection_rank": {
             "type": "integer",
             "minimum": 1,
-            "description": "Required. This selection's position in the policy's deterministic order, counting from one. The rank and not the array position is the authority on order, so re-serialising the document in a different array order cannot change what the manifest means or what its output digest is. Ranks are dense and ascending across the selections of one manifest."
+            "description": "Required. This selection's position in the policy's deterministic order, counting from one. The rank and not the array position is the authority on order, so re-serialising the document in a different array order cannot change what the manifest means or what its output digest is. The ranks of one manifest are exactly 1..n, each appearing once: a repeated rank would leave the canonical order of the two selections that share it decided by input sequence rather than by the policy, and a gap would mean the order authority points at a position nothing occupies. JSON Schema cannot compare two items of one array, so this rule is enforced by the contract-semantic layer in tests/acquisition/semantics.py — which refuses such a document before any digest is computed — and by a producer-side check that is mandatory in PXAPI-19.B."
           },
           "selection_reason": {
             "$ref": "urn:pxapi:schema:sampling-manifest:1.0.0#/$defs/selection_reason",
@@ -86,10 +99,10 @@
           },
           "stratum": {
             "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
-            "description": "Optional. The stratum this selection was counted under, as a stable open token: this contract fixes the token's lexical shape and deliberately not the stratum taxonomy, which is versioned methodology work rather than a set invented here. Absent means the selection was not counted under a stratum, which says nothing about the page."
+            "description": "Required. The stratum this selection was counted under, as a stable open token: this contract fixes the token's lexical shape and deliberately not the stratum taxonomy, which is versioned methodology work rather than a set invented here. It is required on every selection because a selected page whose stratum is unrecorded cannot be traced back to the methodology that selected it, and an absent member would be read by one consumer as 'not counted anywhere' and by the next as 'nothing worth counting'. A selection the classifier could not place is therefore recorded under the neutral token UNCLASSIFIED, which this contract names and does not close the taxonomy around: it means the classification did not place this page and nothing else. It is not a quality, not an exclusion, not a lower rank and not a reason to weight the page differently — a stratum token is the name of a counting bucket, and no member of this contract can turn one into a judgement."
           }
         },
-        "required": ["url_key", "selection_rank", "selection_reason"],
+        "required": ["url_key", "selection_rank", "selection_reason", "stratum"],
         "additionalProperties": false
       },
       "minItems": 1,
@@ -116,7 +129,7 @@
         "additionalProperties": false
       },
       "uniqueItems": true,
-      "description": "Required. A per-reason count of the inventory candidates this selection did not take, so a reader can see the shape of what was left out without the manifest carrying a page list. It is a summary by design: an arbitrary URL string is deliberately not persisted here merely so that a digest can be recomputed, and a candidate that was not selected is not thereby a defect of the website. An empty list means nothing was left out — it never means the site has no other pages. Each reason appears at most once; the order of this list carries no meaning, and the output digest reads it under a canonical ordering."
+      "description": "Required. A per-reason count of the inventory candidates this selection did not take, so a reader can see the shape of what was left out without the manifest carrying a page list. It is a summary by design: an arbitrary URL string is deliberately not persisted here merely so that a digest can be recomputed, and a candidate that was not selected is not thereby a defect of the website. An empty list means nothing was left out — it never means the site has no other pages. The order of this list carries no meaning, and the output digest reads it under a canonical ordering keyed on the reason. Each reason therefore appears exactly once: two entries for one reason would be two partial counts a reader has to add up, and their canonical order would fall back to input sequence. uniqueItems does not enforce that — it compares whole entries, so the same reason with two different counts satisfies it — and JSON Schema offers nothing that does; the rule is enforced by the contract-semantic layer in tests/acquisition/semantics.py and, from PXAPI-19.B, by the producer."
     },
     "input_digest": {
       "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
@@ -124,7 +137,7 @@
     },
     "output_digest": {
       "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
-      "description": "Required. The canonical digest of this manifest's stable selection semantics — mode, selection_complete, the selections in rank order, and the exclusion summary under a canonical ordering — computed over the same deterministic canonical JSON. Envelope identities and timestamps, and the two digest members themselves, do not participate, so re-emitting the same selection under a new manifest id at a new instant leaves this value unchanged. Selection order is semantic here and is read from the ranks, which is why reordering the array cannot change it while reordering the ranks can. There is deliberately no third content_digest: input and output are the whole digest topology."
+      "description": "Required. The canonical digest of this manifest's stable selection semantics — mode, selection_complete, the incompleteness cause when the selection stopped short, the selections in rank order, and the exclusion summary under a canonical ordering — computed over the same deterministic canonical JSON. Envelope identities and timestamps, and the two digest members themselves, do not participate, so re-emitting the same selection under a new manifest id at a new instant leaves this value unchanged. Selection order is semantic here and is read from the ranks, which is why reordering the array cannot change it while reordering the ranks can. That makes the ranks and the identities the keys the canonical ordering stands on: a repeated rank, a repeated selected identity or a repeated exclusion reason leaves the document with no canonical order at all, because the tie would be broken by the sequence a producer happened to emit. The reference implementation therefore refuses to digest such a document rather than returning a value, and the rule is stated at the members that carry those keys. There is deliberately no third content_digest: input and output are the whole digest topology."
     }
   },
   "required": [
@@ -144,6 +157,28 @@
     "output_digest"
   ],
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "selection_complete": { "const": false } },
+        "required": ["selection_complete"]
+      },
+      "then": { "required": ["incompleteness"] },
+      "else": { "not": { "required": ["incompleteness"] } }
+    },
+    {
+      "if": {
+        "properties": {
+          "incompleteness": {
+            "properties": { "cause": { "const": "SELECTION_BUDGET_EXHAUSTED" } },
+            "required": ["cause"]
+          }
+        },
+        "required": ["incompleteness"]
+      },
+      "then": { "required": ["budgets"] }
+    }
+  ],
   "$defs": {
     "selection_reason": {
       "type": "string",

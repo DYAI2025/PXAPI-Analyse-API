@@ -10,6 +10,7 @@
   "budgets": { "max_selected_pages": 2 },
   "mode": "CENSUS",
   "selection_complete": false,
+  "incompleteness": { "cause": "SELECTION_BUDGET_EXHAUSTED" },
   "selections": [
     {
       "url_key": "https://example.com/",
@@ -29,5 +30,5 @@
     { "reason": "SELECTION_BUDGET_EXHAUSTED", "candidate_count": 2 }
   ],
   "input_digest": "sha256:a3b494f4b13badb5a3c79ac24641869ac63ba5517c91ede49aac3af110e96828",
-  "output_digest": "sha256:71ff93219834bb2d21cda721c1c2c92da63d31df88226de1077db95bb989c756"
+  "output_digest": "sha256:f4986be76abd0960033699c33323476f1db1b0e20a22fd680b8140dd65cdea0a"
 }

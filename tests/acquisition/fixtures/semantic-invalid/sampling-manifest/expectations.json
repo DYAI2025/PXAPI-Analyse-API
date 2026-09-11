@@ -1,0 +1,25 @@
+{
+  "contract": "sampling-manifest",
+  "note": "Documents that satisfy sampling-manifest.v1 completely and are still ambiguous, in the same form as the site-inventory index beside it. Each is asserted schema-valid before it is asserted semantically invalid, so the pair of assertions is itself the evidence that the schema does not enforce these relationships. The digests are synthetic: a document with no canonical ordering has no digest to carry.",
+  "cases": {
+    "duplicate-selected-url-key": {
+      "proves": "One identity is selected once per manifest. The same url_key at two different ranks makes the two selection objects differ, so uniqueItems passes, while the selection set stops being a set and the canonical ordering by identity is left with a tie only input order can break.",
+      "violations": [{ "pointer": "/selections/1", "rule": "unique_selected_url_key" }]
+    },
+    "duplicate-selection-rank": {
+      "proves": "One rank is occupied by one selection. Two different pages at rank 1 are distinct whole objects and pass uniqueItems, but the rank is the order authority — so the deterministic order the manifest claims to record is decided by array position after all, which is exactly what the rank exists to prevent. The density rule fires alongside it, because ranks of [1, 1] are not 1..n.",
+      "violations": [
+        { "pointer": "/selections/1", "rule": "unique_selection_rank" },
+        { "pointer": "/selections", "rule": "dense_selection_rank" }
+      ]
+    },
+    "gapped-selection-rank": {
+      "proves": "Density is a rule in its own right, not a side effect of uniqueness: ranks of [1, 3] repeat nothing, so the uniqueness rule is silent, and the order authority still points at a position nothing occupies. This is the case that would pass a uniqueness-only check.",
+      "violations": [{ "pointer": "/selections", "rule": "dense_selection_rank" }]
+    },
+    "duplicate-exclusion-reason": {
+      "proves": "One exclusion reason is summarised once. Two entries for NOT_SELECTED_BY_POLICY with different counts pass uniqueItems and leave a reader to add two partial counts that the contract describes as one, while the canonical ordering keyed on the reason has a tie it can only break by input order.",
+      "violations": [{ "pointer": "/exclusions/1", "rule": "unique_exclusion_reason" }]
+    }
+  }
+}

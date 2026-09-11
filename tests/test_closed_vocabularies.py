@@ -145,6 +145,28 @@ SELECTION_EXCLUSION_REASONS: list[str] = [
     "INELIGIBLE_IN_INVENTORY",
 ]
 
+#: Which technical limitation of the run stopped a selection before the policy's own defined end.
+#: The set is closed for the reason every other neutrality vocabulary here is closed: an open
+#: token could arrive carrying a reason that describes the website, and this member exists
+#: precisely so that an incomplete selection stays attributable to a bound of ours. It covers a
+#: declared budget, a safety bound and the runtime, which is the minimum the authority requires.
+INCOMPLETENESS_CAUSES: list[str] = [
+    "SELECTION_BUDGET_EXHAUSTED",
+    "SAFETY_LIMIT_REACHED",
+    "RUNTIME_LIMIT_REACHED",
+]
+
+#: The completeness value that admits — and requires — an incompleteness cause. Stated once and
+#: pinned at the conditional below, so the branch cannot be flipped without a red test.
+INCOMPLETE_SELECTION_VALUE = False
+
+#: The one cause that drags a further requirement with it: a declared budget said to be exhausted
+#: must be a budget the manifest actually declares. Derived by membership rather than restated,
+#: so the token the conditional keys on cannot drift out of the vocabulary above it.
+BUDGET_INCOMPLETENESS_CAUSE = next(
+    cause for cause in INCOMPLETENESS_CAUSES if cause == "SELECTION_BUDGET_EXHAUSTED"
+)
+
 #: The one result state that carries a value about the website. Both carriers key a conditional
 #: on it — a measurement may hold a result, and evidence may hold a polarity, only here — so it
 #: is stated once and pinned at both sites through the pointer below.
@@ -162,6 +184,12 @@ NO_ADMISSION_POINTER = f"{_SOURCE_ITEM}/allOf/0/else/properties/candidate_count/
 ELIGIBILITY_STATE_POINTER = f"{_ELIGIBILITY}/properties/state/enum"
 CANDIDATE_EXCLUSION_POINTER = f"{_ELIGIBILITY}/properties/exclusion_reason/enum"
 EXCLUDED_STATE_POINTER = f"{_ELIGIBILITY}/allOf/0/if/properties/state/const"
+
+#: Where the manifest's incompleteness vocabulary and the two conditionals that key on it live.
+_INCOMPLETENESS = "#/properties/incompleteness"
+INCOMPLETENESS_CAUSE_POINTER = f"{_INCOMPLETENESS}/properties/cause/enum"
+INCOMPLETE_SELECTION_POINTER = "#/allOf/0/if/properties/selection_complete/const"
+BUDGET_CAUSE_POINTER = "#/allOf/1/if/properties/incompleteness/properties/cause/const"
 
 #: Every closed vocabulary this module pins, as ``(schema file, JSON pointer) -> exact value``.
 PINNED: dict[tuple[str, str], Any] = {
@@ -187,6 +215,9 @@ PINNED: dict[tuple[str, str], Any] = {
     ("sampling-manifest.v1.json", "#/properties/mode/enum"): SAMPLING_MODES,
     ("sampling-manifest.v1.json", "#/$defs/selection_reason/enum"): SELECTION_REASONS,
     ("sampling-manifest.v1.json", "#/$defs/exclusion_reason/enum"): SELECTION_EXCLUSION_REASONS,
+    ("sampling-manifest.v1.json", INCOMPLETENESS_CAUSE_POINTER): INCOMPLETENESS_CAUSES,
+    ("sampling-manifest.v1.json", INCOMPLETE_SELECTION_POINTER): INCOMPLETE_SELECTION_VALUE,
+    ("sampling-manifest.v1.json", BUDGET_CAUSE_POINTER): BUDGET_INCOMPLETENESS_CAUSE,
     # The four value_type branches, derived from the vocabulary rather than listed: this pins
     # that there is exactly one branch per declared type, in the declared order, so a fifth
     # type cannot arrive without a branch and a branch cannot be dropped without a red test.
@@ -292,8 +323,34 @@ def test_the_excluded_state_belongs_to_the_eligibility_vocabulary() -> None:
 
 def test_no_sampling_vocabulary_encodes_a_census_threshold() -> None:
     """The census-to-sampling threshold is MISSING and must not arrive as a token or a number."""
-    assert all(not token.strip("_").isdigit() for token in SAMPLING_MODES + SELECTION_REASONS)
+    tokens = SAMPLING_MODES + SELECTION_REASONS + INCOMPLETENESS_CAUSES
+    assert all(not token.strip("_").isdigit() for token in tokens)
     assert SAMPLING_MODES == ["CENSUS", "STRATIFIED_SAMPLE"]
+
+
+def test_the_incompleteness_vocabulary_covers_budget_safety_and_runtime() -> None:
+    """The authority requires at least those three limitation kinds to be expressible.
+
+    The check is over the kind each token names rather than over the literal set, so renaming a
+    token is free while *losing* one of the three required kinds is not.
+    """
+    required = {"BUDGET": False, "SAFETY": False, "RUNTIME": False}
+    for cause in INCOMPLETENESS_CAUSES:
+        for kind in required:
+            if kind in cause:
+                required[kind] = True
+    unmet = sorted(kind for kind, covered in required.items() if not covered)
+    assert unmet == [], f"no incompleteness cause names a {unmet} limitation"
+
+
+def test_the_budget_incompleteness_cause_belongs_to_the_incompleteness_vocabulary() -> None:
+    """The token the budget conditional keys on must be one the vocabulary actually declares."""
+    assert BUDGET_INCOMPLETENESS_CAUSE in INCOMPLETENESS_CAUSES
+
+
+def test_the_incomplete_selection_value_is_the_false_branch_of_a_boolean() -> None:
+    """The conditional keys on ``false``; keying it on ``true`` would invert the whole rule."""
+    assert INCOMPLETE_SELECTION_VALUE is False
 
 
 def test_the_valued_result_state_belongs_to_the_result_state_vocabulary() -> None:

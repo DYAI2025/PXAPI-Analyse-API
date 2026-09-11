@@ -46,6 +46,14 @@
       "proves": "An excluded candidate must name the technical reason, so an exclusion is never an unexplained verdict a reader could take for a defect of the page.",
       "violations": [{ "pointer": "/candidates/0/eligibility", "keyword": "required" }]
     },
+    "target-origin-is-a-page": {
+      "proves": "target_origin is the canonical site authority, and the shape now says so: it resolves to public_origin, which refuses a path beyond the root slash. Before this rule the member accepted any page URL, so the field every consumer reads as 'the site' could quietly hold one page of it.",
+      "violations": [{ "pointer": "/target_origin", "keyword": "pattern" }]
+    },
+    "target-origin-carries-a-query": {
+      "proves": "The same rule for a query. An origin carrying a tracking parameter would make two runs of one site produce two different canonical authorities, and the seed identity that must equal it would follow.",
+      "violations": [{ "pointer": "/target_origin", "keyword": "pattern" }]
+    },
     "credential-bearing-url-key": {
       "proves": "D-PXAPI19-PO-007: a credential-bearing URL never becomes persisted canonical contract data. The identity shape excludes userinfo outright.",
       "violations": [{ "pointer": "/candidates/0/url_key", "keyword": "pattern" }]

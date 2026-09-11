@@ -23,8 +23,8 @@
       "description": "Required. When this inventory was assembled. An inventory always states when, because a population with no instant cannot be compared with a later run of the same site."
     },
     "target_origin": {
-      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_url",
-      "description": "Required. The canonical public target origin this inventory was built for, and the identity of the canonical target seed: the seed candidate's url_key is this same value. Its presence means a safe canonical origin was established, which is the precondition for this document existing at all. It is a structural shape only — establishing it safely is the acquisition runtime's responsibility, and a valid inventory proves no URL safety, redirect, DNS or egress decision."
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_origin",
+      "description": "Required. The canonical public target origin this inventory was built for, and the identity of the canonical target seed: the seed candidate's url_key is this same value. It is an origin and never a page, and the shape says so rather than the name alone: a path beyond the root slash, a query and a fragment are refused, so the member every consumer reads as the authority for the whole analysed site cannot quietly hold one page of that site. Its presence means a safe canonical origin was established, which is the precondition for this document existing at all. It remains a structural shape only — establishing the origin safely is the acquisition runtime's responsibility, and a valid inventory proves no URL safety, reachability, redirect, DNS or egress decision."
     },
     "discovery_method": {
       "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
@@ -50,7 +50,7 @@
         "properties": {
           "source_id": {
             "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
-            "description": "Required. A stable machine-readable identifier for the source that was attempted, such as the canonical seed, a robots declaration, a sitemap or same-origin page links. The vocabulary is deliberately open: a source a later slice introduces validates here without a schema change, and the same token is what a candidate's provenance names."
+            "description": "Required. A stable machine-readable identifier for the source that was attempted, such as the canonical seed, a robots declaration, a sitemap or same-origin page links. The vocabulary is deliberately open: a source a later slice introduces validates here without a schema change, and the same token is what a candidate's provenance names. One source is reported at most once per inventory: a second entry for the same identifier would be a second outcome for one attempt, and a candidate's provenance naming that identifier could then no longer be resolved to one state. JSON Schema cannot state this — the enclosing array carries no uniqueItems, and uniqueItems would not help because it compares whole entries, so the same source with two different outcomes would satisfy it — so the rule is enforced by the contract-semantic layer in tests/acquisition/semantics.py, which refuses such a document before any digest is computed, and by a producer-side check that is mandatory in PXAPI-19.B."
           },
           "outcome": {
             "type": "string",
@@ -97,7 +97,7 @@
         "properties": {
           "url_key": {
             "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key",
-            "description": "Required. This candidate's canonical identity. Observations that canonicalise to the same identity are one candidate with aggregated provenance, never several: the same target seen twice is not a defect of the website and not an exclusion."
+            "description": "Required. This candidate's canonical identity. Observations that canonicalise to the same identity are one candidate with aggregated provenance, never several: the same target seen twice is not a defect of the website and not an exclusion. That aggregation is the rule, so one identity appears exactly once in the candidate population — and the schema cannot say so. uniqueItems on the enclosing array compares whole candidate objects, so the same identity carrying two different observed-form lists satisfies it while leaving the population with two entries a consumer must choose between, and the canonical ordering that keys on this member would order them by whichever input sequence it was handed. The rule is therefore enforced by the contract-semantic layer in tests/acquisition/semantics.py, which refuses such a document before any digest is computed, and by a producer-side deduplication check that is mandatory in PXAPI-19.B."
           },
           "observed_forms": {
             "type": "array",
@@ -165,7 +165,7 @@
     },
     "output_digest": {
       "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
-      "description": "Required. The canonical digest of this inventory's stable semantics — target origin, discovery method and version, classifier and version, source outcomes and normalised candidates — computed over the same deterministic canonical JSON. Envelope identities and timestamps, and the two digest members themselves, do not participate, so re-emitting the same population under a new inventory_id at a new instant leaves this value unchanged. There is deliberately no third content_digest: input and output are the whole digest topology, and a third member would create a second, unowned notion of this document's identity."
+      "description": "Required. The canonical digest of this inventory's stable semantics — target origin, discovery method and version, classifier and version, source outcomes and normalised candidates — computed over the same deterministic canonical JSON. Envelope identities and timestamps, and the two digest members themselves, do not participate, so re-emitting the same population under a new inventory_id at a new instant leaves this value unchanged. The canonical ordering is keyed on the semantic identities — a source's source_id, a candidate's url_key — so a document in which one of those identities appears twice has no canonical ordering at all: the two equal keys would be left in whatever sequence the producer happened to emit, and the digest would silently become order-dependent. The reference implementation therefore refuses to digest such a document rather than returning a value, and the rule is stated at the members that carry those identities. There is deliberately no third content_digest: input and output are the whole digest topology, and a third member would create a second, unowned notion of this document's identity."
     }
   },
   "required": [

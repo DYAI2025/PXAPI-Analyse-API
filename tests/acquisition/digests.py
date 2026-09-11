@@ -21,6 +21,12 @@ import json
 from operator import itemgetter
 from typing import Any
 
+from tests.acquisition.semantics import (
+    SAMPLING_MANIFEST,
+    SITE_INVENTORY,
+    require_unambiguous,
+)
+
 #: The canonical form: UTF-8, sorted keys, no insignificant whitespace, and no non-JSON
 #: constant. ``allow_nan=False`` is what makes the "no floating-point members" rule fail loudly
 #: rather than emit ``NaN``, which is not JSON and which every numeric bound compares False
@@ -66,8 +72,9 @@ def floats_in(value: Any, path: str = "") -> list[str]:
 
 # --- the member classification ---------------------------------------------------------------
 
-SITE_INVENTORY = "site-inventory"
-SAMPLING_MANIFEST = "sampling-manifest"
+#: ``SITE_INVENTORY`` and ``SAMPLING_MANIFEST`` are imported from ``tests.acquisition.semantics``
+#: rather than restated here, so the fail-closed gate and the classification it guards cannot end
+#: up naming different contracts. Modules that import them from this one keep working unchanged.
 
 #: Identity and clock members. They exist so a document can be referenced and ordered, and they
 #: never participate in a digest: re-emitting the same population under a new id at a new
@@ -119,9 +126,18 @@ MANIFEST_INPUT: tuple[str, ...] = (
     "budgets",
 )
 
-#: The selection semantics: mode, completeness, the ordered selections and the exclusion
-#: summary.
-MANIFEST_OUTPUT: tuple[str, ...] = ("mode", "selection_complete", "selections", "exclusions")
+#: The selection semantics: mode, completeness, the structured technical cause when the selection
+#: stopped short, the ordered selections and the exclusion summary. ``incompleteness`` belongs
+#: here rather than to the envelope because it is part of what the selection *is*: two manifests
+#: that selected the same pages, one of them having been cut off by a budget, are not the same
+#: selection and must not share an output digest.
+MANIFEST_OUTPUT: tuple[str, ...] = (
+    "mode",
+    "selection_complete",
+    "incompleteness",
+    "selections",
+    "exclusions",
+)
 
 #: ``contract -> {class name -> members}``. The coverage test reads this against the schemas.
 CLASSIFICATION: dict[str, dict[str, tuple[str, ...]]] = {
@@ -158,7 +174,14 @@ def _canonical_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
 
 
 def inventory_output_projection(document: dict[str, Any]) -> dict[str, Any]:
-    """The inventory's stable semantics, with every order-independent collection sorted."""
+    """The inventory's stable semantics, with every order-independent collection sorted.
+
+    The semantic-key gate runs first and refuses the document outright. ``sorted`` is stable, so
+    two sources sharing a ``source_id`` or two candidates sharing a ``url_key`` would be left in
+    the order they arrived in — and the digest of a set would silently become a digest of a
+    sequence. Refusing is the only answer that keeps "canonical" true.
+    """
+    require_unambiguous(SITE_INVENTORY, document)
     projection = {member: document[member] for member in INVENTORY_OUTPUT}
     projection["sources"] = sorted(
         (dict(source) for source in document["sources"]), key=itemgetter("source_id")
@@ -195,8 +218,19 @@ def manifest_output_projection(document: dict[str, Any]) -> dict[str, Any]:
     The ranks and not the array positions carry the order, so re-serialising the document with
     its selections in another sequence cannot change what the manifest means. Exclusions are a
     per-reason summary and carry no order at all, so they are sorted.
+
+    The semantic-key gate runs first, for the same reason it guards the inventory: a repeated
+    rank, a repeated selected identity or a repeated exclusion reason leaves ``sorted`` breaking
+    the tie by input order, which would make this digest depend on a serialisation accident.
+
+    ``incompleteness`` participates and is omitted when the selection ran to its end — the
+    contract admits it only alongside ``selection_complete: false``, so projecting a member that
+    is not there would invent one.
     """
+    require_unambiguous(SAMPLING_MANIFEST, document)
     projection = {member: document[member] for member in ("mode", "selection_complete")}
+    if "incompleteness" in document:
+        projection["incompleteness"] = dict(document["incompleteness"])
     projection["selections"] = [
         dict(selection)
         for selection in sorted(document["selections"], key=itemgetter("selection_rank"))

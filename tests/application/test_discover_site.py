@@ -111,7 +111,10 @@ def example_report() -> DiscoveryReport:
     )
 
 
-def run(report: DiscoveryReport, budget: int | None = 25, **kwargs: Any) -> dict[str, Any]:
+def run(report: DiscoveryReport, budget: int | None = None, **kwargs: Any) -> dict[str, Any]:
+    """One run through the use case. ``budget`` defaults to ``None`` — no declared selection
+    ceiling — because that is what the shipped composition declares; a test that wants a bounded
+    census asks for one, so the budget is never an unexamined default of the harness."""
     use = DiscoverSite(
         FakeDiscovery(report),
         kwargs.get("clock", clock_of(*["2026-09-11T12:00:00Z"] * 3)),
@@ -161,8 +164,12 @@ def assert_every_document_satisfies_its_contract(envelope: dict[str, Any]) -> No
 
 
 def test_the_producer_regenerates_the_registered_inventory_and_census_from_their_input() -> None:
+    # The registered example declares ``budgets: {max_selected_pages: 25}``, so reproducing it
+    # means planning under that declared budget. It is the example's illustration of a declared
+    # bound, not a default of this producer: the shipped composition declares none.
     envelope = run(
         example_report(),
+        budget=25,
         clock=clock_of("2026-09-10T08:41:00Z", "2026-09-10T08:41:12Z", "2026-09-10T08:41:19Z"),
         new_id=ids_of(EXAMPLE_INVENTORY_ID, "smf-01JQ8Z4K2M0000000000000019"),
         run_id=EXAMPLE_RUN_ID,
@@ -462,7 +469,7 @@ class _ExplodingDiscovery:
 
 
 def test_a_provider_that_raises_ends_the_run_as_our_runtime_error() -> None:
-    use = DiscoverSite(_ExplodingDiscovery(), FIXED_CLOCK, counting_ids(), SelectionBudgets(25))
+    use = DiscoverSite(_ExplodingDiscovery(), FIXED_CLOCK, counting_ids(), SelectionBudgets())
     envelope = use.run({"run_id": "run-1", "target_url": ORIGIN})
     assert "site_inventory" not in envelope and "sampling_manifest" not in envelope
     assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_DISCOVERY_RUNTIME_ERROR"}
@@ -563,3 +570,222 @@ def test_an_ambiguous_manifest_is_withheld_through_the_production_path(
     envelope = run(report)
     assert "sampling_manifest" not in envelope
     assert envelope["analysis_run_state"]["failure"] == {"code": "SAMPLING_MANIFEST_NOT_EMITTABLE"}
+
+
+# --- F-PXAPI19B-R4M-001: the default census is a census ---------------------------------------
+
+
+def large_report(pages: int) -> DiscoveryReport:
+    """A deterministic inventory of ``pages`` eligible candidates, the seed at the origin."""
+    listed = (
+        DiscoveryObservation(f"{ORIGIN}p{index:04d}", "SITEMAP") for index in range(pages - 1)
+    )
+    return DiscoveryReport(
+        ORIGIN,
+        (DiscoveryObservation(ORIGIN, "CANONICAL_SEED"), *listed),
+        attempts(CANONICAL_SEED="USED", SITEMAP="USED"),
+    )
+
+
+def test_the_default_census_takes_every_eligible_candidate_of_a_large_inventory() -> None:
+    """Sixty eligible candidates planned under the shipped default. The old default stopped at
+    25 and recorded the census as incomplete; nothing stops it now but the inventory's own size.
+
+    The assertion on ``build_site_discovery()`` is what binds this to production: if the default
+    ever regains a ceiling, this test fails rather than quietly proving something about a value
+    only the harness uses.
+    """
+    from pxapi.adapters.composition import build_site_discovery
+
+    assert build_site_discovery().budgets == SelectionBudgets(), (
+        "this test plans under the shipped default; the default has gained a selection ceiling"
+    )
+
+    envelope = run(large_report(60))
+    inventory, manifest = envelope["site_inventory"], envelope["sampling_manifest"]
+    eligible = [c for c in inventory["candidates"] if c["eligibility"]["state"] == "ELIGIBLE"]
+
+    assert len(eligible) == 60
+    assert manifest["mode"] == "CENSUS"
+    assert len(manifest["selections"]) == 60
+    assert {s["url_key"] for s in manifest["selections"]} == {c["url_key"] for c in eligible}
+    assert manifest["selection_complete"] is True
+    assert "budgets" not in manifest
+    assert "incompleteness" not in manifest
+    assert manifest["exclusions"] == []
+    assert_every_document_satisfies_its_contract(envelope)
+
+
+def test_an_explicitly_declared_budget_still_bounds_the_census_and_names_what_bound_it() -> None:
+    """The capability the repair keeps: a caller that declares a ceiling gets a bounded census
+    that says so, names the exact budget it exhausted, and accounts for every candidate."""
+    envelope = run(large_report(60), budget=25)
+    manifest = envelope["sampling_manifest"]
+
+    assert manifest["mode"] == "CENSUS"
+    assert manifest["selection_complete"] is False
+    assert manifest["incompleteness"] == {"cause": "SELECTION_BUDGET_EXHAUSTED"}
+    assert manifest["budgets"] == {"max_selected_pages": 25}
+    assert len(manifest["selections"]) == 25
+    assert manifest["exclusions"] == [
+        {"reason": "SELECTION_BUDGET_EXHAUSTED", "candidate_count": 35}
+    ]
+    counted = len(manifest["selections"]) + sum(
+        e["candidate_count"] for e in manifest["exclusions"]
+    )
+    assert counted == 60
+    assert manifest["selections"][0]["selection_reason"] == "SEED"
+    assert_every_document_satisfies_its_contract(envelope)
+
+
+def test_the_default_census_over_a_large_inventory_is_order_independent() -> None:
+    """Enumeration-order determinism is unchanged by the removal of the default ceiling."""
+    base = large_report(60)
+    reference = run(base, new_id=ids_of("inv-a", "smf-a"))
+    shuffler = random.Random(19)
+    for _ in range(10):
+        observations = list(base.observations)
+        shuffler.shuffle(observations)
+        again = run(
+            DiscoveryReport(ORIGIN, tuple(observations), base.attempts),
+            new_id=ids_of("inv-a", "smf-a"),
+        )
+        assert again["sampling_manifest"] == reference["sampling_manifest"]
+        assert again["site_inventory"] == reference["site_inventory"]
+
+
+# --- F-PXAPI19B-R4M-002: a credential never becomes output ------------------------------------
+
+CREDENTIAL_TARGET = "https://user:secret@example.com/"
+
+
+class _RecordingDiscovery:
+    """A port that records every call, and fails the run if it is asked about a refused target."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def discover(self, target_url: str) -> DiscoveryReport:
+        self.calls.append(target_url)
+        raise AssertionError("the port was asked about a target the boundary had to refuse first")
+
+
+def credential_run(target: str) -> tuple[dict[str, Any], _RecordingDiscovery]:
+    port = _RecordingDiscovery()
+    use = DiscoverSite(
+        port, clock_of(*["2026-09-11T12:00:00Z"] * 3), counting_ids(), SelectionBudgets()
+    )
+    return use.run({"run_id": "run-1", "target_url": target}), port
+
+
+def test_a_credential_bearing_target_never_reaches_an_envelope_or_the_port() -> None:
+    """The request document is schema-valid — ``common#/$defs/url`` permits userinfo — so this
+    is the boundary that has to stop it. It is refused before the request is copied anywhere
+    and before the port is asked for anything at all."""
+    envelope, port = credential_run(CREDENTIAL_TARGET)
+
+    assert port.calls == []
+    assert "analysis_run_request" not in envelope
+    assert "site_inventory" not in envelope and "sampling_manifest" not in envelope
+    assert envelope["analysis_run_state"]["state"] == "FAILED"
+    assert envelope["analysis_run_state"]["failure"] == {"code": "TARGET_NOT_PERMITTED"}
+    assert [(s["stage_id"], s["status"]) for s in envelope["stage_executions"]] == [
+        ("SITE_DISCOVERY", "FAILED")
+    ]
+    assert_every_document_satisfies_its_contract(envelope)
+    assert verdict_keys_in(envelope) == set()
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://user:secret@example.com/",
+        "https://:secret@example.com/",
+        "https://user@example.com/",
+        "http://user:secret@example.com/path?q=1",
+        "https://user:secret@example.com:8443/",
+    ],
+)
+def test_no_written_form_of_userinfo_survives_into_anything_this_run_emits(target: str) -> None:
+    """Every shape the authority can carry a credential in, not only the canonical one."""
+    envelope, port = credential_run(target)
+    blob = json.dumps(envelope)
+
+    assert port.calls == []
+    assert "secret" not in blob
+    assert target not in blob
+    # The whole target is withheld, not merely its userinfo: there is no repaired version of a
+    # document nobody submitted, so the host does not appear either.
+    assert "example.com" not in blob
+    assert "analysis_run_request" not in envelope
+
+
+def test_an_ordinary_public_target_is_still_echoed_exactly_as_submitted() -> None:
+    """The guard is about credentials and about nothing else: every other target, refused or
+    not, still travels in the envelope as the run's own record of what was asked."""
+    envelope = run(DiscoveryReport(None, bootstrap_failure=BootstrapFailure.UNREACHABLE))
+    assert envelope["analysis_run_request"] == {"run_id": "run-1", "target_url": ORIGIN}
+    assert run(example_report())["analysis_run_request"]["target_url"] == ORIGIN
+
+
+def test_the_production_composition_refuses_a_credential_without_resolving_anything(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through the shipped wiring, with the real ``PublicTargetPolicy`` behind it. The guard
+    stands in front of the policy, so the stdlib resolver is never reached: no DNS query leaves
+    this machine for a target carrying a credential, and no socket is opened."""
+    import socket
+
+    from pxapi.adapters.composition import build_site_discovery
+    from pxapi.adapters.inbound.cli import build_request
+
+    lookups: list[str] = []
+
+    def refuse_to_resolve(host: Any, port: Any = 0, *args: Any, **kwargs: Any) -> Any:
+        lookups.append(str(host))
+        raise AssertionError(f"a DNS lookup was attempted for {host!r}")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse_to_resolve)
+    envelope = build_site_discovery().run(build_request(CREDENTIAL_TARGET))
+    blob = json.dumps(envelope)
+
+    assert lookups == []
+    assert "analysis_run_request" not in envelope
+    assert "secret" not in blob and CREDENTIAL_TARGET not in blob
+    assert envelope["analysis_run_state"]["failure"] == {"code": "TARGET_NOT_PERMITTED"}
+
+
+def test_the_no_lookup_claim_is_not_vacuous_because_an_ordinary_target_does_resolve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Canary for the test above. The same wiring, the same interception, an ordinary public
+    target: the resolver *is* reached, which is what makes ``lookups == []`` evidence that the
+    credential guard ran rather than evidence that nothing ever resolves in this test."""
+    import socket
+
+    from pxapi.adapters.composition import build_site_discovery
+    from pxapi.adapters.inbound.cli import build_request
+
+    lookups: list[str] = []
+
+    def record_then_fail(host: Any, port: Any = 0, *args: Any, **kwargs: Any) -> Any:
+        lookups.append(str(host))
+        raise OSError("no such host")
+
+    monkeypatch.setattr(socket, "getaddrinfo", record_then_fail)
+    envelope = build_site_discovery().run(build_request("https://example.com/"))
+
+    assert lookups == ["example.com"]
+    assert envelope["analysis_run_request"]["target_url"] == "https://example.com/"
+
+
+def test_the_boundary_predicate_answers_only_about_credentials() -> None:
+    """It is a data-minimisation rule, not an address rule: a loopback or private target is a
+    perfectly readable identity and is left to the egress authority to refuse."""
+    assert use_case._carries_credentials("https://user:secret@example.com/") is True
+    assert use_case._carries_credentials("https://example.com/") is False
+    assert use_case._carries_credentials("http://127.0.0.1:9/") is False
+    assert use_case._carries_credentials("http://169.254.169.254/") is False
+    # Total on anything at all: a value it cannot read is not a credential it can see.
+    for unreadable in (None, 123, b"https://user:secret@example.com/", object()):
+        assert use_case._carries_credentials(unreadable) is False

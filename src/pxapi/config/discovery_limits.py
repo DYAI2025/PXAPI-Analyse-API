@@ -1,15 +1,26 @@
-"""The bounds one site discovery and one selection run under.
+"""The bounds one site discovery runs under.
 
 Small, explicit and in one place, for the same reason ``fetch_limits`` exists: "how many
-requests may discovery make", "how much of a sitemap may it read" and "how many pages may a
-selection name" are reviewable facts rather than numbers scattered through an adapter.
+requests may discovery make" and "how much of a sitemap may it read" are reviewable facts
+rather than numbers scattered through an adapter.
+
+**Nothing here bounds a selection.** Every value below caps the *discovery* that produces the
+site inventory, and none of them may be read as a ceiling on how many of that inventory's
+candidates a census may name. The two are different questions, and a discovery bound quietly
+doing double duty as a selection bound is exactly how a run stops short of its own population
+without saying so: discovery incompleteness belongs in the inventory's source outcomes, and
+selection incompleteness in the manifest. How much of the bound inventory one selection may
+take is the Domain's ``SelectionBudgets``, declared by whoever runs the selection, and the
+shipped default declares none — a census over the whole bound inventory. A ceiling on that
+would be a product decision about how much of a site an analysis covers, and no PXAPI authority
+has taken one.
 
 None of these is a census-to-sampling threshold, and none may be read as one. C-PXAPI-005 keeps
 that threshold ``MISSING`` until representative benchmarks support a versioned decision, and
 nothing here decides *which method* is used: every value below is a ceiling on how much work
 one run may do. Reaching one is recorded as a neutral technical state — a source outcome of
-``BUDGET_EXHAUSTED`` or ``TIMEOUT``, a selection that is ``CENSUS`` with ``selection_complete``
-false — and never as a property of the site and never as a switch to ``STRATIFIED_SAMPLE``.
+``BUDGET_EXHAUSTED`` or ``TIMEOUT`` — and never as a property of the site and never as a switch
+to ``STRATIFIED_SAMPLE``.
 
 Config is a leaf layer: this module imports no other ``pxapi`` layer and no third party.
 """
@@ -21,7 +32,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class DiscoveryLimits:
-    """Every bound one discovery run and its selection are allowed to consume."""
+    """Every bound one discovery run is allowed to consume.
+
+    Discovery only. A member that bounded a *selection* would belong to ``SelectionBudgets``,
+    where it travels into the manifest that was planned under it and can be read there.
+    """
 
     #: Fetches one discovery may issue in total: the bootstrap, ``/robots.txt`` and every
     #: sitemap document together. Each fetch still runs under ``FetchLimits`` — its own
@@ -55,10 +70,6 @@ class DiscoveryLimits:
     #: of several requests just inside a timeout, or trickling a body, cannot hold a discovery
     #: past it.
     total_deadline_seconds: float = 60.0
-
-    #: The declared ceiling on how many pages one selection may name. It is a budget and not a
-    #: threshold: reaching it leaves the mode ``CENSUS`` and records the selection as bounded.
-    max_selected_pages: int = 25
 
 
 #: The bounds the service runs with.

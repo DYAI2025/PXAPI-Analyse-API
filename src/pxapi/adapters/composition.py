@@ -63,7 +63,7 @@ def build_site_discovery(
     clock: Callable[[], datetime] = utc_now,
     new_id: Callable[[], str] = new_identifier,
 ) -> DiscoverSite:
-    """The real discovery use case: strict target policy, origin-scoped fetches, census plan.
+    """The real discovery use case: strict target policy, origin-scoped fetches, full census.
 
     It takes no argument that could relax the target policy or widen a bound, for the same
     reason ``build_analyzer`` takes none: a test that needs a loopback server constructs its
@@ -74,5 +74,12 @@ def build_site_discovery(
         discovery=HttpSiteDiscovery(fetch_limits=DEFAULT_FETCH_LIMITS, limits=limits),
         clock=clock,
         new_id=new_id,
-        budgets=SelectionBudgets(max_selected_pages=limits.max_selected_pages),
+        # No selection budget is declared, so the census covers every eligible candidate of the
+        # inventory that the discovery bounds above already bounded. The ceiling that used to
+        # stand here was the value of a registered 19.A *example*, which illustrates a document
+        # and decides no policy; how much of a site one analysis covers is a product decision
+        # nobody has taken, so none is invented here. A caller that needs a bounded census
+        # constructs its own use case with a declared ``SelectionBudgets``, and that declared
+        # budget then travels in the manifest planned under it, where a reader can see it.
+        budgets=SelectionBudgets(),
     )

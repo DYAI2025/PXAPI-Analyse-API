@@ -30,7 +30,7 @@ REPORT = DiscoveryReport(
 def stub(monkeypatch: pytest.MonkeyPatch, tamper: Any = None) -> None:
     def build() -> Any:
         use = DiscoverSite(
-            FakeDiscovery(REPORT), discover_cli_clock, lambda: "id-1", SelectionBudgets(25)
+            FakeDiscovery(REPORT), discover_cli_clock, lambda: "id-1", SelectionBudgets()
         )
         if tamper is None:
             return use
@@ -115,7 +115,64 @@ def test_the_production_wiring_is_strict_and_refuses_loopback_before_any_connect
     use = build_site_discovery()
     assert isinstance(use.discovery, HttpSiteDiscovery)
     assert use.discovery.limits == DEFAULT_DISCOVERY_LIMITS
-    assert use.budgets.max_selected_pages == DEFAULT_DISCOVERY_LIMITS.max_selected_pages
     envelope = use.run({"run_id": "run-1", "target_url": "http://127.0.0.1:9/"})
     assert envelope["analysis_run_state"]["failure"] == {"code": "TARGET_NOT_PERMITTED"}
     assert "site_inventory" not in envelope
+    # A refused *address* is not a refused *identity*: the target is echoed as submitted, which
+    # is what keeps the credential rule below a rule about credentials and not about refusals.
+    assert envelope["analysis_run_request"]["target_url"] == "http://127.0.0.1:9/"
+
+
+def test_the_production_default_selects_a_full_census_and_declares_no_page_ceiling() -> None:
+    """F-PXAPI19B-R4M-001. ``max_selected_pages = 25`` was the value of a registered 19.A
+    *example*; an example illustrates a document and decides no policy, so it had no authority
+    to be the shipped default. The default is now a true census over the bound inventory.
+
+    No number replaced it, and that is asserted three ways rather than assumed: the composition
+    root constructs ``SelectionBudgets`` with no argument at all, the budgets it builds declare
+    nothing, and the config layer — where the old ceiling lived — carries no selection bound for
+    a later edit to reach for.
+    """
+    from dataclasses import fields
+    from pathlib import Path
+
+    from pxapi.adapters import composition
+    from pxapi.adapters.composition import build_site_discovery
+    from pxapi.config.discovery_limits import DiscoveryLimits
+
+    budgets = build_site_discovery().budgets
+    assert budgets == SelectionBudgets()
+    assert budgets.max_selected_pages is None
+    assert budgets.declared() == {}
+
+    selection_bounds = [f.name for f in fields(DiscoveryLimits) if "select" in f.name]
+    assert selection_bounds == [], (
+        f"the config layer declares the selection bound(s) {selection_bounds}; a selection "
+        "ceiling is a product decision and belongs to SelectionBudgets, not to discovery config"
+    )
+
+    calls = selection_budget_calls(Path(composition.__file__).read_text(encoding="utf-8"))
+    assert calls == [0], (
+        f"the composition root builds SelectionBudgets with {calls} argument(s); the shipped "
+        "default must declare none"
+    )
+
+
+def selection_budget_calls(source: str) -> list[int]:
+    """How many arguments each ``SelectionBudgets(...)`` call in ``source`` is given."""
+    import ast
+
+    return [
+        len(node.args) + len(node.keywords)
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "SelectionBudgets"
+    ]
+
+
+def test_the_selection_budget_scan_sees_a_planted_ceiling() -> None:
+    """Canary: the scan above is proved to see the argument it exists to forbid."""
+    assert selection_budget_calls("x = SelectionBudgets()") == [0]
+    assert selection_budget_calls("x = SelectionBudgets(max_selected_pages=25)") == [1]
+    assert selection_budget_calls("x = SelectionBudgets(25)") == [1]

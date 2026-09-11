@@ -6,7 +6,7 @@ document through the Domain's admission, canonicalisation and classification rul
 deterministic ``CENSUS`` selection from it as a ``sampling-manifest.v1`` document, and returns
 both with the run state and stage records that say what happened.
 
-Three rules are enforced here in code as well as in the contracts.
+Four rules are enforced here in code as well as in the contracts.
 
 **No origin, no documents.** A bootstrap that established no canonical public origin produces
 neither an inventory nor a manifest (D-PXAPI19-PO-006). The run ends ``FAILED`` with a neutral
@@ -16,6 +16,14 @@ pages".
 **Nothing leaves that the producer cannot stand behind.** Every document is checked against the
 contract-semantic rules and this producer's own invariants before it is returned, and a document
 that fails is *withheld* — the run fails with a code naming our defect — rather than repaired.
+
+**A credential never becomes output.** ``analysis-run-request`` types its ``target_url``
+as ``common#/$defs/url``, a structural shape that permits URL userinfo, so a request carrying a
+credential is *schema-valid* and can reach this use case. It is refused here, at the application
+boundary, before the request has been copied into any envelope and before the port could resolve
+or connect to anything, and the request is withheld rather than echoed (D-PXAPI19-PO-007). This
+is a data-minimisation decision taken with the Domain's own identity rule; which destinations may
+be *reached* remains ``PublicTargetPolicy``'s single authority at the egress boundary.
 
 **A technical outcome is never a finding.** The envelope carries no measurement, no evidence,
 no finding, no score, no severity and no polarity, and cannot: the two documents are closed
@@ -59,14 +67,20 @@ from pxapi.domain.site_discovery import (
     observation_records,
     source_candidate_counts,
 )
-from pxapi.domain.site_identity import canonical_origin
+from pxapi.domain.site_identity import UrlRefusal, canonical_origin, refuse
 from pxapi.ports.site_discovery import SiteDiscoveryPort
+
+#: A target this analysis may not act on. It is deliberately the *same* token a policy-refused
+#: bootstrap and the homepage analysis already use: a reader learns that the target was not
+#: permitted and nothing more, and a code of its own for the credential refusal would itself
+#: disclose that the submitted URL carried one.
+TARGET_NOT_PERMITTED_CODE = "TARGET_NOT_PERMITTED"
 
 #: The run-level failure code for each way a bootstrap can fail. Open tokens on the run state
 #: contract, each naming our side: ``TARGET_NOT_PERMITTED`` is the token the homepage analysis
 #: already uses for the same refusal, so one refusal has one name across both use cases.
 BOOTSTRAP_FAILURE_CODE: dict[BootstrapFailure, str] = {
-    BootstrapFailure.TARGET_REFUSED: "TARGET_NOT_PERMITTED",
+    BootstrapFailure.TARGET_REFUSED: TARGET_NOT_PERMITTED_CODE,
     BootstrapFailure.UNREACHABLE: "SITE_DISCOVERY_TARGET_UNREACHABLE",
     BootstrapFailure.PROVIDER_FAILURE: "SITE_DISCOVERY_PROVIDER_FAILURE",
     BootstrapFailure.TIMEOUT: "SITE_DISCOVERY_TIMEOUT",
@@ -79,6 +93,25 @@ UNEXPLAINED_BOOTSTRAP_CODE = "SITE_DISCOVERY_BOOTSTRAP_FAILED"
 #: This producer built a document it may not emit. Each names a defect in this service.
 INVENTORY_WITHHELD_CODE = "SITE_INVENTORY_NOT_EMITTABLE"
 MANIFEST_WITHHELD_CODE = "SAMPLING_MANIFEST_NOT_EMITTABLE"
+
+
+def _carries_credentials(target: Any) -> bool:
+    """Whether the requested target URL carries userinfo, by the Domain's own identity rule.
+
+    The rule is ``site_identity.refuse``, reused rather than restated: a credential-bearing URL
+    already has no identity this analysis may persist, and asking the one module that owns that
+    judgement is what keeps this boundary from becoming a second URL authority. It is
+    deliberately *not* an address, reachability or egress decision — ``PublicTargetPolicy``
+    remains the only authority on which destinations may be connected to, and this check neither
+    consults it nor duplicates any part of it.
+
+    Total by construction: a value the identity rules cannot read at all carries no readable
+    userinfo, and stays on the neutral technical path the port already reports it on.
+    """
+    try:
+        return refuse(target) is UrlRefusal.CREDENTIALS_PRESENT
+    except Exception:
+        return False
 
 
 def _instant(moment: datetime) -> str:
@@ -123,6 +156,23 @@ class DiscoverSite:
         run_id = request["run_id"]
         state = transition(transition(RunState.CREATED, RunState.QUEUED), RunState.RUNNING)
         started = self.clock()
+
+        if _carries_credentials(request.get("target_url")):
+            # Refused before the request is copied into any envelope, and before the port is
+            # asked for anything at all: no lookup, no connection, nothing logged. The request
+            # is withheld rather than echoed or redacted — a redacted target would be a value
+            # nobody submitted, and the run stays traceable by its run_id, which every emitted
+            # document carries. Nothing about the site is stated: the run simply did not run.
+            return self._failed(
+                run_id,
+                None,
+                state,
+                started,
+                started,
+                TARGET_NOT_PERMITTED_CODE,
+                discovery_ok=False,
+            )
+
         try:
             report = self.discovery.discover(request["target_url"])
         except Exception:
@@ -138,7 +188,9 @@ class DiscoverSite:
                 if report.bootstrap_failure is not None
                 else UNEXPLAINED_BOOTSTRAP_CODE
             )
-            return self._failed(request, state, started, discovered, code, discovery_ok=False)
+            return self._failed(
+                run_id, request, state, started, discovered, code, discovery_ok=False
+            )
 
         try:
             inventory, candidates = self._inventory(run_id, origin, report, discovered)
@@ -147,7 +199,13 @@ class DiscoverSite:
             # malformed report made impossible to build, is withheld: a defect of ours, named
             # as such, and never a partial document or an exception in the caller's lap.
             return self._failed(
-                request, state, started, discovered, INVENTORY_WITHHELD_CODE, discovery_ok=False
+                run_id,
+                request,
+                state,
+                started,
+                discovered,
+                INVENTORY_WITHHELD_CODE,
+                discovery_ok=False,
             )
 
         planned = self.clock()
@@ -155,6 +213,7 @@ class DiscoverSite:
             manifest = self._manifest(run_id, inventory, origin, candidates, planned)
         except Exception:
             return self._failed(
+                run_id,
                 request,
                 state,
                 started,
@@ -291,7 +350,8 @@ class DiscoverSite:
 
     def _failed(
         self,
-        request: dict[str, Any],
+        run_id: str,
+        request: dict[str, Any] | None,
         state: RunState,
         started: datetime,
         finished: datetime,
@@ -305,8 +365,14 @@ class DiscoverSite:
 
         A valid inventory that was already emitted stays in the envelope when only the plan
         failed: withholding it would hide a document this run did stand behind.
+
+        A ``request`` of ``None`` is a request this producer may not echo at all — one whose
+        target URL carries a credential. The envelope then omits ``analysis_run_request``
+        entirely: it is the one member that would carry the submitted URL verbatim, and there is
+        no repaired version of it that would still be the document somebody submitted. ``run_id``
+        is taken separately for exactly that reason, so the envelope can be built without the
+        request being in scope at all.
         """
-        run_id = request["run_id"]
         if discovery_ok and discovered is not None:
             stages = [
                 self._stage(
@@ -318,13 +384,13 @@ class DiscoverSite:
             stages = [
                 self._stage(run_id, DiscoveryStage.SITE_DISCOVERY, "FAILED", started, finished)
             ]
-        envelope: dict[str, Any] = {
-            "analysis_run_request": request,
-            "analysis_run_state": self._run_state(
-                run_id, transition(state, RunState.FAILED), started, finished, failure_code=code
-            ),
-            "stage_executions": stages,
-        }
+        envelope: dict[str, Any] = {}
+        if request is not None:
+            envelope["analysis_run_request"] = request
+        envelope["analysis_run_state"] = self._run_state(
+            run_id, transition(state, RunState.FAILED), started, finished, failure_code=code
+        )
+        envelope["stage_executions"] = stages
         if inventory is not None:
             envelope["site_inventory"] = inventory
         return envelope

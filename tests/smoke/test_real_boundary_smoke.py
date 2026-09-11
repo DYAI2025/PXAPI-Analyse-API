@@ -22,7 +22,6 @@ import pytest
 from pxapi.adapters.composition import build_site_discovery, default_registry
 from pxapi.adapters.inbound.cli import build_request
 from pxapi.adapters.inbound.discover_cli import invalid_documents
-from pxapi.config.discovery_limits import DEFAULT_DISCOVERY_LIMITS
 from tests.application.test_discover_site import verdict_keys_in
 
 TARGET = os.environ.get("PXAPI_REAL_BOUNDARY_SMOKE_URL")
@@ -43,8 +42,18 @@ def test_one_public_site_crosses_the_whole_discovery_boundary() -> None:
     seeds = [c for c in inventory["candidates"] if c["url_key"] == inventory["target_origin"]]
     assert len(seeds) == 1 and "CANONICAL_SEED" in seeds[0]["provenance"]
 
+    # The shipped composition declares no selection budget, so the census is complete over the
+    # inventory discovery produced: every eligible candidate is selected, none is left out by a
+    # budget, and no budget is declared. A discovery *source* may still report BUDGET_EXHAUSTED
+    # on the same run — that is the inventory's statement about how far discovery reached, and
+    # it is deliberately not the selection's statement about the population it was handed.
+    eligible = [c for c in inventory["candidates"] if c["eligibility"]["state"] == "ELIGIBLE"]
     assert manifest["mode"] == "CENSUS"
-    assert len(manifest["selections"]) <= DEFAULT_DISCOVERY_LIMITS.max_selected_pages
+    assert len(manifest["selections"]) == len(eligible)
+    assert manifest["selection_complete"] is True
+    assert "budgets" not in manifest
+    assert "incompleteness" not in manifest
+    assert all(e["reason"] != "SELECTION_BUDGET_EXHAUSTED" for e in manifest["exclusions"])
     ranks = sorted(s["selection_rank"] for s in manifest["selections"])
     assert ranks == list(range(1, len(ranks) + 1))
     assert manifest["inventory_output_digest"] == inventory["output_digest"]

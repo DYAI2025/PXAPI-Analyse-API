@@ -1,9 +1,9 @@
 # PXAPI Project State
 
-**Snapshot date:** 2026-09-10  
-**Execution mode:** post-governance closeout / PXAPI-19 pre-implementation  
+**Snapshot date:** 2026-09-11  
+**Execution mode:** PXAPI-19.A governance closeout / PXAPI-19.B PRE_IMPLEMENTATION rebaseline  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
-**Reconciled base/snapshot:** `8be473456f090a56b355e3e1a9981ba216bde783`
+**19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`
 
 ## Purpose
 
@@ -31,23 +31,28 @@ This file is a compact rehydration snapshot for delivery gates. It does not repl
 
 ## Current code truth
 
-At the reconciled base/snapshot above, PXAPI still analyzes one public homepage only. The governance merge added only these context documents and changed no runtime, API contract, score or acquisition behavior:
+At the 19.A integrated implementation baseline `926c2415503f27084ab314629548b2e79ddce8a9`, PXAPI still has no PXAPI-19.B site-discovery runtime. The existing application runtime therefore remains homepage-scoped for acquisition behavior.
 
-- `docs/context/project-state.md`
-- `docs/context/decision-ledger.md`
-- `docs/context/contradiction-ledger.md`
+PXAPI-19.A added the provider-neutral contract/foundation layer for the next acquisition step, including registered `site-inventory.v1` and `sampling-manifest.v1` schemas, shared acquisition definitions, valid examples, targeted invalid fixtures, deterministic digest/semantic guards and contract evidence.
 
-Current registered application contracts remain:
+19.A intentionally did **not** introduce SiteDiscoveryPort production, sitemap/robots/link runtime discovery, producer canonicalization/deduplication, page classification/planning runtime, Real-Boundary-Smoke, browser/Crawl4AI execution, scoring/customer output, queueing, CRM integration or deployment behavior.
 
-- `problem`
-- `analysis-run-request`
-- `analysis-run-state`
-- `stage-execution-record`
-- `measurement-record`
-- `website-evidence`
-- `diagnostic-finding`
+No runtime or customer-value claim follows from the 19.A contract merge alone.
 
-No current implementation claim is made here for multi-page acquisition, Crawl4AI/browser execution, PostgreSQL queueing, scoring, customer projection or production deployment.
+## PXAPI-19.A closeout
+
+**Bounded 19.A state:** `CLOSED / VERIFIED`
+
+- PR head/candidate: `1ec66b6bc38cc8a3c1959af211797b9220bbb8d1`
+- PR: `#14`, merged
+- merge / integrated implementation baseline: `926c2415503f27084ab314629548b2e79ddce8a9`
+- post-merge main CI: `python-compat` run `34557847326`, exact head SHA `926c2415503f27084ab314629548b2e79ddce8a9`, `success`
+- 19.A IC: `GREEN`
+- 19.A R2G: `GREEN`
+- 19.A R4M: `GREEN`, consumed by merge
+- runtime/deployment evidence for 19.A: `NOT_APPLICABLE`
+
+Overall Jira item `PXAPI-19` remains incomplete and `In Arbeit` until 19.B satisfies the remaining runtime and Real-Boundary acceptance criteria.
 
 ## Completed prerequisite
 
@@ -64,28 +69,58 @@ This completion proves the source-bound parity/gap decision artifact, not implem
 
 ## Current prioritized delivery sequence
 
-1. `PXAPI-19` — Acquisition Method, Site Inventory & Sampling Manifest v1.
-2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1.
+1. `PXAPI-19.B` — provider-neutral discovery/runtime production for the already merged 19.A contracts, including required Real-Boundary-Smoke. This is the next allowed mutating implementation theme (`WIP=1`) after this governance closeout is merged/read back and its exact new `main` SHA is bound.
+2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after full PXAPI-19 closeout/readback including 19.B.
 3. Re-measure evidence gain before paying browser/async complexity.
 4. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
 5. Strategic lever / impact verification contracts (`PXAPI-24`) later.
 
 The 80/20 expectation is a Product Owner hypothesis, not production-measured fact.
 
+## PXAPI-19.B PRE_IMPLEMENTATION boundary
+
+19.B may be bound only to the freshly re-read exact `main` after this governance closeout merges; the 19.A merge SHA above is an implementation baseline, not a permanent moving-head claim.
+
+19.B intended scope remains bounded to:
+
+- provider-neutral `SiteDiscoveryPort`;
+- safe canonical public target-origin establishment and same-origin discovery;
+- bounded `/robots.txt` support only for `Sitemap:` declarations;
+- sitemap handling with neutral missing/malformed/runtime states;
+- bounded same-origin links and transient normalized anchor-label signal;
+- runtime canonicalization/deduplication with provenance aggregation;
+- page type/stratum classification and deterministic planner production;
+- executable `CENSUS`-only policy while the census-to-sampling threshold remains `MISSING`; `STRATIFIED_SAMPLE` remains contract vocabulary only;
+- producer-side enforcement of 19.A semantic invariants;
+- controlled public Real-Boundary-Smoke for PXAPI-19 acceptance.
+
+Out of scope for 19.B: browser/Crawl4AI, PXAPI-20 multi-page static acquisition pipeline, scoring/PDF/customer projection, PostgreSQL queue/worker, CRM/buyer-intent and deployment changes.
+
 ## Active anti-drift findings
 
 ### AD-001 — stale legacy PR
 
-GitHub PR #5 (`PXK-17 (A4): define Contracts v1 and the Analysis Run state machine`) remains stale legacy drift: old base, large scope and non-current delivery lineage. It is not active WIP. A separate reconcile is required before any close/merge decision.
+GitHub PR #5 (`PXK-17 (A4): define Contracts v1 and the Analysis Run state machine`) remains stale legacy drift. It is not active WIP. A separate reconcile is required before any close/merge decision.
 
-### AD-002 — governance intake gap closed
+### AD-002 — repository governance context
 
-The repository context gap is **RESOLVED** by merged PR #12, merge commit `8be473456f090a56b355e3e1a9981ba216bde783`. The presence of these documents is not proof that the project is globally drift-free; live reconciliation remains mandatory.
+The repository context documents exist and are maintained as rehydration aids. Their presence does not prove the project is globally drift-free; live reconciliation remains mandatory.
+
+### AD-003 — Jira dependency-link direction conflict
+
+Jira's raw issue-link representation for `PXAPI-19` currently exposes `PXAPI-20` and `PXAPI-21` as `inwardIssue` values under the `Blocks` link type (`is blocked by`), while the accepted product sequence and downstream Jira descriptions require full `PXAPI-19` before `PXAPI-20`. Other Jira graph rendering may present the relationship differently.
+
+Status: `CONFLICT / OPEN / NON-BLOCKING FOR 19.B`. Do not mutate, reverse or delete these links until the current link semantics and a safe reversible operation are independently verified. Do not infer PXAPI-20 authorization from the link representation.
+
+### AD-004 — sampling threshold remains missing
+
+The census-to-stratified-sampling threshold remains `MISSING`. No numeric threshold may be invented in 19.B. Executable policy remains `CENSUS`-only until representative benchmark evidence and an explicit versioned decision exist.
 
 ## Current Jira focus
 
 - `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
-- `PXAPI-19` — next planned P0 implementation slice and only candidate for active mutating WIP after PRE_IMPLEMENTATION gate.
+- `PXAPI-19` — **In Arbeit**. 19.A is bounded `CLOSED / VERIFIED`; 19.B is the next implementation slice after post-governance exact-main binding.
+- `PXAPI-20` — `NEXT / NOT AUTHORIZED` until full PXAPI-19, including 19.B and Real-Boundary-Smoke, is closed/readback-verified.
 
 No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.
 

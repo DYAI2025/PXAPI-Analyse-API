@@ -85,6 +85,9 @@ _DECLARATION = re.compile(rb"<!\s*(?:doctype|entity)", re.IGNORECASE)
 _URLSET = "urlset"
 _SITEMAP_INDEX = "sitemapindex"
 
+#: The element a <loc> must sit directly under, for each root.
+_ENTRY_PARENT = {_URLSET: "url", _SITEMAP_INDEX: "sitemap"}
+
 _GZIP_MAGIC = b"\x1f\x8b"
 
 #: A body that begins like an HTML document. A robots file served as an HTML page — a soft 404
@@ -92,14 +95,16 @@ _GZIP_MAGIC = b"\x1f\x8b"
 #: invent declarations nobody made.
 _HTML_START = re.compile(rb"^\s*(?:<!doctype\s+html|<html)", re.IGNORECASE)
 
-#: When several sitemap documents end in different failures and none was read, the one the
-#: aggregate reports. Our own refusal first, then the provider, then our runtime, then what the
-#: document itself was — so the state reported is the one closest to *why nothing was read*.
-_FAILURE_PRECEDENCE = (
+#: When no sitemap document contributed, the order in which the other states speak for the
+#: source. A failure outranks EMPTY: EMPTY claims the source was well formed and declared
+#: nothing, which is false the moment one of its documents failed. EMPTY outranks ABSENT, because
+#: a document that was served and well formed is a stronger fact than one that was not served.
+_NON_ADMITTING_PRECEDENCE = (
     SourceOutcome.TARGET_POLICY_REFUSED,
     SourceOutcome.PROVIDER_FAILURE,
     SourceOutcome.RUNTIME_ERROR,
     SourceOutcome.MALFORMED,
+    SourceOutcome.EMPTY,
     SourceOutcome.ABSENT,
 )
 
@@ -234,7 +239,9 @@ def _parse_sitemap(xml: bytes) -> tuple[str | None, list[str], bool]:
             root = root or name
             stack.append(name)
             continue
-        if name == "loc" and len(stack) >= 2 and stack[-2] in ("url", "sitemap"):
+        # A <loc> counts only directly under the element its root calls for: <url> in a urlset,
+        # <sitemap> in an index. A page listed inside an index is not a sitemap to fetch.
+        if name == "loc" and len(stack) == 3 and stack[1] == _ENTRY_PARENT.get(root or ""):
             text = (element.text or "").strip()
             if text:
                 locs.append(text)
@@ -313,17 +320,15 @@ class HttpSiteDiscovery:
         )
         attempts.append(SourceAttempt(SourceId.ROBOTS_DECLARATION.value, robots_outcome))
 
-        sitemap_outcome, entries, off_origin = _guarded(
+        sitemap_outcome, entries, refused_sitemap = _guarded(
             lambda: self._sitemaps(scoped, origin, declared, in_origin, budget),
             (SourceOutcome.RUNTIME_ERROR, [], False),
         )
         observations += entries
         attempts.append(SourceAttempt(SourceId.SITEMAP.value, sitemap_outcome))
-        if off_origin:
+        if refused_sitemap:
             attempts.append(
-                SourceAttempt(
-                    SourceId.OFF_ORIGIN_SITEMAP.value, SourceOutcome.TARGET_POLICY_REFUSED
-                )
+                SourceAttempt(SourceId.REFUSED_SITEMAP.value, SourceOutcome.TARGET_POLICY_REFUSED)
             )
 
         return DiscoveryReport(
@@ -332,11 +337,16 @@ class HttpSiteDiscovery:
 
     @staticmethod
     def _bootstrap_failure(kind: FetchFailureKind) -> BootstrapFailure:
+        """Why the bootstrap failed, kept apart by whether the target was ever reached."""
         if kind is FetchFailureKind.BLOCKED_TARGET:
             return BootstrapFailure.TARGET_REFUSED
         if kind is FetchFailureKind.TIMEOUT:
             return BootstrapFailure.TIMEOUT
-        return BootstrapFailure.UNREACHABLE
+        if kind in (FetchFailureKind.DNS_FAILURE, FetchFailureKind.CONNECTION_FAILURE):
+            return BootstrapFailure.UNREACHABLE
+        # A redirect loop, an unusable redirect, a peer that did not speak HTTP: the target
+        # answered, so it was reached, and saying otherwise would be a claim about the target.
+        return BootstrapFailure.PROVIDER_FAILURE
 
     # --- links from the seed document ----------------------------------------------------
 
@@ -353,7 +363,10 @@ class HttpSiteDiscovery:
         refused = _status_outcome(seed.status_code)
         if refused is not None:
             return refused, []
-        if _media_type(seed.content_type) not in _HTML_MEDIA_TYPES:
+        media = _media_type(seed.content_type)
+        if media is not None and media not in _HTML_MEDIA_TYPES:
+            # It declared itself as something other than a page. A response that declared no
+            # type at all is read tolerantly: many servers omit the header on real HTML.
             return SourceOutcome.MALFORMED, []
         if seed.undecodable:
             return SourceOutcome.RUNTIME_ERROR, []
@@ -365,7 +378,8 @@ class HttpSiteDiscovery:
             return SourceOutcome.RUNTIME_ERROR, []
 
         observed: list[DiscoveryObservation] = []
-        keys: set[str] = set()
+        forms: set[str] = set()
+        seen: set[tuple[str, str | None]] = set()
         exhausted = False
         for link in links:
             observation = DiscoveryObservation(
@@ -373,16 +387,23 @@ class HttpSiteDiscovery:
             )
             if not in_origin(link.href) or not is_admissible(observation):
                 continue
-            key = canonical_url_key(link.href)
-            if key not in keys and len(keys) >= self.limits.max_page_links:
-                exhausted = True
-                break
-            keys.add(key or "")
-            observed.append(observation)
+            # The budget counts distinct written forms, because each is persisted: a target a
+            # menu and a footer both link to costs one, never two.
+            if link.href not in forms:
+                if len(forms) >= self.limits.max_page_links:
+                    exhausted = True
+                    break
+                forms.add(link.href)
+            if (link.href, link.label) not in seen:
+                seen.add((link.href, link.label))
+                observed.append(observation)
 
         if exhausted or seed.truncated:
             return SourceOutcome.BUDGET_EXHAUSTED, observed
-        return (SourceOutcome.USED if observed else SourceOutcome.EMPTY), observed
+        # USED with nothing admitted, rather than EMPTY, when the page did declare links, only
+        # none of them same-origin: EMPTY is the contract's word for a source that declared
+        # nothing at all, and zero admitted is exactly what candidate_count already says.
+        return (SourceOutcome.USED if links else SourceOutcome.EMPTY), observed
 
     # --- robots.txt, for Sitemap: and nothing else ----------------------------------------
 
@@ -444,16 +465,16 @@ class HttpSiteDiscovery:
         """
         queue: list[str] = []
         seen: set[str] = set()
-        off_origin = False
+        refused_reference = False
         budget_cut = False
 
         def plan(url: str) -> None:
-            nonlocal off_origin, budget_cut
+            nonlocal refused_reference, budget_cut
             key = canonical_url_key(url)
             if key is None or key in seen:
                 return  # refused before persistence, or already planned
             if not in_origin(key):
-                off_origin = True
+                refused_reference = True
                 return
             if len(queue) >= self.limits.max_sitemap_documents:
                 budget_cut = True
@@ -468,6 +489,7 @@ class HttpSiteDiscovery:
 
         reads: list[_SitemapRead] = []
         entries: list[DiscoveryObservation] = []
+        entry_forms: set[str] = set()
         index = 0
         while index < len(queue):
             if len(entries) >= self.limits.max_sitemap_entries:
@@ -482,17 +504,25 @@ class HttpSiteDiscovery:
             read = self._read_sitemap(fetcher, queue[index])
             index += 1
             reads.append(read)
+            if read.outcome is SourceOutcome.TARGET_POLICY_REFUSED:
+                # Refused on the way, by a redirect out of the origin or by the policy. It stays
+                # visible as its own source even when a sibling sitemap was read.
+                refused_reference = True
             for child in read.children:
                 plan(child)
             for entry in read.entries:
-                if len(entries) >= self.limits.max_sitemap_entries:
+                observation = DiscoveryObservation(entry, SourceId.SITEMAP.value)
+                if not is_admissible(observation) or entry in entry_forms:
+                    # Refused before persistence, or a form already admitted: repeating an
+                    # entry costs nothing, because duplication is never a penalty.
+                    continue
+                if len(entry_forms) >= self.limits.max_sitemap_entries:
                     budget_cut = True
                     break
-                observation = DiscoveryObservation(entry, SourceId.SITEMAP.value)
-                if is_admissible(observation):
-                    entries.append(observation)
+                entry_forms.add(entry)
+                entries.append(observation)
 
-        return self._aggregate(reads, budget_cut), entries, off_origin
+        return self._aggregate(reads, budget_cut), entries, refused_reference
 
     def _read_sitemap(self, fetcher: PageFetcher, url: str) -> _SitemapRead:
         response = fetcher.fetch(url)
@@ -544,9 +574,7 @@ class HttpSiteDiscovery:
             return SourceOutcome.TIMEOUT
         if SourceOutcome.USED in outcomes:
             return SourceOutcome.USED
-        if SourceOutcome.EMPTY in outcomes:
-            return SourceOutcome.EMPTY
-        for failure in _FAILURE_PRECEDENCE:
-            if failure in outcomes:
-                return failure
+        for state in _NON_ADMITTING_PRECEDENCE:
+            if state in outcomes:
+                return state
         return SourceOutcome.ABSENT  # pragma: no cover - at least one document is always read

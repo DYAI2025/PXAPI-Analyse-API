@@ -21,6 +21,7 @@ from typing import Any
 from pxapi.adapters.composition import build_site_discovery, default_registry
 from pxapi.adapters.contracts.registry import ContractRegistry
 from pxapi.adapters.inbound.cli import REQUEST_CONTRACT, build_request
+from pxapi.domain.site_identity import UrlRefusal, refuse
 
 #: ``envelope member -> the contract every document under it must satisfy``. A list member is
 #: checked item by item.
@@ -51,6 +52,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("url", help="an absolute public http(s) URL")
     arguments = parser.parse_args(argv)
+
+    if refuse(arguments.url) is UrlRefusal.CREDENTIALS_PRESENT:
+        # Refused before a request document exists, so the credential is never echoed into
+        # one, onto stdout, or into a log that captures it. The run would refuse it anyway.
+        sys.stderr.write(
+            "pxapi-discover: a target carrying credentials in its authority is refused.\n"
+        )
+        return 2
 
     registry = default_registry()
     request = build_request(arguments.url)

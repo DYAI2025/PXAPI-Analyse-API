@@ -94,3 +94,12 @@ def test_the_output_check_names_every_contract_a_document_fails() -> None:
         "site-inventory",
         "sampling-manifest",
     ]
+
+
+def test_a_credential_bearing_target_is_refused_without_being_echoed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    assert discover_cli.main(["https://user:secret@example.com/"]) == 2
+    captured = capsys.readouterr()
+    assert "secret" not in captured.out and "secret" not in captured.err

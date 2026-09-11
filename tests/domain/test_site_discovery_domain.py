@@ -53,11 +53,16 @@ def test_admission_sorts_and_collapses_identical_observations() -> None:
     )
 
 
-def test_the_input_records_carry_no_label_and_no_rejected_form() -> None:
+def test_the_input_records_bind_a_label_where_one_was_observed_and_no_rejected_form() -> None:
+    """The label is transient in the *document*; it is not transient in the input the document's
+    input_digest binds, because it changed a classification. A record carries it only when the
+    observation did, so a label-free input keeps exactly the 19.A record shape."""
     records = observation_records(
         admitted_observations([*OBSERVATIONS, obs("https://user:pw@example.com/", "SITEMAP")])
     )
-    assert all(set(record) == {"observed_form", "source_id"} for record in records)
+    labelled = [r for r in records if "label" in r]
+    assert [r["observed_form"] for r in labelled] == ["https://example.com/seite-x"]
+    assert all(set(r) == {"observed_form", "source_id"} for r in records if "label" not in r)
     assert not any("user:pw" in record["observed_form"] for record in records)
     assert records == sorted(records, key=lambda r: (r["observed_form"], r["source_id"]))
 

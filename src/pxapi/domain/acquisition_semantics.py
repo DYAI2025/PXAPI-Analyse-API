@@ -34,6 +34,7 @@ Standard library only. The domain ring imports no third-party distribution at al
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
@@ -44,6 +45,18 @@ SAMPLING_MANIFEST: Final = "sampling-manifest"
 #: A sentinel for "this item does not carry the member this rule keys on". ``None`` would be
 #: indistinguishable from a JSON null, which no member of either contract admits.
 _ABSENT: Final = object()
+
+#: ``common#/$defs/code``, verbatim, pinned against the schema by the semantics tests. Every
+#: ``source_id`` and every provenance entry must have this shape: a provider that reported a
+#: source under any other name would otherwise produce a document its own contract refuses.
+CODE_PATTERN: Final = r"^[A-Z][A-Z0-9_]+(?!\n)$"
+_CODE: Final = re.compile(CODE_PATTERN)
+CODE_MAX_LENGTH: Final = 64
+
+
+def _is_code(value: Any) -> bool:
+    return isinstance(value, str) and len(value) <= CODE_MAX_LENGTH and bool(_CODE.search(value))
+
 
 #: The source outcomes under which a non-zero admitted count is possible at all. Restated from
 #: the contract rather than imported from the discovery vocabulary, because this module checks
@@ -271,6 +284,10 @@ PRODUCER_RULES: Final[dict[str, str]] = {
         "Every source a candidate names is a source the inventory reports an outcome for, so "
         "provenance always resolves to exactly one attempt."
     ),
+    "source_id_is_a_code": (
+        "Every source identity, in the source list and in every provenance, has the contract's "
+        "code shape, so no provider's naming can make an emitted document fail its contract."
+    ),
     "candidate_count_matches_provenance": (
         "A source's admitted count is the number of candidates naming it, so the summary and "
         "the population cannot state two different things about one source."
@@ -357,6 +374,12 @@ def inventory_producer_violations(document: dict[str, Any]) -> tuple[SemanticVio
             found.append(
                 SemanticViolation(f"/sources/{index}", "admitting_outcome_for_contributed_source")
             )
+
+    for index, source in enumerate(sources):
+        if isinstance(source, dict) and not _is_code(source.get("source_id")):
+            found.append(SemanticViolation(f"/sources/{index}", "source_id_is_a_code"))
+    if any(not _is_code(name) for name in contributed):
+        found.append(SemanticViolation("/candidates", "source_id_is_a_code"))
 
     for index, source in enumerate(sources):
         if not isinstance(source, dict) or not isinstance(source.get("source_id"), str):

@@ -466,3 +466,62 @@ def test_a_provider_that_raises_ends_the_run_as_our_runtime_error() -> None:
 
 def test_every_bootstrap_failure_has_a_run_failure_code() -> None:
     assert set(use_case.BOOTSTRAP_FAILURE_CODE) == set(BootstrapFailure)
+
+
+def test_a_bootstrap_the_target_answered_ends_as_a_provider_failure_not_as_unreachable() -> None:
+    envelope = run(DiscoveryReport(None, bootstrap_failure=BootstrapFailure("PROVIDER_FAILURE")))
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_DISCOVERY_PROVIDER_FAILURE"}
+
+
+@pytest.mark.parametrize("with_observation", [False, True])
+def test_a_source_id_that_is_not_a_contract_code_is_withheld(with_observation: bool) -> None:
+    base = example_report()
+    extra = (DiscoveryObservation(ORIGIN + "x", "bad id"),) if with_observation else ()
+    report = DiscoveryReport(
+        ORIGIN,
+        (*base.observations, *extra),
+        (*base.attempts, SourceAttempt("bad id", SourceOutcome.USED)),
+    )
+    envelope = run(report)
+    assert "site_inventory" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_INVENTORY_NOT_EMITTABLE"}
+
+
+def test_a_report_naming_a_bootstrap_failure_is_a_failure_even_when_it_names_an_origin() -> None:
+    base = example_report()
+    envelope = run(
+        DiscoveryReport(ORIGIN, base.observations, base.attempts, BootstrapFailure.UNREACHABLE)
+    )
+    assert "site_inventory" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {
+        "code": "SITE_DISCOVERY_TARGET_UNREACHABLE"
+    }
+
+
+@pytest.mark.parametrize("form", [None, 123, b"https://example.com/"])
+def test_a_malformed_observation_is_withheld_rather_than_raised(form: Any) -> None:
+    base = example_report()
+    report = DiscoveryReport(
+        ORIGIN, (*base.observations, DiscoveryObservation(form, "SITEMAP")), base.attempts
+    )
+    envelope = run(report)
+    assert "site_inventory" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_INVENTORY_NOT_EMITTABLE"}
+
+
+def test_the_input_digest_binds_the_labels_that_shaped_the_classification() -> None:
+    def report_with(label: str | None) -> DiscoveryReport:
+        return DiscoveryReport(
+            ORIGIN,
+            (
+                DiscoveryObservation(ORIGIN, "CANONICAL_SEED"),
+                DiscoveryObservation(ORIGIN + "seite-7", "SAME_ORIGIN_PAGE_LINKS", label),
+            ),
+            attempts(CANONICAL_SEED="USED", SAME_ORIGIN_PAGE_LINKS="USED"),
+        )
+
+    contact = run(report_with("Kontakt"))["site_inventory"]
+    legal = run(report_with("Impressum"))["site_inventory"]
+    bare = run(report_with(None))["site_inventory"]
+    assert contact["output_digest"] != legal["output_digest"]
+    assert len({contact["input_digest"], legal["input_digest"], bare["input_digest"]}) == 3

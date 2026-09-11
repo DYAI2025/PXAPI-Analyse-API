@@ -19,12 +19,11 @@ sequence — different for two serialisations of the same document. The projecti
 the semantic gate first and raise rather than return a value that would only look canonical.
 
 **What the input digest of an inventory covers** is the admitted discovery-observation input:
-the accepted written form and the source that wrote it, for every observation that survived
-canonicalisation. A transient anchor label is deliberately not part of it, because a label is
-never admitted into the document at all (D-PXAPI19-PO-007) and a digest of inputs binds the
-document to the inputs it actually carries the consequences of. A label that changes a page's
-classification changes the ``output_digest``, which is where that consequence is visible; a
-label that changes nothing changes nothing.
+the accepted written form, the source that wrote it and, where the observation carried one, the
+transient anchor label, for every observation that survived admission. The label never reaches
+the document (D-PXAPI19-PO-007), but it can change a classification, so an input digest that
+ignored it would let two different inputs claim one digest. It enters as bytes under a hash,
+never as stored text, and a label-free record has exactly the 19.A reference shape.
 
 Standard library only. The domain ring imports no third-party distribution at all.
 """
@@ -196,7 +195,7 @@ def observation_input_projection(observations: list[dict[str, str]]) -> list[dic
     """
     return sorted(
         (dict(observation) for observation in observations),
-        key=itemgetter("observed_form", "source_id"),
+        key=lambda record: (record["observed_form"], record["source_id"], record.get("label", "")),
     )
 
 

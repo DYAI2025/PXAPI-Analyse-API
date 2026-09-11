@@ -170,6 +170,7 @@ INVENTORY_COUNTEREXAMPLES: dict[str, Mutation] = {
     "admitting_outcome_for_contributed_source": lambda d: d["sources"][2].update(outcome="ABSENT"),
     "source_declared_for_every_provenance": lambda d: d["sources"].pop(3),
     "candidate_count_matches_provenance": lambda d: d["sources"][2].update(candidate_count=5),
+    "source_id_is_a_code": lambda d: d["sources"][1].update(source_id="robots"),
 }
 
 MANIFEST_COUNTEREXAMPLES: dict[str, tuple[dict[str, Any], Mutation]] = {
@@ -196,6 +197,12 @@ MANIFEST_COUNTEREXAMPLES: dict[str, tuple[dict[str, Any], Mutation]] = {
     "budget_cause_declares_its_budget": (BOUNDED, lambda d: d.pop("budgets")),
     "census_never_emits_a_sample": (STRATIFIED, lambda d: None),
 }
+
+
+def test_the_code_shape_is_the_contract_code_shape_verbatim() -> None:
+    code = load_json(CONTRACTS.schema_path("common"))["$defs"]["code"]
+    assert code["pattern"] == production.CODE_PATTERN
+    assert code["maxLength"] == production.CODE_MAX_LENGTH
 
 
 def test_the_registered_census_documents_satisfy_every_producer_guarantee() -> None:

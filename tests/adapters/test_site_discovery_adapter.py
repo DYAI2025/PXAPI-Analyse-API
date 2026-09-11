@@ -124,8 +124,16 @@ def test_a_link_carries_its_bounded_label_to_the_boundary() -> None:
     assert link.label == "Kontakt aufnehmen"
 
 
-def test_a_seed_document_with_no_same_origin_link_is_empty_not_absent() -> None:
+def test_a_seed_whose_links_all_leave_the_origin_was_read_and_admitted_nothing() -> None:
+    """USED with zero admitted, not EMPTY: the page did declare links, just none of this kind,
+    and the contract reserves EMPTY for a source that was well formed and declared nothing."""
     report, _ = discover(lambda b: {"/": home(("https://elsewhere.test/", "x"))})
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "USED"
+    assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == []
+
+
+def test_a_seed_document_without_any_link_is_empty() -> None:
+    report, _ = discover(lambda b: {"/": home()})
     assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "EMPTY"
 
 
@@ -207,7 +215,7 @@ def test_an_off_origin_sitemap_declaration_is_refused_without_ever_being_resolve
         lambda b: {"/": home(), "/robots.txt": robots("Sitemap: http://evil.test/sitemap.xml")},
         policy=LoopbackTargetPolicy(resolve=recorder),
     )
-    assert outcomes(report)["OFF_ORIGIN_SITEMAP"] == "TARGET_POLICY_REFUSED"
+    assert outcomes(report)["REFUSED_SITEMAP"] == "TARGET_POLICY_REFUSED"
     assert "evil.test" not in recorder.hosts
     assert not any("evil.test" in o.observed_form for o in report.observations)
     # A refused declaration never takes a sitemap slot: it is not planned at all, so the
@@ -326,7 +334,7 @@ def test_a_sitemap_index_is_followed_and_its_off_origin_children_refused() -> No
     report, base = discover(routes)
     assert forms(report, "SITEMAP") == [base + "/aus-dem-index"]
     assert outcomes(report)["SITEMAP"] == "USED"
-    assert outcomes(report)["OFF_ORIGIN_SITEMAP"] == "TARGET_POLICY_REFUSED"
+    assert outcomes(report)["REFUSED_SITEMAP"] == "TARGET_POLICY_REFUSED"
 
 
 def test_an_off_origin_sitemap_entry_is_recorded_for_the_domain_to_exclude() -> None:
@@ -499,3 +507,108 @@ def test_once_the_entry_budget_is_spent_no_further_sitemap_is_fetched() -> None:
     assert forms(report, "SITEMAP") == [base + "/a0", base + "/a1"]
     assert base + "/a.xml" in fetched
     assert base + "/b.xml" not in fetched
+
+
+def recording(fetched: list[str]) -> Any:
+    """A fetcher factory that records every URL a discovery fetch was asked for."""
+
+    class Recording:
+        def __init__(self, inner: SafePageFetcher) -> None:
+            self.inner = inner
+
+        def fetch(self, url: str) -> Any:
+            fetched.append(url)
+            return self.inner.fetch(url)
+
+    return lambda scope: Recording(SafePageFetcher(policy=loopback_policy(), scope=scope))
+
+
+def test_a_backslash_href_a_browser_reads_as_another_host_is_never_admitted() -> None:
+    """``/\\user:pw@evil.test/`` resolves same-origin under RFC 3986 and is a credentialed URL on
+    another host under WHATWG. A form the two standards disagree about has no single identity."""
+    report, base = discover(
+        lambda b: {
+            "/": home(
+                ("/\\user:pw@evil.test/steal", "x"), ("/\\evil.test/x", "y"), ("/kontakt", "K")
+            )
+        }
+    )
+    link_forms = forms(report, "SAME_ORIGIN_PAGE_LINKS")
+    assert link_forms == [base + "/kontakt"]
+    assert not any(
+        "evil.test" in o.observed_form or "\\" in o.observed_form for o in report.observations
+    )
+
+
+def test_a_bootstrap_the_target_answered_but_we_could_not_follow_is_a_provider_failure() -> None:
+    """A redirect loop means the target was reached and answered; UNREACHABLE would be false."""
+    with ControlledHttpServer({"/": Route(status=302, headers={"Location": "/"})}) as server:
+        report = HttpSiteDiscovery(policy=loopback_policy()).discover(server.url("/"))
+    assert report.target_origin is None
+    assert report.bootstrap_failure is BootstrapFailure("PROVIDER_FAILURE")
+
+
+def test_a_seed_that_declares_no_content_type_is_still_read_for_links() -> None:
+    body = b'<html><body><a href="/kontakt">K</a></body></html>'
+    report, base = discover(lambda b: {"/": Route(body=body, headers={})})
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "USED"
+    assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == [base + "/kontakt"]
+
+
+def test_a_failed_sitemap_is_not_hidden_behind_an_empty_sibling() -> None:
+    """EMPTY says *well formed, declared nothing* about the whole source; one document failed."""
+    report, _ = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots(f"Sitemap: {b}/leer.xml", f"Sitemap: {b}/kaputt.xml"),
+            "/leer.xml": urlset(),
+            "/kaputt.xml": Route(status=500, headers=XML),
+        }
+    )
+    assert outcomes(report)["SITEMAP"] == "PROVIDER_FAILURE"
+
+
+def test_a_page_listed_inside_a_sitemap_index_is_not_fetched_as_a_sitemap() -> None:
+    fetched: list[str] = []
+
+    def routes(b: str) -> dict[str, Route]:
+        index = (
+            f'<?xml version="1.0"?><sitemapindex {NS}>'
+            f"<url><loc>{b}/kontakt</loc></url></sitemapindex>"
+        )
+        return {
+            "/": home(),
+            "/robots.txt": robots(f"Sitemap: {b}/idx.xml"),
+            "/idx.xml": Route(body=index.encode(), headers=XML),
+            "/kontakt": home(),
+        }
+
+    report, base = discover(routes, fetcher_factory=recording(fetched))
+    assert base + "/kontakt" not in fetched
+    assert outcomes(report)["SITEMAP"] == "EMPTY"
+
+
+def test_a_repeated_sitemap_entry_costs_nothing_against_the_entry_budget() -> None:
+    """Duplication is not a penalty: the same written form five times is one entry."""
+    report, base = discover(
+        lambda b: {"/": home(), "/sitemap.xml": urlset(*([b + "/a"] * 5), b + "/b")},
+        limits=DiscoveryLimits(max_sitemap_entries=2),
+    )
+    assert set(forms(report, "SITEMAP")) == {base + "/a", base + "/b"}
+    assert outcomes(report)["SITEMAP"] == "USED"
+
+
+def test_a_sitemap_redirected_out_of_the_origin_stays_visible_beside_one_that_was_read() -> None:
+    recorder = Recorder()
+    report, _ = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots(f"Sitemap: {b}/a.xml", f"Sitemap: {b}/b.xml"),
+            "/a.xml": urlset(b + "/x"),
+            "/b.xml": Route(status=302, headers={"Location": "http://evil.test/s.xml"}),
+        },
+        policy=LoopbackTargetPolicy(resolve=recorder),
+    )
+    assert outcomes(report)["SITEMAP"] == "USED"
+    assert outcomes(report)["REFUSED_SITEMAP"] == "TARGET_POLICY_REFUSED"
+    assert "evil.test" not in recorder.hosts

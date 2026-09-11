@@ -71,10 +71,11 @@ class SourceId(StrEnum):
     ROBOTS_DECLARATION = "ROBOTS_DECLARATION"
     #: Every same-origin sitemap document read, index documents included.
     SITEMAP = "SITEMAP"
-    #: Sitemap references that point outside the established origin. They are never fetched,
-    #: and they are reported as a source of their own so that refusing them stays visible
-    #: rather than being folded into the outcome of the sitemaps that were read.
-    OFF_ORIGIN_SITEMAP = "OFF_ORIGIN_SITEMAP"
+    #: Sitemap references this run refused to follow: declared outside the established origin,
+    #: redirected outside it, or refused by the target policy. None of them is read, and they are
+    #: reported as a source of their own so that a refusal stays visible even when another
+    #: sitemap was read successfully and the ``SITEMAP`` outcome therefore says ``USED``.
+    REFUSED_SITEMAP = "REFUSED_SITEMAP"
     #: Same-origin links read out of the static HTML of the seed document.
     SAME_ORIGIN_PAGE_LINKS = "SAME_ORIGIN_PAGE_LINKS"
 
@@ -115,8 +116,12 @@ class BootstrapFailure(StrEnum):
 
     #: Our own target policy refused the target, before any connection was opened.
     TARGET_REFUSED = "TARGET_REFUSED"
-    #: The target could not be reached: it did not resolve, or no connection held.
+    #: The target could not be reached: its name did not resolve, or no connection held.
     UNREACHABLE = "UNREACHABLE"
+    #: The target answered, but not with a response the bootstrap could follow or read: a
+    #: redirect loop, an unusable redirect, a peer that did not speak HTTP. It was reached, so
+    #: calling it unreachable would be a false statement about the target.
+    PROVIDER_FAILURE = "PROVIDER_FAILURE"
     #: A time budget elapsed before the origin could be established.
     TIMEOUT = "TIMEOUT"
     #: Our own runtime failed in a way it did not anticipate before an origin was established.
@@ -250,12 +255,21 @@ def admitted_observations(
 def observation_records(admitted: Iterable[DiscoveryObservation]) -> list[dict[str, str]]:
     """The admitted observations in the shape the inventory's ``input_digest`` covers.
 
-    The label is deliberately absent: it is never admitted into the document, so it is not
-    part of the input the document binds itself to. A label that changes a classification
-    changes the ``output_digest``, which is where that consequence becomes visible.
+    A record carries the transient label when, and only when, the observation had one. The
+    label is never written into the document, but it is part of the input the document was
+    built from, since it can change a classification, so an input digest that ignored it would
+    let two different inputs claim one digest. A label-free observation keeps exactly the
+    two-member record shape the 19.A reference defines, which is why every registered digest
+    still reproduces. The label reaches the digest as bytes under a hash, never as stored text.
     """
-    unique = {(o.observed_form, o.source_id) for o in admitted}
-    return [{"observed_form": form, "source_id": source} for form, source in sorted(unique)]
+    unique = {(o.observed_form, o.source_id, o.label or None) for o in admitted}
+    records: list[dict[str, str]] = []
+    for form, source, label in sorted(unique, key=lambda item: (item[0], item[1], item[2] or "")):
+        record = {"observed_form": form, "source_id": source}
+        if label is not None:
+            record["label"] = label
+        records.append(record)
+    return records
 
 
 def assemble_candidates(

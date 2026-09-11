@@ -35,8 +35,6 @@ from typing import Any
 
 from pxapi.domain.acquisition_digests import inventory_digests, manifest_digests
 from pxapi.domain.acquisition_semantics import (
-    ProducerInvariantViolated,
-    SemanticAmbiguity,
     require_emittable_inventory,
     require_emittable_manifest,
 )
@@ -70,6 +68,7 @@ from pxapi.ports.site_discovery import SiteDiscoveryPort
 BOOTSTRAP_FAILURE_CODE: dict[BootstrapFailure, str] = {
     BootstrapFailure.TARGET_REFUSED: "TARGET_NOT_PERMITTED",
     BootstrapFailure.UNREACHABLE: "SITE_DISCOVERY_TARGET_UNREACHABLE",
+    BootstrapFailure.PROVIDER_FAILURE: "SITE_DISCOVERY_PROVIDER_FAILURE",
     BootstrapFailure.TIMEOUT: "SITE_DISCOVERY_TIMEOUT",
     BootstrapFailure.RUNTIME_ERROR: "SITE_DISCOVERY_RUNTIME_ERROR",
 }
@@ -80,8 +79,6 @@ UNEXPLAINED_BOOTSTRAP_CODE = "SITE_DISCOVERY_BOOTSTRAP_FAILED"
 #: This producer built a document it may not emit. Each names a defect in this service.
 INVENTORY_WITHHELD_CODE = "SITE_INVENTORY_NOT_EMITTABLE"
 MANIFEST_WITHHELD_CODE = "SAMPLING_MANIFEST_NOT_EMITTABLE"
-
-_PRODUCER_REFUSALS = (ProducerInvariantViolated, SemanticAmbiguity, ValueError)
 
 
 def _instant(moment: datetime) -> str:
@@ -134,7 +131,7 @@ class DiscoverSite:
             report = DiscoveryReport(None, bootstrap_failure=BootstrapFailure.RUNTIME_ERROR)
         discovered = self.clock()
 
-        origin = canonical_origin(report.target_origin) if report.target_origin else None
+        origin = self._origin_of(report)
         if origin is None:
             code = (
                 BOOTSTRAP_FAILURE_CODE[report.bootstrap_failure]
@@ -145,7 +142,10 @@ class DiscoverSite:
 
         try:
             inventory, candidates = self._inventory(run_id, origin, report, discovered)
-        except _PRODUCER_REFUSALS:
+        except Exception:
+            # A document that failed a semantic rule or a producer guarantee, and equally one a
+            # malformed report made impossible to build, is withheld: a defect of ours, named
+            # as such, and never a partial document or an exception in the caller's lap.
             return self._failed(
                 request, state, started, discovered, INVENTORY_WITHHELD_CODE, discovery_ok=False
             )
@@ -153,7 +153,7 @@ class DiscoverSite:
         planned = self.clock()
         try:
             manifest = self._manifest(run_id, inventory, origin, candidates, planned)
-        except _PRODUCER_REFUSALS:
+        except Exception:
             return self._failed(
                 request,
                 state,
@@ -179,6 +179,21 @@ class DiscoverSite:
             "site_inventory": inventory,
             "sampling_manifest": manifest,
         }
+
+    @staticmethod
+    def _origin_of(report: DiscoveryReport) -> str | None:
+        """The established origin, or ``None`` when the report does not establish one.
+
+        A report that names a bootstrap failure has not established an origin, whatever else
+        it says: a provider that reported both is contradicting itself, and the failure is the
+        statement that keeps the run from emitting documents about a site it never reached.
+        """
+        if report.bootstrap_failure is not None or not report.target_origin:
+            return None
+        try:
+            return canonical_origin(report.target_origin)
+        except Exception:
+            return None
 
     # --- the two documents ---------------------------------------------------------------
 

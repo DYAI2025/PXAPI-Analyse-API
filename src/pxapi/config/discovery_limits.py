@@ -33,10 +33,12 @@ class DiscoveryLimits:
     #: crawl of its own sitemap tree.
     max_sitemap_documents: int = 5
 
-    #: Sitemap URL entries admitted across every sitemap document together.
+    #: Distinct written sitemap entries admitted across every sitemap document together. A form
+    #: repeated in a sitemap counts once: duplication is never allowed to cost a page.
     max_sitemap_entries: int = 500
 
-    #: Distinct same-origin link targets admitted from the seed document.
+    #: Distinct written same-origin link targets admitted from the seed document. A target a
+    #: menu and a footer both link to counts once.
     max_page_links: int = 200
 
     #: The longest normalised anchor label carried to the classifier. A longer one is dropped,

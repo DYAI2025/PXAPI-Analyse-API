@@ -113,3 +113,19 @@ def test_unclassified_is_not_a_class_a_page_can_be_placed_in() -> None:
     """The neutral bucket is the manifest's, never a verdict the classifier returns."""
     assert UNCLASSIFIED not in pc.PAGE_TYPES
     assert UNCLASSIFIED != HOMEPAGE
+
+
+def test_the_path_outranks_the_query() -> None:
+    """A tracking or referral parameter must not move a page out of the class its path names."""
+    assert classify(ORIGIN + "leistungen?ref=impressum", ORIGIN) == "OFFER"
+
+
+def test_the_query_is_read_only_when_the_path_places_nothing_and_before_any_label() -> None:
+    assert classify(ORIGIN + "index.php?id=kontakt", ORIGIN) == "CONTACT"
+    assert classify(ORIGIN + "seite?ref=kontakt", ORIGIN, ("Impressum",)) == "CONTACT"
+
+
+@pytest.mark.parametrize("path", ["%DAtenschutz", "%FAq", "%E4mpressum"])
+def test_the_hex_residue_of_an_escape_never_forms_a_word(path: str) -> None:
+    """``%DA`` + ``tenschutz`` is not the word *datenschutz*; an escape is not two letters."""
+    assert classify(ORIGIN + path, ORIGIN) is None

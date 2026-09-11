@@ -235,6 +235,11 @@ MAX_LABEL_LENGTH: Final = 120
 #: value is lower-cased, so one spelling of a segment is one spelling here.
 _SEPARATORS: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9-]+")
 
+#: A percent escape, after lower-casing. It is replaced by a separator before words are read:
+#: an escape followed by letters is not a word, and an escape is not two letters that happen to
+#: be hexadecimal digits.
+_ESCAPE: Final[re.Pattern[str]] = re.compile(r"%[0-9a-f]{2}")
+
 #: A trailing file extension on a path segment. ``/leistungen.html`` is the offer page, and the
 #: suffix a template chose says nothing about the page, so it is removed before matching.
 _EXTENSION: Final[re.Pattern[str]] = re.compile(r"\.[a-z0-9]{1,8}$")
@@ -250,7 +255,7 @@ def _words(value: str) -> frozenset[str]:
     """
     # An underscore joins words exactly as a hyphen does in a path, so it is folded to one
     # before splitting: without this, `/ueber_uns` would never meet the entry `ueber-uns`.
-    lowered = _EXTENSION.sub("", value.lower()).replace("_", "-")
+    lowered = _ESCAPE.sub(" ", _EXTENSION.sub("", value.lower())).replace("_", "-")
     found: set[str] = set()
     for chunk in _SEPARATORS.split(lowered):
         if not chunk:
@@ -271,11 +276,12 @@ def _first_match(words: frozenset[str]) -> str | None:
 def classify(url_key: str, target_origin: str, labels: tuple[str, ...] = ()) -> str | None:
     """The page type of one candidate, or ``None`` when this version places none.
 
-    The identity is the primary signal and the labels are consulted only when it yields
-    nothing. That order is deliberate and is part of the method: a path is chosen by whoever
-    built the site and is stable across runs, whereas the text of a link is editorial, can
-    differ between the two menus that point at one page, and would otherwise let a wording
-    change move a page from one bucket to another between two runs of the same analysis.
+    The path is the primary signal, the query is read only when the path places nothing, and
+    the labels only when neither does. That order is deliberate and part of the method: a path
+    is chosen by whoever built the site and is stable across runs, whereas the text of a link
+    is editorial, can differ between the two menus that point at one page, and would
+    otherwise let a wording change move a page from one bucket to another between two runs
+    of the same analysis.
 
     Labels are read in the canonical order the caller already sorted them into, and the first
     one that places the page wins, so the sequence in which links were encountered cannot
@@ -287,9 +293,12 @@ def classify(url_key: str, target_origin: str, labels: tuple[str, ...] = ()) -> 
         return HOMEPAGE
 
     parts = urlsplit(url_key)
-    from_path = _first_match(_words(parts.path) | _words(parts.query))
-    if from_path is not None:
-        return from_path
+    for component in (parts.path, parts.query):
+        # The path first, then the query, each on its own: a referral parameter such as
+        # `?ref=impressum` must not move an offer page into another class.
+        placed = _first_match(_words(component))
+        if placed is not None:
+            return placed
 
     for label in labels:
         if len(label) > MAX_LABEL_LENGTH:

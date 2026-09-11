@@ -192,7 +192,9 @@ repaired shape.
 
 ### The 15 proofs the repair brief requires
 
-Run as one explicit selection: `55 passed`, rc `0`.
+Run as one explicit selection on the final tree: `158 passed`, rc `0`. The selection includes the
+whole invalid-fixture parametrisation, which is a superset of the seven fixtures the rows below
+name.
 
 | # | Proof | Expected | Where |
 | --- | --- | --- | --- |
@@ -206,8 +208,8 @@ Run as one explicit selection: `55 passed`, rc `0`.
 | 8 | duplicate selected `url_key` | semantic RED | `semantic-invalid/sampling-manifest/duplicate-selected-url-key` |
 | 9 | duplicate `selection_rank` | semantic RED | `semantic-invalid/sampling-manifest/duplicate-selection-rank` |
 | 10 | duplicate exclusion `reason` | semantic RED | `semantic-invalid/sampling-manifest/duplicate-exclusion-reason` |
-| 11 | path / query / fragment in `target_origin` | RED | `test_a_target_origin_that_is_not_a_bare_origin_is_refused` (9 values); 2 fixtures |
-| 12 | valid root public origin | GREEN | `test_a_root_public_origin_is_accepted` (5 values, incl. explicit port) |
+| 11 | path / query / fragment in `target_origin` | RED | `test_a_target_origin_that_is_not_a_bare_origin_is_refused` (13 values, including the four **backslash** forms the adversarial review found accepted); `test_a_backslash_cannot_smuggle_a_path_into_the_origin`; `test_the_origin_authority_excludes_every_whatwg_terminator`; 2 fixtures |
+| 12 | valid root public origin | GREEN | `test_a_root_public_origin_is_accepted` (5 values, incl. explicit port); a bracketed IPv6 literal and a backslash-bearing *page* URL both stay representable |
 | 13 | reordering valid order-independent collections | digest unchanged | `test_reordering_an_unambiguous_document_leaves_its_output_digest_unchanged`, `…_the_selections_of_an_unambiguous_manifest_…` |
 | 14 | ambiguous duplicate-key input | digest refuses | `test_the_digest_refuses_an_ambiguous_document_rather_than_producing_a_value` **and** `test_an_ambiguous_document_would_digest_differently_under_two_serialisations` |
 | 15 | `CENSUS` + `selection_complete=false` with structured evidence | GREEN | `test_a_bounded_census_is_valid_and_carries_its_technical_limitation` |
@@ -232,6 +234,41 @@ The Python 3.14 run reproduces the command CI uses (`uv run pytest`) on the same
 version as the compat matrix. It is a local run and is **not** a substitute for CI on the exact
 candidate SHA — see section F.
 
+### The repair was itself adversarially reviewed, and it had defects
+
+A 23-agent adversarial review was run against the repaired tree across seven dimensions
+(scope violations, each of the four findings, evidence integrity, regression/correctness), with
+every claimed finding independently re-verified by a second agent instructed to default to
+"not real" unless it could demonstrate the defect with a command. **Nine findings survived
+verification. All nine were real, and all nine are fixed.** Four were in shipped artifacts:
+
+| Severity | Defect | Fix |
+| --- | --- | --- |
+| **high** | `public_origin` excluded `/ ? # @` from the authority but **not the backslash**. The WHATWG URL standard treats `\` as a path separator for `http`/`https`, so `https://example.org\leistungen` was a valid `target_origin` that Node's `new URL` reads as origin `https://example.org` with pathname `/leistungen` — a page smuggled into the member that names the site, which is the one thing the narrowing exists to prevent | the class now excludes the full WHATWG authority-terminator set; a test derives the terminators from the declared pattern itself, so a terminator dropped from the class is caught even if nobody wrote its example |
+| low | `test_the_unclassified_token_carries_no_rule_that_ranks_it_below_another_stratum` asserted only `schema.count(UNCLASSIFIED) == 1`. The reviewer built a schema that dropped the prose mention and put the token in a `const` inside a conditional forcing rank ≥ 1000 — giving it exactly the rule the test is named for — and the test **passed** | the test asserts the token's *location*, so the name, the message and the README sentence are all true again |
+| low | `_dense_ranks` filtered only the `_ABSENT` sentinel, so `"selection_rank": null` — the exact case the sentinel's own comment says it exists for — reached `sorted` and raised `TypeError` out of `violations_of` and `require_unambiguous`. A layer whose job is to fail closed reported nothing at all | filters on the type; `bool` excluded, because it is an `int` subclass and `[True, 2]` would otherwise read as the dense sequence `[1, 2]` |
+| low | `"public_url differs from common#/$defs/url in exactly one respect"` is false — in the README **and** inside the shipped contract description. It also narrows two length bounds | replaced by what is actually true, in both places |
+
+The other five were claims in this document that did not reproduce: the two test warnings are two
+*different* deprecations rather than one raised twice; one group row in the Reviewability table
+measured `21870` for the paths its label named because a 60th changed file appeared in no label;
+and a four-bucket breakdown of the repair's own contribution overstated one bucket by 21% and
+called 5 kB of test code "documentation". Each is corrected above, and the byte table now sums
+exactly and accounts for every changed file.
+
+**One finding was rejected on verification and is recorded because rejecting it was a judgement,
+not a formality:** the review asked whether AC4 also requires the *inventory's* `page_type` to be
+required, since the repair left it optional. It does not — AC4 governs **selected** pages — and
+the asymmetry is argued in section E decision 5. Leaving it optional is deliberate.
+
+**A process defect was found in the review itself.** Seven agents shared one working tree, and one
+of them mutated `contracts/v1/schemas/acquisition.v1.json` while another was running the full
+suite, injecting a spurious failure into that agent's measurements. The affected verifier detected
+the contamination, discarded those numbers and re-derived everything in an isolated
+`git archive` tree. Every figure in this document was re-measured afterwards on a tree verified
+clean by `git status --porcelain`. Parallel verifiers sharing one checkout cross-contaminate each
+other's measurements, and the next such pass must give each agent its own worktree.
+
 ### The gates were observed failing, not merely observed green
 
 Two passes exist, and they are kept apart on purpose.
@@ -239,9 +276,11 @@ Two passes exist, and they are kept apart on purpose.
 * **`M1`–`M27` was measured on the superseded candidate `8887911`.** That tree no longer exists.
   The table is retained below as the record of that pass and is **historical evidence about
   invariants, not a gate on this candidate**; it is not re-stated as if it had been re-measured.
-* **`R0`–`R24` was measured on the repaired tree.** `R1`–`R15` cover every repaired invariant.
-  `R16`–`R24` re-run nine of the `M` mutations that land in regions this repair rewrote, so the
-  claim that the pre-existing guards still bite is measured rather than inferred.
+* **`R0`–`R24` and `P1`–`P4` were measured on the final tree**, after the adversarial-review
+  fixes, not on an intermediate one. `R1`–`R15` cover every repaired invariant; `R16`–`R24` re-run
+  nine of the `M` mutations that land in regions this repair rewrote, so the claim that the
+  pre-existing guards still bite is measured rather than inferred; `P1`–`P4` cover the guards the
+  review added or strengthened. 29 mutations, 28 required red and one canary required green.
 
 Both passes used the same discipline: each mutation applied to the committed tree, the anchor
 asserted to match exactly once, the mutated text asserted present on disk, `git diff` asserted
@@ -253,7 +292,7 @@ be reported for another.
 **The driver has its own canary.** `R0` rewords one schema description without changing a rule and
 must produce rc `0` — it did. Every other mutation was required to produce rc `1`.
 
-Control before the `R` pass: `1149 passed`, rc `0`. Control after: `1149 passed`, rc `0`, tree
+Control before the `R` pass: `1164 passed`, rc `0`. Control after: `1164 passed`, rc `0`, tree
 clean.
 
 #### `R0`–`R15` — the repaired invariants
@@ -276,6 +315,19 @@ clean.
 | R13 | delete the `dense_selection_rank` rule | `1` | 6 | the gap counterexample, the coverage rule, the violation-record rule |
 | R14 | restore the old absolute `CENSUS` wording | `1` | 1 | the mode-description rule |
 | R15 | drop `incompleteness` from the digest classification | `1` | 1 | the member-classification rule |
+
+#### `P1`–`P4` — the guards added by the adversarial-review fixes
+
+| # | Mutation | rc | failed | guards that fired first |
+| --- | --- | --- | --- | --- |
+| P1 | drop the backslash from the `public_origin` authority class | `1` | 4 | the named backslash proof, the 13-value rejection matrix |
+| P2 | remove the `UNCLASSIFIED` mention from the stratum description | `1` | 1 | the token-location rule |
+| P3 | revert the dense-rank filter to the sentinel-only form | `1` | 4 | the non-integer-rank proof |
+| P4 | point the budget conditional at a token the vocabulary does not declare | `1` | 4 | the membership canary, the vocabulary pin, the budget rule |
+
+`P4` is the one worth reading twice: before the review fix it produced rc `0`. The constant was
+derived out of the vocabulary with a generator expression, so "the token belongs to the
+vocabulary" was true by construction and the canary could not fail.
 
 #### `R16`–`R24` — the pre-existing guards, re-measured on the repaired tree
 
@@ -360,35 +412,36 @@ PXK-61 — and this document's own size is given separately.
 
 | Measurement | Command | Before repair | After repair |
 | --- | --- | --- | --- |
-| Diff size, everything except this document | `git diff --no-ext-diff --unified=0 origin/main...HEAD -- . ':!docs/evidence' \| wc -c` | `169594` | `264624` |
+| Diff size, everything except this document | `git diff --no-ext-diff --unified=0 origin/main...HEAD -- . ':!docs/evidence' \| wc -c` | `169594` | `274275` |
 | Convention | Confluence `45907970` craftsmanship correction 6 | `< 140000` | `< 140000` |
-| This document | `git diff --no-ext-diff --unified=0 origin/main...HEAD -- docs/evidence \| wc -c` | about `22000` | about `44000` |
+| This document | `git diff --no-ext-diff --unified=0 origin/main...HEAD -- docs/evidence \| wc -c` | about `22000` | about `49000` |
 | Files changed | `git diff --name-only origin/main...HEAD \| wc -l` | `43` | `60` |
 
-**Excluding this document the diff is now about 89% over the ~140,000-byte reviewability
+**Excluding this document the diff is now about 96% over the ~140,000-byte reviewability
 convention, against 21% before the repair. The repair roughly doubled the overrun, and that is
 flagged rather than concealed.** The PO decision not to split PR `#14` was taken against the
-`169594` figure; `264624` is a materially different number and the decision deserves to be
-re-taken against it rather than assumed to carry over. Measured by group:
+`169594` figure; `274275` is a materially different number and the decision deserves to be
+re-taken against it rather than assumed to carry over. Measured by group — **every changed file
+outside `docs/evidence` belongs to exactly one row, and the rows sum to the total exactly**:
 
 | Group | Bytes |
 | --- | --- |
-| the two pre-existing semantics suites | `71643` |
+| the two pre-existing semantics suites | `76468` |
 | the 31 schema-invalid fixtures and their two expectation indexes | `49645` |
 | the two contract schemas | `40745` |
-| the semantic-key layer and its suite | `32054` |
-| the contracts README section | `17285` |
-| examples, manifest registration, vocabulary pins | `22146` |
+| the semantic-key layer and its suite | `34533` |
+| examples, manifest registration, vocabulary pins, `tests/acquisition/__init__.py` | `22365` |
+| the contracts README section | `18184` |
 | the six semantic counterexamples and their two indexes | `13201` |
 | the digest reference implementation | `12491` |
-| the shared lexical definitions | `5414` |
+| the shared lexical definitions | `6643` |
+| **sum** | **`274275`** |
 
 Nothing was trimmed to flatter the figure, and nothing unrelated to the four findings was added.
-The repair's own contribution is roughly `95 kB`: about `45 kB` of new proof (the semantic-key
-layer, its suite, the AC9/AC4/origin proof sections), about `30 kB` of counterexamples (7 new
-schema-invalid fixtures, 6 semantic counterexamples, 2 new indexes), about `9 kB` of schema text —
-the descriptions that state what each new rule is for and, in three places, that JSON Schema does
-**not** enforce the relationship — and the rest documentation.
+An earlier version of this section also broke the repair's own `~95 kB` contribution into four
+approximate buckets; that breakdown did not reproduce (the counterexample bucket was overstated by
+21%, and a bucket labelled "documentation" was half test code), so it has been removed rather than
+patched. The nine rows above are the accounting, and each one re-measures to the byte.
 
 **The concrete split point, if a Product Owner prefers two reviews:** `site-inventory.v1` with
 `acquisition.v1.json` (both URL shapes and the origin narrowing), its examples, its 16 fixtures,
@@ -518,7 +571,7 @@ These were forced by the brief and are recorded so a reviewer can overturn them 
 * **`public_origin` is lexical only.** It refuses a path, query, fragment and userinfo, and it
   decides nothing about DNS, reachability, redirects, egress, loopback or private ranges. A valid
   `target_origin` is not an SSRF or target-policy verdict; those remain 19.B and runtime concerns.
-* **The reviewability figure roughly doubled** (`169594` → `264624`, 89% over the convention) and
+* **The reviewability figure roughly doubled** (`169594` → `274275`, 96% over the convention) and
   needs a Product Owner call against the new number rather than the old one. PO decision 2 of the
   repair brief directs that PR `#14` is not split on this ground; the split point is named above.
 * **The `M1`–`M27` counter-mutation pass was not re-run in full on the repaired tree.** Nine of

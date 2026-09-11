@@ -139,6 +139,26 @@ def test_no_enumeration_order_can_change_an_inventory_digest() -> None:
         assert production.inventory_digests(shuffled, reordered) == expected
 
 
+@pytest.mark.parametrize("name", MANIFEST_EXAMPLES)
+def test_the_rank_and_not_the_array_position_orders_a_manifest_digest(name: str) -> None:
+    """Re-serialising the arrays in another order changes nothing; moving a rank does."""
+    document = example(name)
+    reordered = copy.deepcopy(document)
+    reordered["selections"].reverse()
+    reordered["exclusions"].reverse()
+    assert production.manifest_digests(reordered) == (
+        document["input_digest"],
+        document["output_digest"],
+    )
+    reranked = copy.deepcopy(document)
+    first, second = reranked["selections"][0], reranked["selections"][1]
+    first["selection_rank"], second["selection_rank"] = (
+        second["selection_rank"],
+        first["selection_rank"],
+    )
+    assert production.manifest_digests(reranked)[1] != document["output_digest"]
+
+
 def test_a_semantic_change_does_change_the_output_digest() -> None:
     """Canary: a digest that never changed would satisfy every determinism test above."""
     document = example("site-inventory")

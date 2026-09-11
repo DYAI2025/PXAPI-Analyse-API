@@ -210,6 +210,11 @@ def test_an_off_origin_sitemap_declaration_is_refused_without_ever_being_resolve
     assert outcomes(report)["OFF_ORIGIN_SITEMAP"] == "TARGET_POLICY_REFUSED"
     assert "evil.test" not in recorder.hosts
     assert not any("evil.test" in o.observed_form for o in report.observations)
+    # A refused declaration never takes a sitemap slot: it is not planned at all, so the
+    # conventional /sitemap.xml is still tried and its own state is what SITEMAP reports.
+    # Planning it and letting the scope refuse it later would leave SITEMAP naming the
+    # refusal instead — a second, downstream layer doing the first layer's job.
+    assert outcomes(report)["SITEMAP"] == "ABSENT"
 
 
 def test_a_repeated_declaration_is_fetched_once() -> None:

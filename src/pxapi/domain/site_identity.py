@@ -6,26 +6,33 @@ behind, with the scheme or host in a different case. ``site-inventory.v1`` requi
 collapse onto **one** candidate carrying the provenance of every form that was seen, so this
 module is where a written form becomes an identity.
 
-Three properties are the reason it is Domain code rather than a helper in the adapter.
+Four properties are the reason it is Domain code rather than a helper in the adapter.
 
-**It is total and deterministic.** Every function here is a pure function of its argument. The
-same written form always yields the same key, on every run and in every process, which is what
-lets two runs that enumerated a site in a different order produce the same digest.
+**It is total, deterministic and idempotent.** Every function here is a pure function of its
+argument that never raises on a string. The same written form always yields the same key, and a
+key canonicalises to itself, which matters beyond tidiness: the origin check re-canonicalises,
+so a key that did not reproduce itself would read as outside its own origin.
 
 **It refuses rather than repairs.** A form this module cannot bring into the contract's lexical
-shape returns ``None`` and is never persisted. That is the producer side of
-D-PXAPI19-PO-007: a credential-bearing URL is rejected *before* it could become inventory data,
-and an arbitrary attacker-controlled string is not kept merely so that a digest could be
-recomputed over it. ``None`` is the whole point, exactly as it is in
-``domain.observations.representable_text``.
+shape has no identity and is never persisted. That is the producer side of D-PXAPI19-PO-007: a
+credential-bearing URL is refused *before* it could become inventory data, and an arbitrary
+attacker-controlled string is not kept merely so that a digest could be recomputed over it.
 
-**It never merges two forms it cannot prove are one target.** Every normalisation below is
-either a rule the URL standard already calls equivalent (case of scheme and host, the default
-port, dot segments, percent-encoding case) or the removal of a named campaign parameter. Query
-parameters that remain keep the order they were written in, and a trailing slash on a path
-below the root is preserved: collapsing those would be an aggressive guess, and a guess that is
-wrong loses a page, while declining to merge only produces one more candidate — which the
-contract states is not a defect of the website at all.
+**It merges only on named grounds.** Every normalisation is either one the URL standards
+themselves call equivalent (the case of scheme and host, a default port, dot segments, the case
+of a percent escape, an escaped unreserved character, the compressed form of an IPv6 literal)
+or one of a few merges this method *declares* and versions: a named set of campaign parameters,
+empty query pairs and an empty query. Everything else is kept as written: remaining parameters
+keep their order and a trailing slash below the root is kept, because a merge that is wrong
+loses a page while a merge declined only yields one more candidate, which the contract says is
+not a defect of the website.
+
+**A form the two URL standards read differently has no identity.** RFC 3986 treats a backslash
+as data and WHATWG treats it as a path separator for http and https, so a backslash after the
+root is a path on this origin to one reader and a different host to the other, and a browser
+is the second reader. A form carrying a raw backslash, or any Unicode space a policy might
+silently strip, is refused outright rather than keyed under one reading and fetched under the
+other.
 
 The canonicalisation method is named and versioned here because ``site-inventory.v1`` fixes the
 identity's lexical shape and deliberately not how it was derived: a consumer reads
@@ -36,6 +43,7 @@ Standard library only. The domain ring imports no third-party distribution at al
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from enum import StrEnum
 from typing import Final
@@ -60,41 +68,42 @@ DEFAULT_PORTS: Final[dict[str, int]] = {"http": 80, "https": 443}
 #: anchor exactly as the reference validator does — it *is* the engine that validator uses — so
 #: a value this module accepts is a value the contract accepts, and the producer can never emit
 #: an identity or an observed form its own schema would refuse.
+#: The excluded set both patterns share, built from escape *text* so this source file holds no
+#: raw control character; the result is character-for-character the schema's pattern text.
+_ESCAPE_TEXT: Final = "\\u"
+_EXCLUDED: Final = (
+    f"{_ESCAPE_TEXT}0000-{_ESCAPE_TEXT}0020{_ESCAPE_TEXT}007F-{_ESCAPE_TEXT}009F"
+    f"{_ESCAPE_TEXT}2028{_ESCAPE_TEXT}2029"
+)
 PUBLIC_URL_PATTERN: Final = (
-    r"^https?://[^\u0000-\u0020\u007F-\u009F\u2028\u2029/?#@]{1,253}"
-    r"(?:[/?#][^\u0000-\u0020\u007F-\u009F\u2028\u2029]{0,1790})?(?!\n)$"
+    f"^https?://[^{_EXCLUDED}/?#@]{{1,253}}(?:[/?#][^{_EXCLUDED}]{{0,1790}})?(?!\\n)$"
 )
-PUBLIC_ORIGIN_PATTERN: Final = (
-    r"^https?://[^\u0000-\u0020\u007F-\u009F\u2028\u2029\u005C/?#@]{1,253}/?(?!\n)$"
-)
+PUBLIC_ORIGIN_PATTERN: Final = f"^https?://[^{_EXCLUDED}{_ESCAPE_TEXT}005C/?#@]{{1,253}}/?(?!\\n)$"
 MAX_URL_LENGTH: Final = 2048
 MAX_ORIGIN_LENGTH: Final = 262
 
 _PUBLIC_URL: Final[re.Pattern[str]] = re.compile(PUBLIC_URL_PATTERN)
 _PUBLIC_ORIGIN: Final[re.Pattern[str]] = re.compile(PUBLIC_ORIGIN_PATTERN)
 
-#: Characters the contract's authority pattern excludes: the C0 controls and space, DEL, the C1
-#: controls, the Unicode line and paragraph separators, and the five authority terminators.
-#: U+005C is in the set because WHATWG treats a backslash as a path separator for http and
-#: https exactly like '/', so an authority that contained one would smuggle a path into a value
-#: a reader takes for a whole site.
-_FORBIDDEN_IN_AUTHORITY: Final[frozenset[str]] = frozenset(
-    {chr(code) for code in range(0x00, 0x21)}
-    | {"\x7f"}
-    | {chr(code) for code in range(0x80, 0xA0)}
-    | {"\u2028", "\u2029"}
-    | set("\\/?#@")
-)
-
-#: Characters no part of a written form may carry at all. A form holding one is not repaired by
-#: escaping it — it is refused, because a producer that silently rewrote the bytes it observed
-#: would record an ``observed_form`` nobody served.
+#: Characters no part of a written form may carry at all: the C0 controls and space, DEL, the C1
+#: controls, the Unicode line and paragraph separators, and the backslash; every other Unicode
+#: space is refused beside them, by ``str.isspace``. A form holding one is not repaired by
+#: escaping it but refused, because a producer that silently rewrote the bytes it observed would
+#: record an ``observed_form`` nobody served, and because the target policy strips surrounding
+#: whitespace from a host before resolving it: a form it would strip is a form whose identity and
+#: whose destination could differ.
 _FORBIDDEN_ANYWHERE: Final[frozenset[str]] = frozenset(
     {chr(code) for code in range(0x00, 0x21)}
-    | {"\x7f"}
+    | {chr(0x7F)}
     | {chr(code) for code in range(0x80, 0xA0)}
-    | {"\u2028", "\u2029"}
+    | {chr(0x2028), chr(0x2029), chr(0x5C)}
 )
+
+#: Characters an authority may not carry beyond those: the four authority terminators and the
+#: percent sign. A hostname cannot contain an escape, and the one place the URL grammar admits a
+#: percent sign in a host, an IPv6 zone identifier, names a link-local interface no public
+#: analysis may reach.
+_FORBIDDEN_IN_AUTHORITY: Final[frozenset[str]] = _FORBIDDEN_ANYWHERE | set("/?#@%")
 
 #: Query parameters this version drops from an identity, as a closed, named set. Each is a
 #: campaign or click-tracking parameter that every major analytics vendor documents as carrying
@@ -293,35 +302,41 @@ def _normalised_escapes(value: str) -> str | None:
 def _canonical_query(query: str) -> str:
     """The query with every named tracking parameter dropped, the rest in written order.
 
+    It runs on a query whose escapes are already normalised, so an escaped ``utm_source`` is
+    recognised as the ``utm_source`` it is: otherwise a first pass would keep it, decode it, and a
+    second pass would drop it, and a key that changes on a second pass is not a key. A pair
+    carrying ``;`` is kept whole, because some frameworks read ``;`` as a second separator and
+    dropping the pair would drop whatever followed it. Empty pairs are dropped, a declared merge.
+
     Order is preserved rather than sorted on purpose. Sorting would merge ``?a=1&b=2`` with
     ``?b=2&a=1``, and while those address the same resource on nearly every server, "nearly"
-    is not a property an identity may rest on: a merge that is wrong loses a page, and a merge
-    declined only produces one more candidate, which the contract says is not a defect.
+    is not a property an identity may rest on.
     """
     kept: list[str] = []
     for pair in query.split("&"):
         if not pair:
             continue
         name = pair.partition("=")[0].lower()
-        if name in _TRACKING_PARAMETERS or name.startswith(_TRACKING_PREFIXES):
+        tracking = name in _TRACKING_PARAMETERS or name.startswith(_TRACKING_PREFIXES)
+        if tracking and ";" not in pair:
             continue
         kept.append(pair)
     return "&".join(kept)
 
 
 def _split_authority(netloc: str) -> tuple[str, str] | None:
-    """``(host, port)`` of an authority, lower-cased, with a redundant default port dropped.
+    """``(host, port)`` of an authority, lower-cased, or ``None`` when it may not be carried.
 
-    Returns ``None`` for anything this analysis will not carry: a userinfo component, an empty
-    host, a forbidden character, a port that is not a number. The IPv6 literal form is handled
-    explicitly, because a colon inside brackets is part of the address and not a port marker.
+    ``None`` for anything this analysis will not carry: a forbidden character, an empty host, a
+    bracketed authority that is not exactly one IPv6 literal, or a second colon outside
+    brackets. An IPv6 literal is reduced to its compressed form, which is the same address.
     """
-    if any(char in _FORBIDDEN_IN_AUTHORITY for char in netloc):
+    if any(char in _FORBIDDEN_IN_AUTHORITY or char.isspace() for char in netloc):
         return None
 
     # A colon separates host from port only when it lies *outside* a bracketed IPv6 literal.
-    # Comparing the two last positions is what distinguishes `[::1]` — where every colon is
-    # part of the address — from `[::1]:8080`, where the final one is not.
+    # Comparing the two last positions is what distinguishes `[::1]`, where every colon is
+    # part of the address, from `[::1]:8080`, where the final one is not.
     if netloc.rfind(":") > netloc.rfind("]"):
         host, _, port = netloc.rpartition(":")
     else:
@@ -330,10 +345,17 @@ def _split_authority(netloc: str) -> tuple[str, str] | None:
     host = host.lower()
     if not host:
         return None
-    # A literal is bracketed at both ends or at neither: one bracket is not an address.
-    if host.startswith("[") != host.endswith("]"):
-        return None
-    if host in ("[]", "["):
+    if host.startswith("[") or host.endswith("]"):
+        if not (host.startswith("[") and host.endswith("]")):
+            return None
+        try:
+            return f"[{ipaddress.IPv6Address(host[1:-1])}]", port
+        except ValueError:
+            return None
+    if ":" in host:
+        # Outside brackets a colon can only separate the port, and one already did. A second
+        # means this is not a host and a port at all, and splitting it again would key an
+        # invalid form onto some valid page.
         return None
     return host, port
 
@@ -346,7 +368,10 @@ def _authority_of(scheme: str, netloc: str) -> str | None:
     host, port_text = split
     if not port_text:
         return host
-    if not port_text.isdigit():
+    # ASCII digits only. `str.isdigit` also accepts a superscript two or an Arabic-Indic digit,
+    # and `int` would then either raise on the first or quietly read the second as its value,
+    # folding a form no server receives onto a port that one does.
+    if not (port_text.isascii() and port_text.isdigit()):
         return None
     port = int(port_text)
     if port == DEFAULT_PORTS[scheme]:
@@ -368,28 +393,55 @@ def is_persistable_form(value: str) -> bool:
     return len(value) <= MAX_URL_LENGTH and _PUBLIC_URL.search(value) is not None
 
 
-def refuse(value: str) -> UrlRefusal | None:
-    """Why ``value`` cannot become an identity, or ``None`` when it can.
+def _canonicalise(value: str) -> tuple[str | None, UrlRefusal | None]:
+    """The one decision behind :func:`canonical_url_key` and :func:`refuse`.
 
-    Separated from :func:`canonical_url_key` so a caller that must *report* a refusal reads one
-    named reason rather than re-deriving it from a ``None``. The two agree by construction:
-    the key function calls this first and the equivalence is asserted by a test.
+    Exactly one of the two results is ``None``, so the key function and the refusal function
+    cannot disagree about a form: they are two views of this.
     """
-    if any(char in _FORBIDDEN_ANYWHERE for char in value):
-        return UrlRefusal.FORBIDDEN_CHARACTER
+    if any(char in _FORBIDDEN_ANYWHERE or char.isspace() for char in value):
+        return None, UrlRefusal.FORBIDDEN_CHARACTER
     try:
         parts = urlsplit(value)
     except ValueError:
-        return UrlRefusal.MALFORMED
-    if parts.scheme.lower() not in DEFAULT_PORTS:
-        return UrlRefusal.NOT_ABSOLUTE_HTTP
+        return None, UrlRefusal.MALFORMED
+    scheme = parts.scheme.lower()
+    if scheme not in DEFAULT_PORTS:
+        return None, UrlRefusal.NOT_ABSOLUTE_HTTP
     if "@" in parts.netloc:
-        return UrlRefusal.CREDENTIALS_PRESENT
-    if _authority_of(parts.scheme.lower(), parts.netloc) is None:
-        return UrlRefusal.UNUSABLE_AUTHORITY
-    if _normalised_escapes(value) is None:
-        return UrlRefusal.MALFORMED
-    return None
+        return None, UrlRefusal.CREDENTIALS_PRESENT
+    authority = _authority_of(scheme, parts.netloc)
+    if authority is None:
+        return None, UrlRefusal.UNUSABLE_AUTHORITY
+
+    # RFC 3986 section 6.2.2 fixes the order: percent-encoding is normalised *before* dot
+    # segments are removed, or `/a/%2E%2E/b` would keep its escaped dot segment through removal
+    # and only then decode into a traversal. The fragment is never examined: it is dropped.
+    escaped_path = _normalised_escapes(parts.path)
+    escaped_query = _normalised_escapes(parts.query)
+    if escaped_path is None or escaped_query is None:
+        return None, UrlRefusal.MALFORMED
+    path = _remove_dot_segments(escaped_path) or "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    query = _canonical_query(escaped_query)
+
+    # `quote` percent-encodes what may not appear raw, a non-ASCII character above all, and
+    # leaves every existing escape alone: '%' is safe because every '%' left in the value was
+    # validated above as the start of an escape, so encoding it again would turn `%C3%A4` into
+    # `%25C3%25A4`, the identity of a different URL.
+    safe_path = quote(path, safe="/-._~!$&'()*+,;=:@%")
+    safe_query = quote(query, safe="/-._~!$&'()*+,;=:@?%")
+    key = urlunsplit((scheme, authority, safe_path, safe_query, ""))
+    if not is_persistable_form(key):
+        # Refused rather than truncated: a shortened key would be the identity of another URL.
+        return None, UrlRefusal.TOO_LONG
+    return key, None
+
+
+def refuse(value: str) -> UrlRefusal | None:
+    """Why ``value`` cannot become an identity, or ``None`` when it can."""
+    return _canonicalise(value)[1]
 
 
 def canonical_url_key(value: str) -> str | None:
@@ -398,53 +450,24 @@ def canonical_url_key(value: str) -> str | None:
     The rules, in the order they apply, are the whole of version
     ``URL_CANONICAL_BASELINE 1.0.0``:
 
-    1. a form carrying a control character, DEL, a C1 control or a Unicode separator is refused;
+    1. a form carrying a control character, DEL, a C1 control, a Unicode separator or space, or
+       a raw backslash, which RFC 3986 and WHATWG read differently, is refused;
     2. the scheme is lower-cased and must be ``http`` or ``https``;
-    3. a userinfo component is refused outright — never stripped, because a URL that carried a
-       credential is not made safe by rewriting it, and persisting the rewritten form would
-       record something nobody served;
-    4. the host is lower-cased and a port equal to the scheme's default is dropped;
-    5. the fragment is dropped: it is never sent to a server and addresses nothing there;
-    6. percent escapes are upper-cased and an escaped unreserved character is decoded;
-    7. a raw backslash in the path becomes '/', as WHATWG reads it for http and https;
-    8. dot segments are removed per RFC 3986 — after rule 6, as section 6.2.2 requires;
-    9. an empty path becomes the root ``/``, and a trailing slash below the root is kept;
-    10. the named tracking parameters are dropped and an emptied query disappears with them;
-    11. a character that may not appear raw is percent-encoded, an existing escape never is;
-    12. a key the contract's ``public_url`` shape would refuse is refused, never truncated.
+    3. a userinfo component is refused outright, never stripped;
+    4. the host is lower-cased; a percent sign, a second unbracketed colon or a bracketed value
+       that is not one IPv6 literal is refused, and an IPv6 literal takes its compressed form;
+    5. the port must be ASCII digits in 1..65535, and a port equal to the default is dropped;
+    6. the fragment is dropped without being examined;
+    7. percent escapes are upper-cased and an escaped unreserved character is decoded;
+    8. dot segments are removed per RFC 3986, after rule 7, as section 6.2.2 requires;
+    9. an empty path becomes the root ``/``; a trailing slash below the root is kept;
+    10. declared merges: the named tracking parameters (recognised after rule 7) are dropped
+        unless the pair carries ``;``, empty pairs are dropped, and an emptied query disappears;
+        every other parameter keeps its written order;
+    11. a character that may not appear raw is percent-encoded; an existing escape never is;
+    12. a key the contract's own ``public_url`` shape would refuse is refused, never truncated.
     """
-    if refuse(value) is not None:
-        return None
-
-    parts = urlsplit(value)
-    scheme = parts.scheme.lower()
-    authority = _authority_of(scheme, parts.netloc)
-    if authority is None:  # pragma: no cover - refuse() already returned for this
-        return None
-
-    # RFC 3986 section 6.2.2 fixes the order: percent-encoding is normalised *before* dot
-    # segments are removed. The other way round, `/a/%2E%2E/b` would keep its escaped dot
-    # segment through removal and only then decode into `/a/../b` — a key that still names a
-    # traversal. A raw backslash is a path separator for http and https under WHATWG, exactly
-    # like '/', so it is folded here; an escaped one (`%5C`) is data and is left alone.
-    escaped_path = _normalised_escapes(parts.path)
-    normalised_query = _normalised_escapes(_canonical_query(parts.query))
-    if escaped_path is None or normalised_query is None:  # pragma: no cover - see refuse()
-        return None
-    path = _remove_dot_segments(escaped_path.replace("\\", "/")) or "/"
-    if not path.startswith("/"):
-        path = "/" + path
-
-    # `quote` percent-encodes what may not appear raw — a non-ASCII character above all — and
-    # leaves every existing escape alone: '%' is in the safe set because every '%' left in the
-    # value was validated above as the start of an escape, so encoding it again would turn
-    # `%C3%A4` into `%25C3%25A4`, the identity of a different URL.
-    safe_path = quote(path, safe="/-._~!$&'()*+,;=:@%")
-    safe_query = quote(normalised_query, safe="/-._~!$&'()*+,;=:@?%\\")
-
-    key = urlunsplit((scheme, authority, safe_path, safe_query, ""))
-    # Refused rather than truncated: a shortened key would be the identity of a different URL.
-    return key if is_persistable_form(key) else None
+    return _canonicalise(value)[0]
 
 
 def canonical_origin(value: str) -> str | None:

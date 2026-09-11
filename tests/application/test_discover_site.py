@@ -251,8 +251,13 @@ def test_the_canonical_target_seed_exists_and_is_the_origin() -> None:
 
 
 def test_every_selection_has_a_stratum_a_reason_and_a_stable_identity() -> None:
-    manifest = run(example_report())["sampling_manifest"]
-    inventory_keys = {c["url_key"] for c in run(example_report())["site_inventory"]["candidates"]}
+    envelope = run(example_report())
+    manifest, inventory = envelope["sampling_manifest"], envelope["site_inventory"]
+    inventory_keys = {c["url_key"] for c in inventory["candidates"]}
+    first, rest = manifest["selections"][0], manifest["selections"][1:]
+    assert (first["selection_rank"], first["selection_reason"]) == (1, "SEED")
+    assert first["url_key"] == inventory["target_origin"]
+    assert rest and all(s["selection_reason"] == "CENSUS" for s in rest)
     for selection in manifest["selections"]:
         assert selection["stratum"] and selection["selection_reason"] in {"SEED", "CENSUS"}
         assert selection["url_key"] in inventory_keys
@@ -525,3 +530,36 @@ def test_the_input_digest_binds_the_labels_that_shaped_the_classification() -> N
     bare = run(report_with(None))["site_inventory"]
     assert contact["output_digest"] != legal["output_digest"]
     assert len({contact["input_digest"], legal["input_digest"], bare["input_digest"]}) == 3
+
+
+def test_an_ambiguous_manifest_is_withheld_through_the_production_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two layers refuse an ambiguous manifest — the producer gate and the digest projection —
+    so removing either one alone leaves this outcome unchanged. That is defence in depth, and this
+    test pins the outcome both layers exist for, through the real use case."""
+    real = use_case.plan_census
+
+    def split_the_ineligible_count(*args: Any, **kwargs: Any) -> SelectionPlan:
+        plan = real(*args, **kwargs)
+        (reason, count), *rest = plan.exclusions
+        assert (reason, count) == ("INELIGIBLE_IN_INVENTORY", 2)
+        return SelectionPlan(
+            plan.mode,
+            plan.selection_complete,
+            plan.incompleteness_cause,
+            plan.selections,
+            ((reason, 1), (reason, 1), *rest),
+            plan.budgets,
+        )
+
+    monkeypatch.setattr(use_case, "plan_census", split_the_ineligible_count)
+    base = example_report()
+    report = DiscoveryReport(
+        ORIGIN,
+        (*base.observations, DiscoveryObservation(ORIGIN + "katalog.pdf", "SITEMAP")),
+        base.attempts,
+    )
+    envelope = run(report)
+    assert "sampling_manifest" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SAMPLING_MANIFEST_NOT_EMITTABLE"}

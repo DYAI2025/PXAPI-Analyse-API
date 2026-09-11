@@ -195,3 +195,18 @@ def test_the_literal_scanner_finds_a_planted_mode_and_a_planted_threshold() -> N
     assert 500 in numbers
     docstring_only, _ = _code_strings_and_numbers('"""STRATIFIED_SAMPLE"""\n')
     assert "STRATIFIED_SAMPLE" not in docstring_only
+
+
+SRC = Path(sampling_policy.__file__).resolve().parents[1]
+
+
+def test_no_production_module_can_name_a_sampling_mode_but_census() -> None:
+    """The scan above covers the policy; this covers every module, so a mode switch added in the
+    use case, an adapter or the config cannot escape it."""
+    offenders = {}
+    for path in sorted(SRC.rglob("*.py")):
+        strings, _ = _code_strings_and_numbers(path.read_text(encoding="utf-8"))
+        found = strings & {"STRATIFIED_SAMPLE", "STRATUM_QUOTA"}
+        if found:
+            offenders[str(path.relative_to(SRC))] = sorted(found)
+    assert offenders == {}

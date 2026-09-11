@@ -272,8 +272,15 @@ def test_a_missing_sitemap_is_absent() -> None:
 
 
 def test_a_malformed_sitemap_admits_nothing() -> None:
+    """Even the complete entry that came before the error is discarded: a source reported
+    MALFORMED is structurally pinned to zero admitted, so keeping it would contradict itself."""
     report, _ = discover(
-        lambda b: {"/": home(), "/sitemap.xml": Route(body=b"<urlset><url><loc>x", headers=XML)}
+        lambda b: {
+            "/": home(),
+            "/sitemap.xml": Route(
+                body=f"<urlset><url><loc>{b}/ok</loc></url><url><loc>x".encode(), headers=XML
+            ),
+        }
     )
     assert outcomes(report)["SITEMAP"] == "MALFORMED"
     assert forms(report, "SITEMAP") == []
@@ -612,3 +619,91 @@ def test_a_sitemap_redirected_out_of_the_origin_stays_visible_beside_one_that_wa
     assert outcomes(report)["SITEMAP"] == "USED"
     assert outcomes(report)["REFUSED_SITEMAP"] == "TARGET_POLICY_REFUSED"
     assert "evil.test" not in recorder.hosts
+
+
+class Rebinding(LoopbackTargetPolicy):
+    """A name that answers loopback for the bootstrap and a private address ever after."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        super().__init__(resolve=self._resolve)
+
+    def _resolve(self, host: str, port: int) -> list[str]:
+        self.calls += 1
+        return ["127.0.0.1"] if self.calls == 1 else ["10.0.0.5"]
+
+
+def test_every_discovery_fetch_reruns_the_address_policy_so_a_rebound_name_is_refused() -> None:
+    """The scope narrows by origin; it never replaces the policy. A name that resolved publicly
+    for the bootstrap and privately a moment later is refused on every later fetch."""
+    policy = Rebinding()
+    routes = {"/": home(), "/robots.txt": robots("Sitemap: /s.xml"), "/s.xml": urlset()}
+    with ControlledHttpServer(routes) as server:
+        report = HttpSiteDiscovery(policy=policy).discover(f"http://site.test:{server.port}/")
+    assert report.target_origin == f"http://site.test:{server.port}/"
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "TARGET_POLICY_REFUSED"
+    assert outcomes(report)["SITEMAP"] == "TARGET_POLICY_REFUSED"
+    assert policy.calls >= 3
+
+
+def test_a_seed_cut_by_our_byte_bound_is_a_bounded_read_not_a_complete_one() -> None:
+    padding = "<p>" + "x" * 400 + "</p>"
+    report, _ = discover(
+        lambda b: {
+            "/": Route(body=f'<html><a href="/a">A</a>{padding}</html>'.encode(), headers=HTML)
+        },
+        fetch_limits=FetchLimits(max_response_bytes=120),
+    )
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "BUDGET_EXHAUSTED"
+
+
+def test_a_robots_file_cut_by_our_byte_bound_is_a_bounded_read() -> None:
+    report, _ = discover(
+        lambda b: {
+            "/": Route(body=b"<html></html>", headers=HTML),
+            "/robots.txt": robots("Sitemap: /s.xml", "#" * 400),
+        },
+        fetch_limits=FetchLimits(max_response_bytes=120),
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "BUDGET_EXHAUSTED"
+
+
+def test_a_gzip_sitemap_is_inflated_only_up_to_our_byte_bound() -> None:
+    """A few hundred compressed bytes can inflate to hundreds of kilobytes. The inflation stops at
+    the same bound as the read, and what could not be read is reported as our bound."""
+
+    def routes(b: str) -> dict[str, Route]:
+        xml = urlset(*([b + "/p"] * 20000)).body
+        body = gzip.compress(xml)
+        assert len(body) < 4000 < len(xml)
+        return {
+            "/": home(),
+            "/sitemap.xml": Route(body=body, headers={"Content-Type": "application/x-gzip"}),
+        }
+
+    report, base = discover(routes, fetch_limits=FetchLimits(max_response_bytes=4000))
+    assert outcomes(report)["SITEMAP"] == "BUDGET_EXHAUSTED"
+    assert set(forms(report, "SITEMAP")) == {base + "/p"}
+
+
+def test_a_source_the_server_answers_too_slowly_is_a_timeout() -> None:
+    report, _ = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": Route(body=b"Sitemap: /s.xml\n", headers=TEXT, delay=0.6),
+        },
+        fetch_limits=FetchLimits(read_timeout_seconds=0.2, total_deadline_seconds=5.0),
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "TIMEOUT"
+
+
+def test_a_bootstrap_the_server_answers_too_slowly_is_a_timeout_not_unreachable() -> None:
+    with ControlledHttpServer(
+        {"/": Route(body=b"<html></html>", headers=HTML, delay=0.6)}
+    ) as server:
+        report = HttpSiteDiscovery(
+            policy=loopback_policy(),
+            fetch_limits=FetchLimits(read_timeout_seconds=0.2, total_deadline_seconds=5.0),
+        ).discover(server.url("/"))
+    assert report.target_origin is None
+    assert report.bootstrap_failure is BootstrapFailure.TIMEOUT

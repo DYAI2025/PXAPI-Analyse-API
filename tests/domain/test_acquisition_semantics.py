@@ -277,3 +277,12 @@ def test_the_manifest_guarantees_never_crash_on_a_malformed_document() -> None:
     manifest_producer_violations(
         {"selections": [], "exclusions": [], "mode": "CENSUS"}, {"candidates": "x"}
     )
+
+
+def test_the_semantic_gate_alone_refuses_a_document_every_producer_rule_accepts() -> None:
+    """A repeated source with the same outcome and the same count breaks no producer guarantee,
+    so only the semantic gate can refuse it — which isolates that gate from the rules after it."""
+    document = mutated(INVENTORY, lambda d: d["sources"].append(dict(d["sources"][2])))
+    assert inventory_producer_violations(document) == ()
+    with pytest.raises(SemanticAmbiguity):
+        require_emittable_inventory(document)

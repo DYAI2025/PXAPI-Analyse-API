@@ -103,3 +103,19 @@ def test_a_credential_bearing_target_is_refused_without_being_echoed(
     assert discover_cli.main(["https://user:secret@example.com/"]) == 2
     captured = capsys.readouterr()
     assert "secret" not in captured.out and "secret" not in captured.err
+
+
+def test_the_production_wiring_is_strict_and_refuses_loopback_before_any_connection() -> None:
+    """``build_site_discovery`` is what the CLI and the smoke run. Driven without any network:
+    an IP-literal loopback target is refused by the shipped policy before a lookup or a socket."""
+    from pxapi.adapters.composition import build_site_discovery
+    from pxapi.adapters.web.site_discovery import HttpSiteDiscovery
+    from pxapi.config.discovery_limits import DEFAULT_DISCOVERY_LIMITS
+
+    use = build_site_discovery()
+    assert isinstance(use.discovery, HttpSiteDiscovery)
+    assert use.discovery.limits == DEFAULT_DISCOVERY_LIMITS
+    assert use.budgets.max_selected_pages == DEFAULT_DISCOVERY_LIMITS.max_selected_pages
+    envelope = use.run({"run_id": "run-1", "target_url": "http://127.0.0.1:9/"})
+    assert envelope["analysis_run_state"]["failure"] == {"code": "TARGET_NOT_PERMITTED"}
+    assert "site_inventory" not in envelope

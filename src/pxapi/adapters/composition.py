@@ -17,9 +17,13 @@ from datetime import UTC, datetime
 from pxapi.adapters.contracts.registry import ContractRegistry
 from pxapi.adapters.web.html_observations import read_html
 from pxapi.adapters.web.page_fetcher import SafePageFetcher
+from pxapi.adapters.web.site_discovery import HttpSiteDiscovery
 from pxapi.application.analyze_homepage import AnalyzeHomepage
+from pxapi.application.discover_site import DiscoverSite
 from pxapi.config.contract_root import contract_root
+from pxapi.config.discovery_limits import DEFAULT_DISCOVERY_LIMITS
 from pxapi.config.fetch_limits import DEFAULT_FETCH_LIMITS
+from pxapi.domain.sampling_policy import SelectionBudgets
 
 #: The scan mode this slice implements. The contract's vocabulary is wider on purpose; a mode
 #: we have not built is refused rather than silently treated as this one.
@@ -52,4 +56,23 @@ def build_analyzer(
         new_id=new_id,
         # The bound comes out of the contract, so a collector cannot hold a stale copy of it.
         max_text_length=registry.max_single_line_text(),
+    )
+
+
+def build_site_discovery(
+    clock: Callable[[], datetime] = utc_now,
+    new_id: Callable[[], str] = new_identifier,
+) -> DiscoverSite:
+    """The real discovery use case: strict target policy, origin-scoped fetches, census plan.
+
+    It takes no argument that could relax the target policy or widen a bound, for the same
+    reason ``build_analyzer`` takes none: a test that needs a loopback server constructs its
+    own use case around a test-only policy, and nothing configurable in production can.
+    """
+    limits = DEFAULT_DISCOVERY_LIMITS
+    return DiscoverSite(
+        discovery=HttpSiteDiscovery(fetch_limits=DEFAULT_FETCH_LIMITS, limits=limits),
+        clock=clock,
+        new_id=new_id,
+        budgets=SelectionBudgets(max_selected_pages=limits.max_selected_pages),
     )

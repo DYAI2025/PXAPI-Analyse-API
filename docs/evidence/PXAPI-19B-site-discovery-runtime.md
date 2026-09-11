@@ -158,9 +158,14 @@ no document.
 
 Every eligible candidate is selected: the seed at rank 1 (`SEED`), then every other eligible
 candidate in ascending `url_key` order (`CENSUS`), an order chosen because it means nothing.
-`max_selected_pages` (default 25, the registered example's value) bounds the census: reaching it
-keeps `mode = CENSUS`, sets `selection_complete = false` with `SELECTION_BUDGET_EXHAUSTED`, declares
-the budget and counts the remainder under that exclusion reason. `STRATIFIED_SAMPLE` cannot be
+**No selection budget is declared by default**, so the shipped policy is a census over every
+eligible candidate of the bound inventory. A budget is a capability a caller may declare, not a
+default: where one *is* declared, reaching it keeps `mode = CENSUS`, sets
+`selection_complete = false` with `SELECTION_BUDGET_EXHAUSTED`, declares the budget and counts the
+remainder under that exclusion reason. Until `fd3ad8a` the composition promoted
+`max_selected_pages = 25` — the value of a registered 19.A *example* — into production policy;
+that had no product or architecture authority and is recorded as finding `F-PXAPI19B-R4M-001`
+below. `STRATIFIED_SAMPLE` cannot be
 emitted: no production module holds a string constant naming it, the policy module holds no number
 other than `0` and `1`, and the producer refuses any other mode; each is proved by a scan with its
 own canary.
@@ -209,6 +214,9 @@ projection, so removing either alone changes nothing: that is defence in depth.
 | CLI | new `discover_cli`; the existing CLI unchanged | additive |
 | HTTP API | unchanged; no discovery endpoint | none |
 | `analysis-run-state.failure.code` | new open tokens (`SITE_DISCOVERY_*`, `*_NOT_EMITTABLE`); `TARGET_NOT_PERMITTED` reused | additive within an open vocabulary |
+| default selection policy (`fd3ad8a`) | the composition declares no `max_selected_pages`; the default census now covers the whole bound inventory instead of its first 25 candidates | **behavioural**: more pages are selected per run, and a default run no longer emits `budgets` or an incomplete selection |
+| `DiscoveryLimits.max_selected_pages` (`fd3ad8a`) | removed; it was a selection bound living in discovery config | breaking for any caller reading that field — none exists outside this slice |
+| credential-bearing `target_url` (`fd3ad8a`) | refused at the application boundary; the envelope omits `analysis_run_request` | **behavioural**: such a run emits no echo of the request it refused |
 
 ## C. Verification
 
@@ -236,6 +244,72 @@ The one skipped test is the opt-in Real-Boundary-Smoke, which runs only when
 worktree, and the interpreter was checked because a plain `uv run` re-syncs the environment to the
 default interpreter: an earlier run labelled 3.14 was in fact 3.13.3 and was discarded.
 
+### The two R4M repairs
+
+Two findings were raised against `18a4aa3` by an independent review and repaired in `fd3ad8a`.
+Both were re-derived here before anything was changed, by running the shipped code and reading
+what it produced, rather than taken on the report's word.
+
+**`F-PXAPI19B-R4M-001` — an unsupported number had become production policy.** The composition
+root built `SelectionBudgets(max_selected_pages=DEFAULT_DISCOVERY_LIMITS.max_selected_pages)`,
+and that limit was `25`. Measured on `18a4aa3`: `build_site_discovery().budgets` was
+`SelectionBudgets(max_selected_pages=25)`. The value's only provenance is the registered 19.A
+example `sampling-manifest.example.json`, which declares `budgets: {max_selected_pages: 25}` to
+*illustrate* a declared bound; an example decides no policy, and no PXAPI product or architecture
+authority ever set a page ceiling. The repair removes the field from `DiscoveryLimits` outright
+rather than setting it to `None` — a bound that does not exist cannot be reached for again — and
+the composition now declares no selection budget at all. The default is a true deterministic
+census over every eligible candidate of the already bounded inventory.
+
+No replacement number was invented, and that is measured rather than asserted: `grep -rn '\b25\b' src/`
+returns nothing, no `DiscoveryLimits` field name contains `select`, and the composition root calls
+`SelectionBudgets` with zero arguments, checked by an AST scan that has its own canary.
+
+**`F-PXAPI19B-R4M-002` — a credential could become emitted output.** `analysis-run-request` types
+`target_url` as `common#/$defs/url`, which is a structural shape that permits userinfo, so a
+request carrying a credential is *schema-valid*. `PublicTargetPolicy` and the CLI both refuse such
+a target, but neither stands between a schema-valid request and `DiscoverSite.run()`, which copied
+the request verbatim into its failure envelope. Measured on `18a4aa3`, driving the use case with
+`https://user:secret@example.com/`: the returned envelope contained `analysis_run_request` with
+the credential URL intact, and `"secret" in json.dumps(envelope)` was `True`.
+
+The repair refuses such a request at the application boundary, before it is copied into any
+envelope and before the discovery port is asked for anything. The request is **withheld**, not
+echoed and not redacted: a redacted target would be a value nobody submitted, and `run_id` already
+makes the run traceable. The refusal reuses the Domain's own identity rule, `site_identity.refuse`,
+so no second URL authority appears, and the failure code is the existing `TARGET_NOT_PERMITTED`,
+so the refusal discloses nothing about *why* the target was refused. Responsibilities are
+unchanged: the application boundary does data minimisation, `PublicTargetPolicy` remains the sole
+authority on which addresses may be reached, and its source file is byte-identical to the base.
+
+An architecture lock was added with the repair (`tests/architecture/test_safety_authority.py`):
+the application layer may import no address primitive, and `is_public_address` may be declared in
+exactly one module. It is deliberately *not* a ban on `ipaddress` in the inner layers, because
+`domain.site_identity` imports it to compress an IPv6 literal — a question about identity, not
+about reachability.
+
+### Gates on the repaired candidate `fd3ad8a`
+
+Measured after the two R4M repairs, on `fd3ad8a740d93d57c240b90dd266a77ea57166af`, working tree
+clean before and after every run (`git status --porcelain` empty). **VERIFIED.**
+
+| Gate | Command | rc | Result |
+| --- | --- | --- | --- |
+| full suite, Python 3.13.3 | `uv run pytest -q` | 0 | `2787 passed, 1 skipped` (baseline `2768 passed, 1 skipped`: +19 collected) |
+| full suite, Python 3.14.6 | isolated worktree at `fd3ad8a` outside the repository, own venv, `UV_PYTHON=3.14` exported, worktree `HEAD` and `pxapi.__file__` printed, interpreter printed before *and* after | 0 | `2787 passed, 1 skipped, 2 warnings in 115.35s (0:01:55)` |
+| acquisition (19.A reference) | `uv run pytest -q tests/acquisition` | 0 | `490 passed`, unchanged |
+| contracts | `uv run pytest -q tests/contracts` | 0 | `654 passed`, unchanged |
+| architecture | `uv run pytest -q tests/architecture` | 0 | `34 passed` (was `30`: the new single-authority lock) |
+| focused repair modules | `uv run pytest -q` on the four modules the repair touches | 0 | `101 passed` |
+| lint | `uv run ruff check .` | 0 | `All checks passed!` |
+| format | `uv run ruff format --check .` | 0 | `102 files already formatted` |
+| lock | `uv lock --check` | 0 | `Resolved 29 packages`; `pyproject.toml` and `uv.lock` untouched |
+
+Surfaces proved untouched at `fd3ad8a` against the base `468ce6f`, each measured as a diff of
+exactly **0 bytes**: `contracts/`, `src/pxapi/adapters/web/target_policy.py`, `pyproject.toml`,
+`uv.lock`, `.github/` and `tests/acquisition/`. The target policy being byte-identical is the
+evidence that the credential repair added no second egress authority.
+
 ### Every commit green
 
 | Commit | Content | Verified | Result |
@@ -251,6 +325,7 @@ default interpreter: an earlier run labelled 3.14 was in fact 3.13.3 and was dis
 | `d3ea846` | neutrality, contract, adapter fixes | main tree before commit | `2744 passed, 1 skipped` |
 | `840b99f` | test-strength gaps | isolated worktree, own venv, Python 3.13.3 | `2754 passed, 1 skipped`, ruff check and format clean |
 | `09b716a` | robustness bounds | main tree before commit | `2768 passed, 1 skipped`, ruff clean |
+| `fd3ad8a` | the two R4M repairs | main tree before commit, Python 3.13.3; 3.14.6 in an isolated worktree | `2787 passed, 1 skipped` on both interpreters; ruff check, format and `uv lock --check` rc 0 |
 
 ### Defects the work found in itself, each observed RED before GREEN
 
@@ -280,7 +355,7 @@ policy, `sem` = semantics, `dig` = digests, `cls` = classifier, `cli` = CLI and 
 | 4 | bootstrap failure: no fake inventory or manifest | `app::test_a_failed_bootstrap_produces_no_inventory_and_no_manifest` (6 cases), `app::test_a_report_naming_a_bootstrap_failure_is_a_failure_even_when_it_names_an_origin`, `app::test_a_provider_that_raises_ends_the_run_as_our_runtime_error` | M16, M58 |
 | 5 | private target refusal | `adp::test_the_shipped_policy_refuses_every_non_public_bootstrap_target` (`10.0.0.8`; names resolving to `10.0.0.5` and to public plus `192.168.1.1`), `adp::test_every_discovery_fetch_reruns_the_address_policy_so_a_rebound_name_is_refused` | M08 |
 | 6 | loopback, link-local and metadata refusal | the same test: `127.0.0.1`, `[::1]`, `[::ffff:127.0.0.1]`, `169.254.169.254`, a name resolving to `169.254.169.254`; `cli::test_the_production_wiring_is_strict_and_refuses_loopback_before_any_connection` | M08 |
-| 7 | credential/userinfo rejection | `idn::test_a_form_without_an_identity_is_refused_with_its_reason`, `idn::test_a_credential_bearing_form_is_never_persistable`, `adp::test_a_credential_bearing_target_is_refused_before_any_lookup`, `adp::test_a_backslash_href_a_browser_reads_as_another_host_is_never_admitted`, `app::test_a_credential_bearing_observation_is_never_persisted_or_digested`, `cli::test_a_credential_bearing_target_is_refused_without_being_echoed` | M03, M04, M17, M59 |
+| 7 | credential/userinfo rejection | `idn::test_a_form_without_an_identity_is_refused_with_its_reason`, `idn::test_a_credential_bearing_form_is_never_persistable`, `adp::test_a_credential_bearing_target_is_refused_before_any_lookup`, `adp::test_a_backslash_href_a_browser_reads_as_another_host_is_never_admitted`, `app::test_a_credential_bearing_observation_is_never_persisted_or_digested`, `cli::test_a_credential_bearing_target_is_refused_without_being_echoed`; and from `fd3ad8a` the application boundary itself: `app::test_a_credential_bearing_target_never_reaches_an_envelope_or_the_port`, `app::test_no_written_form_of_userinfo_survives_into_anything_this_run_emits` (5 forms), `app::test_the_production_composition_refuses_a_credential_without_resolving_anything` and its non-vacuity canary, `app::test_the_boundary_predicate_answers_only_about_credentials` | M03, M04, M17, M59, MR03, MR04, MR05 |
 | 8 | redirect attempting to leave the allowed origin | all of `scp`, `adp::test_a_robots_redirect_leaving_the_origin_is_refused_before_any_lookup`, `adp::test_once_established_the_origin_is_never_left_even_for_the_original_host`, `adp::test_a_sitemap_redirected_out_of_the_origin_stays_visible_beside_one_that_was_read` | M01, M02, M05, M07, M55 |
 | 9 | duplicate observations aggregate provenance | `dom::test_two_forms_of_one_page_become_one_candidate_with_aggregated_provenance`, `dom::test_duplication_is_neither_an_exclusion_nor_a_second_candidate`, `adp::test_a_repeated_sitemap_entry_costs_nothing_against_the_entry_budget` | M34, M36, M54 |
 | 10 | duplicate semantic identities fail closed at producer validation | `sem::test_the_semantic_gate_alone_refuses_a_document_every_producer_rule_accepts`, `sem::test_the_producer_refuses_every_19a_counterexample_with_its_recorded_violations`, `app::test_a_duplicated_source_identity_fails_closed_before_any_document_is_emitted`, `app::test_an_ambiguous_manifest_is_withheld_through_the_production_path`, `dig::test_an_ambiguous_document_receives_no_digest` | M12, M15 |
@@ -302,7 +377,7 @@ policy, `sem` = semantics, `dig` = digests, `cls` = classifier, `cli` = CLI and 
 | 26 | budget-exhausted cause requires a declared budget | `sem::test_a_manifest_counterexample_fires_exactly_its_rule[budget_cause_declares_its_budget]`, `app::test_a_budget_bounded_census_names_its_cause_and_its_budget` | M31 |
 | 27 | no technical failure creates score, polarity, severity or site-quality output | `app::test_no_technical_source_state_produces_a_verdict_of_any_kind` (9 outcomes), `app::test_no_failed_run_produces_a_verdict_of_any_kind`, its canary `app::test_the_verdict_scan_finds_a_planted_verdict` | structural: both contracts are closed objects with no such member |
 | 28 | producer never emits `STRATIFIED_SAMPLE` | `pol::test_no_population_size_switches_the_method` (12 cases), `pol::test_no_production_module_can_name_a_sampling_mode_but_census`, `app::test_a_plan_the_producer_may_not_emit_is_withheld_and_the_inventory_kept` | M13, M14 |
-| 29 | no invented numeric sampling threshold | `pol::test_the_policy_module_carries_no_number_that_could_be_a_threshold` and its canary; 19.A `test_no_sampling_vocabulary_encodes_a_census_threshold` still passes | the canary plants `500` and is caught |
+| 29 | no invented numeric sampling threshold | `pol::test_the_policy_module_carries_no_number_that_could_be_a_threshold` and its canary; 19.A `test_no_sampling_vocabulary_encodes_a_census_threshold` still passes; and from `fd3ad8a`, no invented *selection* ceiling either: `cli::test_the_production_default_selects_a_full_census_and_declares_no_page_ceiling` asserts the composition builds `SelectionBudgets` with zero arguments and that no `DiscoveryLimits` field names a selection bound, with `cli::test_the_selection_budget_scan_sees_a_planted_ceiling` as its canary | the canary plants `500` and is caught; the ceiling canary plants `SelectionBudgets(25)`; MR01, MR02 |
 | 30 | controlled Real-Boundary-Smoke | `tests/smoke/test_real_boundary_smoke.py` (opt-in) and the recorded runs in section D | — |
 
 ### Counter-mutation
@@ -323,6 +398,18 @@ proves the driver does not report every run as a kill.
 | post-budget stop | `ff510a5` | main tree | M24, M42 killed; canary survived |
 | after the review fixes | `d3ea846` | isolated worktree, own venv | 62 killed, canary survived: 63 of 63 as expected |
 | **final** | `09b716a` | isolated worktree, own venv, `20:36:23Z` to `20:43:02Z`, Python 3.13.3 | **73 killed, canary survived: 74 of 74 as expected**; every mutation applied and restored; tree clean and equal to the candidate afterwards |
+
+| **R4M repairs** | `fd3ad8a` | main tree, clean before and after | **5 killed of 5, null canary survived**; every mutation verified on disk before the run and every restore verified byte for byte |
+
+The five mutations of the repair run, each breaking one repaired guard:
+
+- `MR01` puts `SelectionBudgets(max_selected_pages=25)` back into the composition root — 2 failed;
+- `MR02` gives `DiscoveryLimits` a `max_selected_pages` field again — 1 failed;
+- `MR03` deletes the credential guard from `DiscoverSite.run()` — 7 failed;
+- `MR04` blinds the boundary predicate so it never sees a credential — 8 failed;
+- `MR05` emits the withheld `analysis_run_request` anyway — 7 failed;
+- `MR06` is the null canary, a comment only, and **survived** at `101 passed`, which is what
+  proves the driver is not reporting every run as a kill.
 
 The 73 mutations of the final run, by the guard they break:
 
@@ -388,10 +475,21 @@ commit `22f10cf` (the Domain and its tests), which alone measures **137026**, un
 convention. The brief allows exactly one 19.B PR, so the slice was not split: whether to review it
 as one PR or along that split point is a Product Owner decision.
 
+At the repaired candidate `fd3ad8a` the same measurement is **340448** bytes
+(`git diff --no-ext-diff --unified=0 468ce6f fd3ad8a -- src/ tests/ | wc -c`), **2.43** times the
+convention. The Product Owner decision for this repair was explicitly *not to split PR #16*, so
+the figure is reported rather than acted on.
+
 ## D. Real-Boundary-Smoke
 
 **Candidate:** `09b716a680c536bf9cc8bf3e291650eb090b2865`, working tree clean before and after,
 Python 3.13.3, run on 2026-09-11 from the operator's machine. **VERIFIED.**
+
+> This is the **pre-repair** run. It records what that candidate really did, including the
+> 25-page default this slice has since removed, and it is kept for that reason. Its *manifest*
+> figures are superseded by the rerun on `fd3ad8a` at the end of this section; its inventory
+> figures are not, and the two runs agreeing on every inventory digest is itself evidence that
+> the repair changed selection and nothing upstream of it.
 
 **Commands:** `uv run python -m pxapi.adapters.inbound.discover_cli <target>` for each target, the
 opt-in test `PXAPI_REAL_BOUNDARY_SMOKE_URL=<target> uv run pytest tests/smoke/test_real_boundary_smoke.py`,
@@ -452,6 +550,78 @@ arbitrary internet crawling, production scale, complete site coverage, browser r
 multi-page acquisition, scoring quality or customer uplift, and a public site can change between
 two runs.
 
+### Rerun on the repaired candidate `fd3ad8a`
+
+**Candidate:** `fd3ad8a740d93d57c240b90dd266a77ea57166af`, working tree clean before and after
+(`git status --porcelain` empty, printed by the driver), Python 3.13.3, run on 2026-09-11 from
+the operator's machine, shipped `PublicTargetPolicy`, real DNS, real sockets. **VERIFIED.**
+
+**Commands:** `uv run python -m pxapi.adapters.inbound.discover_cli <target>` for each target, the
+opt-in test `PXAPI_REAL_BOUNDARY_SMOKE_URL=<target> uv run pytest -q tests/smoke/test_real_boundary_smoke.py`,
+and a second, instrumented run in which only `SafePageFetcher.fetch` is wrapped — the policy, the
+scope and the deadline cap stay exactly as shipped, so the log adds nothing but a request record.
+
+**Ceiling:** `DiscoveryLimits(max_requests=8, max_sitemap_documents=5, max_sitemap_entries=500,
+max_page_links=200, max_links_examined=2000, max_label_length=120, total_deadline_seconds=60.0)` —
+there is no longer a `max_selected_pages` member — with every fetch under
+`FetchLimits(max_redirects=3, connect_timeout_seconds=5.0, read_timeout_seconds=10.0,
+total_deadline_seconds=20.0, max_response_bytes=2097152)`, capped by what remains of the run's
+deadline and enforced by the watchdog. **No selection budget was declared.**
+
+| | `https://www.rfc-editor.org/` | `https://example.com/` |
+| --- | --- | --- |
+| started / finished (UTC) | `22:15:58Z` / `22:16:01Z`, CLI rc 0, wall `3.36 s` | `22:16:03Z` / `22:16:04Z`, CLI rc 0, wall `1.12 s` |
+| run state | `SUCCEEDED`, both stages `SUCCEEDED` | `SUCCEEDED`, both stages `SUCCEEDED` |
+| `target_origin` | `https://www.rfc-editor.org/` | `https://example.com/` |
+| sources | `CANONICAL_SEED USED 1`, `ROBOTS_DECLARATION USED 0`, `SAME_ORIGIN_PAGE_LINKS USED 19`, `SITEMAP BUDGET_EXHAUSTED 500` | `CANONICAL_SEED USED 1`, `ROBOTS_DECLARATION ABSENT 0`, `SAME_ORIGIN_PAGE_LINKS USED 0`, `SITEMAP ABSENT 0` |
+| candidates discovered / eligible | 506 / 506 | 1 / 1 |
+| **selected** | **506** (was 25 on `09b716a`) | 1 |
+| `mode` | `CENSUS` | `CENSUS` |
+| `selection_complete` | **`true`** (was `false`) | `true` |
+| `budgets` member | **absent** (was `{max_selected_pages: 25}`) | **absent** (was `{max_selected_pages: 25}`) |
+| `incompleteness` | absent (was `SELECTION_BUDGET_EXHAUSTED`) | absent |
+| `exclusions` | `[]` (was `SELECTION_BUDGET_EXHAUSTED 481`) | `[]` |
+| strata of the selection | `HOMEPAGE 1`, `CONTACT 1`, `ABOUT 2`, `KNOWLEDGE 2`, `UNCLASSIFIED 500` | `HOMEPAGE 1` |
+| inventory `input_digest` | `sha256:b7c56b38069a4d98296baca64d94d7cc32784651df8b08aa6c11b3cef75ff98a` — **unchanged** | `sha256:a0863851775c24d26a254897d11b41c42aba36096edb9bc7804015ee0d037b8d` — **unchanged** |
+| inventory `output_digest` | `sha256:d3b74162e4d60ab0982981c854ae7f2c335096ddbd99ce021f27f864850d25ff` — **unchanged** | `sha256:9e916d8a7d658cea6f783067ecd3729e41b4bee7838b4bca929092be252dbdb8` — **unchanged** |
+| manifest `input_digest` | `sha256:c5b5e6866db4ef05f8faa17d011985afd2c505de268abc15949ef7bd5db250d3` (was `1785628c…`) | `sha256:325630281ce2cab89877ded1e99d811ac161b2bd7ba60e5572ff91f6685dc281` (was `f788f023…`) |
+| manifest `output_digest` | `sha256:44cba5cc4f0b05169ce6e5920a329e07713a10851525fe197b165c182cd89cfb` (was `34b83d98…`) | `sha256:1d1e126cd160b5ef1386b21ee60f824fe1f382703c59de934142a65f2fdaf480` — **unchanged** |
+| identities | run `px-e476a9c30ae540689998cfece0bf5bba`, inventory `px-74e1ca319add4985829b131054bba7f7`, manifest `px-d51f7c6c85eb4c11917d10b915ecf09b` | run `px-6f6aa954378c4b488f101625bac73872`, inventory `px-7b080269f0854040b60b291310de8a3f`, manifest `px-27d6d5c3538d4b5fad92cbfc08380848` |
+| requests / runtime (instrumented) | 4 requests in `1.71 s` against a ceiling of 8 | 3 requests in `0.76 s` against a ceiling of 8 |
+| opt-in pytest smoke | `1 passed` | `1 passed` |
+
+**Request log** (rfc-editor.org): the bootstrap `GET /` (unscoped, 182314 bytes, 0.30 s), then,
+all scoped to the origin, `/robots.txt` (135 bytes), `/sitemap.xml` (259 bytes, a sitemap index)
+and `/sitemap-1.xml` (701403 bytes). No redirect and no truncation. The digests of the plain CLI
+run and of the instrumented run are identical, for both targets.
+
+**What the digests prove.** Every **inventory** digest is byte-identical to the pre-repair run on
+`09b716a`, so the repair changed selection and nothing upstream of it. The rfc-editor.org manifest
+digests both moved, which is correct: `input_digest` binds the declared budgets, and there are now
+none; `output_digest` binds the selection, and it grew from 25 to 506. The example.com manifest
+`output_digest` is **unchanged** while its `input_digest` moved — the sharpest available check
+that the two digests mean what the contract says they mean, since a complete census of one page
+has identical selection semantics under either budget, and only the declared inputs differ.
+
+**The semantic consequence.** On an inventory of materially the same shape as before, the default
+planner no longer stops at 25. It stopped at 25 only because 25 was the old default; it now covers
+the population discovery was allowed to find.
+
+**Two truths kept separate.** The same rfc-editor.org run reports `SITEMAP BUDGET_EXHAUSTED` with
+500 admitted — discovery reached one of *its* bounds — while the selection over the resulting
+inventory is complete with no budget declared. Discovery incompleteness lives in the inventory's
+source outcomes; selection completeness lives in the manifest. The smoke test asserts both on
+every run.
+
+**Evidence ceiling.** This proves the tested boundary only: two public origins were established
+safely, discovered within their bounds, reduced to valid inventories and planned as valid complete
+censuses by the committed code. It does not prove arbitrary internet crawling, production scale,
+complete site coverage, browser rendering, PXAPI-20 acquisition, scoring quality or customer
+uplift. 500 of the 506 rfc-editor.org candidates are RFC documents outside the classifier's SME
+vocabulary and are counted `UNCLASSIFIED`, which is a neutral statement about this classifier.
+A public website can change between two runs, so the candidate count is recorded and deliberately
+not asserted by any test.
+
 ## E. Scope: explicitly not built
 
 Crawl4AI, Playwright or any browser, Selenium, `RenderedPagePort`, JavaScript execution, PXAPI-20
@@ -480,7 +650,10 @@ Each is a choice the brief left open, recorded so that a reviewer can see it and
    The label never reaches the document but can change a classification, and a label-free record
    keeps the 19.A shape, so every registered digest still reproduces.
 7. **The provider reports the seed**; the Domain never synthesises one.
-8. **Only `max_selected_pages` is declared**; `max_candidates_considered` stays unused vocabulary.
+8. **No selection budget is declared by default** (`fd3ad8a`). A caller may declare
+   `max_selected_pages`, and a declared budget travels in the manifest planned under it;
+   `max_candidates_considered` stays unused vocabulary. Until `fd3ad8a` the composition declared
+   `max_selected_pages = 25` by default, which is finding `F-PXAPI19B-R4M-001`.
 9. **`selection_complete` is about the selection only**, as its schema text says; discovery that
    hit a bound is recorded in the inventory's source outcomes, so `SAFETY_LIMIT_REACHED` and
    `RUNTIME_LIMIT_REACHED` have no trigger in 19.B.
@@ -503,20 +676,34 @@ Each is a choice the brief left open, recorded so that a reviewer can see it and
 ## G. Remaining truth
 
 **VERIFIED by the author:** everything in sections A, B, C (except where marked) and D, each with
-the command shown.
+the command shown. That includes both R4M repairs: each finding was re-derived by running the
+shipped code on `18a4aa3` and reading what it actually produced, each repair is proved by tests
+that were observed to go red under counter-mutation, and each was re-measured across the real
+boundary on `fd3ad8a`.
 
-**AGENT_REPORTED:** the adversarial reviewers' and skeptics' findings and verdicts. Every finding
-that led to a change was re-derived by a RED-first test written and run by the author; the
-dispositions are in section C.
+**AGENT_REPORTED:** the adversarial reviewers' and skeptics' findings and verdicts from the
+`8f61abd` review round. Every finding that led to a change was re-derived by a RED-first test
+written and run by the author; the dispositions are in section C. The two R4M findings repaired
+in `fd3ad8a` are deliberately **not** carried as AGENT_REPORTED: both were re-measured here, on
+this tree, before anything was changed, and those measurements are quoted in section C.
 
-**MISSING:** an independent `R4M`; the Jira and Confluence closeout (read-only in this slice); the
-census-to-sampling threshold (`C-PXAPI-005`), which keeps `STRATIFIED_SAMPLE` a vocabulary and not
-a capability.
+**MISSING:** an independent `R4M`, which this document does not declare and which remains
+Orchestrator/Human authority; the Jira and Confluence closeout (read-only in this slice); the
+census-to-sampling threshold (`C-PXAPI-005`), which keeps `STRATIFIED_SAMPLE` a vocabulary rather
+than a capability — and which is precisely why no page ceiling was invented to replace the one
+that was removed.
 
 **Unresolved and carried:**
-- The reviewability figure is 2.27 times the convention (section C).
-- A budgeted census selects a lexicographic prefix; representative selection needs the missing
-  threshold decision.
+- The reviewability figure is 2.27 times the convention at `09b716a` and **2.43** at the repaired
+  candidate `fd3ad8a` (section C). The Product Owner decision for this repair was not to split
+  PR #16, so the figure is reported and not acted on.
+- **The default census now scales with the site.** Removing the ceiling is what the finding
+  required, and the consequence is that a run selects every eligible candidate discovery found —
+  506 on rfc-editor.org where the old default took 25. Nothing in this slice fetches a selected
+  page, so the cost today is bounded by discovery, not by selection; the figure is the one to
+  watch when PXAPI-20 acquisition is authorised and each selection becomes work.
+- A census bounded by an **explicitly declared** budget selects a lexicographic prefix, which is
+  neutral but not representative; representative selection needs the missing threshold decision.
 - An `HTTP/1.1 103 Early Hints` interim response is treated as final by the pre-existing fetcher;
   the resulting state is a neutral `PROVIDER_FAILURE`. Deferred.
 - The pre-existing homepage parser (`html_observations.read_html`, PXK-67) still calls

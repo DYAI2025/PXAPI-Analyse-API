@@ -16,6 +16,15 @@ certificate against the *hostname*, which is why the socket is wrapped explicitl
 **Nothing is unbounded.** Connect, read and a deadline spanning the whole redirect chain all
 have limits, and the body is read to a byte bound rather than into memory in full.
 
+**A scope can narrow where a fetch may go, and nothing can widen it.** A caller that has been
+authorised for one origin — site discovery, which may never leave the origin its bootstrap
+established — passes a ``scope``. It is consulted on every hop *before* the policy and before
+any socket, so a redirect out of the authorised origin is refused without the foreign host ever
+being resolved, let alone connected to. The scope is an authorisation boundary and deliberately
+not a second safety model: it can only refuse, every URL it admits is still classified by
+``PublicTargetPolicy`` exactly as before, and a fetcher built without one behaves exactly as it
+always has.
+
 A failure returns a value, never an exception, and that value carries a category and nothing
 else: no message, no address, no exception text. A provider's free text cannot reach a
 normalised record through this module.
@@ -89,10 +98,13 @@ class SafePageFetcher:
         policy: PublicTargetPolicy | None = None,
         limits: FetchLimits = DEFAULT_FETCH_LIMITS,
         clock: Callable[[], float] = time.monotonic,
+        scope: Callable[[str], bool] | None = None,
     ) -> None:
         self.policy = policy or PublicTargetPolicy()
         self.limits = limits
         self.clock = clock
+        #: Which URLs this fetcher is authorised to reach at all, or ``None`` for no narrowing.
+        self.scope = scope
 
     def fetch(self, url: str) -> PageFetchResult:
         deadline = self.clock() + self.limits.total_deadline_seconds
@@ -100,6 +112,11 @@ class SafePageFetcher:
         redirects = 0
 
         while True:
+            # The scope first: it is decidable from the URL alone, so a hop out of the
+            # authorised origin is refused before its host is resolved or connected to.
+            if self.scope is not None and not self.scope(current):
+                return PageFetchFailure(FetchFailureKind.BLOCKED_TARGET)
+
             # Re-entering the loop re-validates AND re-resolves: a redirect target gets the
             # same scrutiny as the original URL, never a weaker one.
             try:

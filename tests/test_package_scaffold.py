@@ -43,6 +43,10 @@ BEHAVIOR_ALLOWED: dict[str, str] = {
     "domain/acquisition_semantics.py": "PXAPI-19.B",
     "domain/acquisition_digests.py": "PXAPI-19.B",
     "domain/sampling_policy.py": "PXAPI-19.B",
+    "ports/site_discovery.py": "PXAPI-19.B",
+    "adapters/web/html_links.py": "PXAPI-19.B",
+    "adapters/web/site_discovery.py": "PXAPI-19.B",
+    "config/discovery_limits.py": "PXAPI-19.B",
 }
 
 SOURCE_FILES = sorted(SRC.rglob("*.py"))

@@ -434,6 +434,37 @@ def test_the_later_occurrence_is_reported_rather_than_the_first() -> None:
     assert pointers == ["/sources/2"], pointers
 
 
+@pytest.mark.parametrize("rank", [None, "1", 1.5, True], ids=repr)
+def test_a_rank_that_is_not_a_whole_number_does_not_crash_the_checker(rank: Any) -> None:
+    """The layer must fail closed, and a checker that raises ``TypeError`` reports nothing at all.
+
+    ``sorted`` raises on a list mixing ``None`` with integers, so a hand-written document carrying
+    ``"selection_rank": null`` — exactly the case the ``_ABSENT`` sentinel's own comment says it
+    exists for — used to kill ``violations_of`` and ``require_unambiguous`` instead of returning.
+    A rank of the wrong type is a structural defect the schema layer already reports; density is
+    undefined over it, so this layer stays silent about density rather than exploding.
+    """
+    document = load_json(FIXTURES_DIR / SAMPLING_MANIFEST / "gapped-selection-rank.json")
+    document["selections"][0] = dict(document["selections"][0], selection_rank=rank)
+    found = violations_of(SAMPLING_MANIFEST, document)  # must not raise
+    assert all(v.rule != "dense_selection_rank" for v in found), [v.key for v in found]
+    assert CONTRACTS.validate(SAMPLING_MANIFEST, document) != (), (
+        "canary: the schema layer must be the one reporting this, or nobody is"
+    )
+
+
+def test_a_true_boolean_is_not_accepted_as_rank_one() -> None:
+    """``bool`` is an ``int`` subclass in Python, so an unguarded density check would read
+    ``[True, 2]`` as the dense sequence ``[1, 2]`` and stay silent about a document the schema
+    refuses."""
+    document = load_json(FIXTURES_DIR / SAMPLING_MANIFEST / "gapped-selection-rank.json")
+    document["selections"] = [
+        dict(document["selections"][0], selection_rank=True),
+        dict(document["selections"][1], selection_rank=2),
+    ]
+    assert all(v.rule != "dense_selection_rank" for v in violations_of(SAMPLING_MANIFEST, document))
+
+
 def test_an_ambiguity_carries_its_violations_rather_than_a_rendered_message() -> None:
     document = load_json(FIXTURES_DIR / SAMPLING_MANIFEST / "gapped-selection-rank.json")
     with pytest.raises(SemanticAmbiguity) as raised:

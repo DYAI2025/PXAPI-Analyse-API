@@ -150,19 +150,27 @@ Every command was run from the repository root on the candidate tree.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| PXAPI-19.A suite | `uv run pytest tests/acquisition -q` | `475 passed` |
-| Contract + registry scope | `uv run pytest tests/acquisition tests/contracts tests/test_closed_vocabularies.py -q` | `1149 passed` |
-| Full suite, Python 3.13 (primary) | `uv run pytest -q` | `2213 passed, 2 warnings` |
-| Full suite, Python 3.14 (the CI compat matrix leg, run locally) | `uv run --python 3.14 pytest -q` | `2213 passed, 2 warnings` |
+| PXAPI-19.A suite | `uv run pytest tests/acquisition -q` | `490 passed` |
+| Contract + registry scope | `uv run pytest tests/acquisition tests/contracts tests/test_closed_vocabularies.py -q` | `1164 passed` |
+| Full suite, Python 3.13 (primary) | `uv run pytest -q` | `2228 passed, 2 warnings` |
+| Full suite, Python 3.14 (the CI compat matrix leg, run locally) | `uv run --python 3.14 pytest -q` | `2228 passed, 2 warnings` |
 | Lockfile | `uv lock --check` | `Resolved 29 packages`, rc `0` |
 | Lint | `uv run ruff check .` | `All checks passed!` |
 | Format | `uv run ruff format --check .` | `72 files already formatted` |
 
-**Warnings and skips are not hidden.** The two warnings are the pre-existing
-`anyio.abc.BlockingPortal` deprecation raised twice from `starlette/testclient.py:53`; they exist
-on `origin/main` and are unrelated to this slice. There are **zero skipped, xfailed or xpassed
-tests**. The baseline at `origin/main` was `1603 passed`; this slice now adds `610` tests, of
-which `152` are the repair (`2061 → 2213`).
+**Warnings and skips are not hidden.** The two warnings are **two different deprecations**, not
+one raised twice — the earlier version of this document said the latter, and that was wrong:
+
+```text
+.venv/…/fastapi/testclient.py:1      StarletteDeprecationWarning: Using `httpx` with
+                                     `starlette.testclient` is deprecated; install `httpx2`
+.venv/…/starlette/testclient.py:53   DeprecationWarning: The anyio.abc.BlockingPortal alias is
+                                     deprecated, use anyio.from_thread.BlockingPortal instead
+```
+
+Both are third-party, both appear identically on `origin/main`, and neither is related to this
+slice. There are **zero skipped, xfailed or xpassed tests**. The baseline at `origin/main` was
+`1603 passed`; this slice now adds `625` tests, of which `167` are the repair (`2061 → 2228`).
 
 ### The repair was observed making the old shape fail
 

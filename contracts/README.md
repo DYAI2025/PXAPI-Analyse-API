@@ -246,9 +246,14 @@ that exact URI, so adding a definition there would either leave the version lyin
 file's content or break every existing reference. It holds the lexical URL and digest shapes of
 the acquisition slice: `public_url`, `public_origin`, `url_key` and `digest`.
 
-`public_url` differs from `common#/$defs/url` in exactly one respect. Its authority segment
-excludes `@`, so a credential-bearing URL such as `https://user:secret@example.com/` **cannot
-become persisted canonical contract data**. Every URL-valued member of both contracts resolves
+`public_url` differs from `common#/$defs/url` in one respect that carries meaning. Its authority
+segment excludes `@`, so a credential-bearing URL such as `https://user:secret@example.com/`
+**cannot become persisted canonical contract data**. (It also differs in two bounds, as a
+consequence of splitting the value: authority ≤ 253 and remainder ≤ 1790, where `common` bounds
+one undifferentiated run at 2040. That split is what keeps matching from going super-linear on a
+hostile value; it means a credential-free URL with a host over 253 characters, or over 1790
+characters after the authority, is refused here and accepted by `common`.) Every URL-valued member
+of both contracts resolves
 to this shape, to `public_origin` or to `url_key`, both of which are built on it; a test asserts
 that neither contract references the userinfo-permitting shape at all, so a member somebody
 forgets cannot become the way userinfo is persisted. `digest` carries its algorithm in the value
@@ -256,9 +261,14 @@ forgets cannot become the way userinfo is persisted. `digest` carries its algori
 about how its digest was produced, and a later algorithm is a new contract version rather than a
 longer string.
 
-`public_origin` is `public_url` **narrowed to an origin**: scheme, authority (legal port form
-included) and at most the normalised root slash. A path beyond the root, a query and a fragment
-are each refused. `site-inventory.target_origin` uses it, because that member is the canonical
+`public_origin` is `public_url` **narrowed to an origin**: scheme, authority (legal port form and
+bracketed IPv6 literal included) and at most the normalised root slash. A path beyond the root, a
+query and a fragment are each refused — and so is a **backslash**, which the WHATWG URL standard
+treats as a path separator for `http` and `https` exactly like `/`. Excluding only the obvious
+three would accept `https://example.com\leistungen`, which every browser, `fetch` and `new URL`
+reads as origin `https://example.com` with path `/leistungen`: a page smuggled into the member
+that names the site. The excluded set is therefore the full WHATWG authority-terminator set plus
+`@`. `site-inventory.target_origin` uses it, because that member is the canonical
 site authority and the seed identity — a member every consumer reads as "the site" must not be
 able to hold one page of the site. It is referenced by the inventory alone today and still lives
 in the shared file, because it narrows the very authority segment `public_url` declares beside

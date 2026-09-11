@@ -25,6 +25,7 @@ validity, the vocabulary pins — it is not restated here.
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 import pytest
@@ -927,12 +928,50 @@ def test_an_unclassified_selection_cannot_be_given_a_verdict(verdict: tuple[str,
 
 def test_the_unclassified_token_carries_no_rule_that_ranks_it_below_another_stratum() -> None:
     """Neutrality is structural rather than promised: no member of the contract keys on the
-    token, so nothing in the schema can treat it differently from any other stratum."""
-    schema = json_text(MANIFEST)
-    assert schema.count(UNCLASSIFIED) == 1, (
-        "UNCLASSIFIED must appear once, in the stratum description that names it, and never in "
-        "an enum, a const or a conditional that would give it a rule of its own"
+    token, so nothing in the schema can treat it differently from any other stratum.
+
+    Counting the occurrences is **not** enough, and an earlier version of this test did only that.
+    A count cannot say *where* the one occurrence sits, so a schema that dropped the prose mention
+    and put the token in a ``const`` inside a conditional — giving it exactly the rule this test
+    is named for — still had a count of one and still passed. The check is therefore on the
+    *location*: the token may appear only inside the stratum member's own description, and the
+    parsed schema must contain it nowhere else.
+    """
+    stratum = schema_of(MANIFEST)["properties"]["selections"]["items"]["properties"]["stratum"]
+    assert UNCLASSIFIED in stratum["description"], (
+        "the stratum description must name the neutral token, so 'could not place' has one "
+        "agreed spelling"
     )
+    occurrences = json_text(MANIFEST).count(UNCLASSIFIED)
+    assert occurrences == 1, (
+        f"UNCLASSIFIED appears {occurrences} times; it may appear only in the stratum description "
+        "that names it, and never in an enum, a const or a conditional that would give it a rule"
+    )
+    #: The count above pins "once"; this pins "and that once is the description". Blanking the
+    #: description and re-serialising leaves a document in which any *other* occurrence — an enum
+    #: member, a const, a conditional — is still visible.
+    without_description = dict(stratum, description="")
+    residue = json.dumps(
+        dict(
+            schema_of(MANIFEST),
+            properties=dict(
+                schema_of(MANIFEST)["properties"],
+                selections=_selections_with_stratum(without_description),
+            ),
+        )
+    )
+    assert UNCLASSIFIED not in residue, (
+        "UNCLASSIFIED occurs somewhere other than the stratum description: it has a rule of its own"
+    )
+
+
+def _selections_with_stratum(stratum: dict[str, Any]) -> dict[str, Any]:
+    """The ``selections`` member with its ``stratum`` schema replaced, for the residue check."""
+    selections = schema_of(MANIFEST)["properties"]["selections"]
+    items = dict(
+        selections["items"], properties=dict(selections["items"]["properties"], stratum=stratum)
+    )
+    return dict(selections, items=items)
 
 
 def test_requiring_the_stratum_did_not_close_the_stratum_taxonomy() -> None:
@@ -999,6 +1038,14 @@ def test_a_root_public_origin_is_accepted(value: str) -> None:
         "https://example.org#top",
         "ftp://example.org/",
         "example.org",
+        # The WHATWG URL standard treats a backslash as a path separator for http and https, so
+        # every one of these is read by a browser, by fetch and by new URL as the origin
+        # https://example.org carrying a path. Excluding only '/', '?' and '#' would let a page
+        # be smuggled into the member that names the site.
+        "https://example.org\\leistungen",
+        "https://example.org\\",
+        "https://example.org\\a\\b",
+        "https://example.org/\\leistungen",
     ],
 )
 def test_a_target_origin_that_is_not_a_bare_origin_is_refused(value: str) -> None:
@@ -1022,6 +1069,44 @@ def test_the_origin_shape_refuses_a_credential_exactly_as_the_page_shape_does() 
     )
     assert ("/target_origin", "pattern") in _keys(
         INVENTORY, inventory(target_origin="https://@example.org/")
+    )
+
+
+#: Every code point that ends the authority of a special-scheme URL under the WHATWG URL
+#: standard, plus the '@' that would open a userinfo. The origin shape must exclude all five: a
+#: pattern that excluded only the three obvious ones would accept a value a real parser reads as
+#: a page. Stated as data so a terminator added to the standard is a one-line change here and a
+#: red test rather than a silent hole.
+WHATWG_AUTHORITY_TERMINATORS = ("/", "\\", "?", "#", "@")
+
+
+@pytest.mark.parametrize("terminator", WHATWG_AUTHORITY_TERMINATORS, ids=repr)
+def test_the_origin_authority_excludes_every_whatwg_terminator(terminator: str) -> None:
+    """Checked against the declared pattern itself, not only against sample values, so a
+    terminator dropped from the character class is caught even if nobody wrote its example."""
+    pattern = load_json(CONTRACTS.schema_path(SHARED))["$defs"]["public_origin"]["pattern"]
+    authority_class = pattern.split("[^", 1)[1].split("]", 1)[0]
+    encoded = f"\\u{ord(terminator):04X}"
+    assert terminator in authority_class or encoded in authority_class.upper(), (
+        f"the origin authority class admits {terminator!r}, which ends the authority under the "
+        "WHATWG URL standard — a value carrying it is read as a page, not an origin"
+    )
+
+
+def test_a_backslash_cannot_smuggle_a_path_into_the_origin() -> None:
+    """The concrete exploit, kept as its own named proof rather than only as a matrix row.
+
+    ``https://example.org\\leistungen`` parses as origin ``https://example.org`` with pathname
+    ``/leistungen``. If the origin shape accepted it, every guarantee that `target_origin` names a
+    site rather than a page would hold only for readers that do not follow the URL standard.
+    """
+    smuggled = "https://example.org\\leistungen"
+    assert ("/target_origin", "pattern") in _keys(INVENTORY, inventory(target_origin=smuggled))
+    # The page-shaped members deliberately still accept it: a backslash form is a URL a discovery
+    # runtime can legitimately observe, and making an observable form unrepresentable would be a
+    # worse defect than the one being closed.
+    assert _valid(
+        INVENTORY, inventory(candidates=[candidate(url_key=smuggled, observed_forms=[smuggled])])
     )
 
 

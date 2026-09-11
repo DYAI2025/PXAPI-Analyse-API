@@ -184,7 +184,17 @@ def _dense_ranks(document: dict[str, Any]) -> list[SemanticViolation]:
     selections = document.get("selections")
     if not isinstance(selections, list) or not selections:
         return []
-    ranks = [value for value in _keys_at(selections, "selection_rank") if value is not _ABSENT]
+    #: A rank that is absent, null or not a whole number is a *structural* defect the schema layer
+    #: already reports, and density is undefined over it. Filtering on the type rather than only on
+    #: the sentinel matters: ``sorted`` raises ``TypeError`` on a list mixing ``None`` with
+    #: integers, and a checker that crashes reports nothing at all — the opposite of failing
+    #: closed. ``bool`` is excluded because it is an ``int`` subclass in Python and ``True`` would
+    #: otherwise pass for rank 1.
+    ranks = [
+        value
+        for value in _keys_at(selections, "selection_rank")
+        if isinstance(value, int) and not isinstance(value, bool)
+    ]
     if len(ranks) != len(selections):
         return []
     if sorted(ranks) == list(range(1, len(ranks) + 1)):

@@ -161,11 +161,12 @@ INCOMPLETENESS_CAUSES: list[str] = [
 INCOMPLETE_SELECTION_VALUE = False
 
 #: The one cause that drags a further requirement with it: a declared budget said to be exhausted
-#: must be a budget the manifest actually declares. Derived by membership rather than restated,
-#: so the token the conditional keys on cannot drift out of the vocabulary above it.
-BUDGET_INCOMPLETENESS_CAUSE = next(
-    cause for cause in INCOMPLETENESS_CAUSES if cause == "SELECTION_BUDGET_EXHAUSTED"
-)
+#: must be a budget the manifest actually declares. It is a **literal**, exactly as
+#: ``VALUED_RESULT_STATE`` below is, and deliberately not derived from the vocabulary above: a
+#: value selected out of that list is a member of it by construction, so the companion membership
+#: canary would be true no matter what either declaration said, and a token dropped from the
+#: vocabulary would raise at import time instead of failing the test that exists to catch it.
+BUDGET_INCOMPLETENESS_CAUSE = "SELECTION_BUDGET_EXHAUSTED"
 
 #: The one result state that carries a value about the website. Both carriers key a conditional
 #: on it — a measurement may hold a result, and evidence may hold a polarity, only here — so it

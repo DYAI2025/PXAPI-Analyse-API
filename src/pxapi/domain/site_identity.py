@@ -399,6 +399,10 @@ def _canonicalise(value: str) -> tuple[str | None, UrlRefusal | None]:
     Exactly one of the two results is ``None``, so the key function and the refusal function
     cannot disagree about a form: they are two views of this.
     """
+    if len(value) > MAX_URL_LENGTH:
+        # No form longer than the contract's bound can ever be persisted, so none is worth the
+        # work of canonicalising: refusing it first keeps the cost of any value small and linear.
+        return None, UrlRefusal.TOO_LONG
     if any(char in _FORBIDDEN_ANYWHERE or char.isspace() for char in value):
         return None, UrlRefusal.FORBIDDEN_CHARACTER
     try:
@@ -465,7 +469,8 @@ def canonical_url_key(value: str) -> str | None:
         unless the pair carries ``;``, empty pairs are dropped, and an emptied query disappears;
         every other parameter keeps its written order;
     11. a character that may not appear raw is percent-encoded; an existing escape never is;
-    12. a key the contract's own ``public_url`` shape would refuse is refused, never truncated.
+    12. a key the contract's own ``public_url`` shape would refuse is refused, never truncated,
+        and a written form already longer than that bound is refused before any other rule runs.
     """
     return _canonicalise(value)[0]
 

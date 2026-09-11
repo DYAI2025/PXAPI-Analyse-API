@@ -37,6 +37,14 @@ __all__ = ["DocumentLink", "HtmlUnreadable", "read_links"]
 #: much text one link wraps.
 _COLLECTION_FACTOR = 4
 
+#: How much text the parser is handed at a time. The whole document is fed, in these pieces, and
+#: ``HTMLParser.close()`` is deliberately never called. On CPython releases whose parser still
+#: reprocesses an unterminated construct character by character when it is closed, that one call
+#: is quadratic: measured on 3.13.3, 128 KB of ``<a`` took 20.8 s through ``close()`` and 0.009 s
+#: without it, against 0.001 s on 3.14.6 either way. What ``close()`` would have processed is an
+#: unterminated construct at the end of the document, which cannot be a usable link.
+_FEED_CHUNK = 65536
+
 
 @dataclass(frozen=True)
 class DocumentLink:
@@ -93,8 +101,8 @@ class _LinkReader(HTMLParser):
             return
         self._open_text.append(data)
 
-    def close(self) -> None:
-        super().close()
+    def finish(self) -> None:
+        """Flush an anchor the document left open at its end."""
         self._close_open()
 
     def _close_open(self) -> None:
@@ -135,8 +143,10 @@ def read_links(
     """
     try:
         reader = _LinkReader(collect_limit=max_label_length * _COLLECTION_FACTOR)
-        reader.feed(decode_body(body, declared_charset))
-        reader.close()
+        text = decode_body(body, declared_charset)
+        for start in range(0, len(text), _FEED_CHUNK):
+            reader.feed(text[start : start + _FEED_CHUNK])
+        reader.finish()
     except Exception as error:  # any parser failure is one category to us
         raise HtmlUnreadable("the document could not be processed") from error
 

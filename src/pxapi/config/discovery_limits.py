@@ -41,13 +41,19 @@ class DiscoveryLimits:
     #: menu and a footer both link to counts once.
     max_page_links: int = 200
 
+    #: Distinct link targets examined in the seed document, same-origin or not. The page-link
+    #: budget above counts what is admitted; this counts the work of deciding, so a document of
+    #: thousands of distinct foreign links cannot make discovery canonicalise every one of them.
+    max_links_examined: int = 2000
+
     #: The longest normalised anchor label carried to the classifier. A longer one is dropped,
     #: never truncated: a truncated label is text the site did not write.
     max_label_length: int = 120
 
-    #: Seconds for the whole discovery, every fetch included. Without a deadline spanning the
-    #: run, a site answering each of several requests just inside its own timeout could still
-    #: hold one discovery for minutes.
+    #: Seconds for the whole discovery, every fetch included. Every fetch is capped by what
+    #: remains of it, and a watchdog enforces each fetch's own deadline, so a site answering each
+    #: of several requests just inside a timeout, or trickling a body, cannot hold a discovery
+    #: past it.
     total_deadline_seconds: float = 60.0
 
     #: The declared ceiling on how many pages one selection may name. It is a budget and not a

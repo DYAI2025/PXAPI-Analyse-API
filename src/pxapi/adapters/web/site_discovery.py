@@ -32,13 +32,15 @@ Standard library only; this adapter imports no third-party distribution.
 
 from __future__ import annotations
 
+import functools
 import re
 import time
 import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import NamedTuple
 from urllib.parse import urljoin
-from xml.etree.ElementTree import ParseError, XMLPullParser
+from xml.parsers import expat
 
 from pxapi.adapters.web.html_links import read_links
 from pxapi.adapters.web.html_observations import decode_body
@@ -75,11 +77,6 @@ _HTML_MEDIA_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 #: Statuses that mean a source is not served where it would be. Anything else outside 2xx is
 #: the server failing to answer, which is a component outside our runtime.
 _ABSENT_STATUSES = frozenset({404, 410})
-
-#: A document type or entity declaration anywhere in a sitemap. Neither is needed by the
-#: sitemaps.org protocol, and entity expansion is exactly the attack surface a parser of
-#: attacker-served XML must not open — so a sitemap carrying one is not parsed at all.
-_DECLARATION = re.compile(rb"<!\s*(?:doctype|entity)", re.IGNORECASE)
 
 #: The two root elements a sitemap document may have.
 _URLSET = "urlset"
@@ -202,52 +199,88 @@ def _xml_of(response: PageFetchOutcome, bound: int) -> tuple[bytes | None, bool]
     return inflated, response.truncated
 
 
-def _parse_sitemap(xml: bytes) -> tuple[str | None, list[str], bool]:
-    """``(root, locs, failed)`` for one sitemap document.
+class _Parsed(NamedTuple):
+    """What one sitemap document yielded to the parser."""
 
-    Events are drawn one at a time because ``XMLPullParser`` queues a feed-time parse error
-    *among* its events and re-raises it when iteration reaches it: every entry before the error
-    is still returned, which is what lets a document our byte bound cut short contribute what
-    was read. Whether a failed document is a cut one or a malformed one is the caller's call.
+    root: str | None
+    locs: list[str]
+    #: The document stopped being well formed, which a byte bound of ours can also cause.
+    failed: bool
+    #: The document used a construct this parser refuses outright: a document type, an entity
+    #: declaration, or nesting deeper than any sitemap needs. Never a bound of ours.
+    refused: bool
+
+
+class _Refused(Exception):
+    """Raised inside the parser's callbacks to stop at a construct this parser will not read."""
+
+
+#: The deepest nesting a sitemap document may have. A sitemap needs three levels, the root, an
+#: entry and its <loc>, so a little slack is allowed for wrappers a generator might add and no
+#: more: a deeper tree is refused before it can cost memory.
+_MAX_SITEMAP_DEPTH = 8
+
+
+def _parse_sitemap(xml: bytes) -> _Parsed:
+    """The root, the entry locations and the verdict for one sitemap document.
+
+    It streams through expat directly and keeps only the open elements' names and the text of
+    the current <loc>, so a document of any shape costs memory in proportion to its depth, which
+    is capped. Document type and entity declarations are refused *by the parser*, whatever the
+    document's encoding: a guard over raw bytes cannot see a declaration written in UTF-16, and
+    entity expansion is exactly what a parser of attacker-served XML must never perform.
     """
-    parser = XMLPullParser(events=("start", "end"))
-    # Two different ways to fail, and both count. An error met while *feeding* is queued among
-    # the events and re-raised when iteration reaches it; an error met at ``close()`` — a
-    # document that simply stops, unclosed — is raised there and queued nowhere. Treating the
-    # second as queued would read an unclosed sitemap as a complete, empty one.
-    failed = False
-    try:
-        parser.feed(xml)
-        parser.close()
-    except ParseError:
-        failed = True
-
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
     root: str | None = None
     stack: list[str] = []
     locs: list[str] = []
-    events = parser.read_events()
-    while True:
-        try:
-            event, element = next(events)
-        except StopIteration:
-            break
-        except ParseError:
-            failed = True
-            break
-        name = _local(element.tag)
-        if event == "start":
-            root = root or name
-            stack.append(name)
-            continue
-        # A <loc> counts only directly under the element its root calls for: <url> in a urlset,
-        # <sitemap> in an index. A page listed inside an index is not a sitemap to fetch.
-        if name == "loc" and len(stack) == 3 and stack[1] == _ENTRY_PARENT.get(root or ""):
-            text = (element.text or "").strip()
-            if text:
-                locs.append(text)
-        if stack:
-            stack.pop()
-    return root, locs, failed
+    text: list[str] | None = None
+
+    def refuse(*_: object) -> None:
+        raise _Refused
+
+    def start(name: str, _attributes: object) -> None:
+        nonlocal root, text
+        local = _local(name)
+        root = root or local
+        stack.append(local)
+        if len(stack) > _MAX_SITEMAP_DEPTH:
+            raise _Refused
+        if local == "loc":
+            text = []
+
+    def end(name: str) -> None:
+        nonlocal text
+        if _local(name) == "loc":
+            # A <loc> counts only directly under the element its root calls for: <url> in a
+            # urlset, <sitemap> in an index. A page listed inside an index is not a sitemap.
+            if len(stack) == 3 and stack[1] == _ENTRY_PARENT.get(root or ""):
+                value = "".join(text or ()).strip()
+                if value:
+                    locs.append(value)
+            text = None
+        stack.pop()
+
+    def characters(data: str) -> None:
+        if text is not None:
+            text.append(data)
+
+    parser.StartDoctypeDeclHandler = refuse
+    parser.EntityDeclHandler = refuse
+    parser.StartElementHandler = start
+    parser.EndElementHandler = end
+    parser.CharacterDataHandler = characters
+    try:
+        parser.Parse(xml, True)
+    except _Refused:
+        return _Parsed(root, [], True, True)
+    except (expat.ExpatError, LookupError, ValueError, UnicodeError):
+        # Not well formed, or in an encoding expat cannot read. Whether that is the document or
+        # our byte bound cutting it short is the caller's decision, so the locations read before
+        # the error travel with the verdict.
+        return _Parsed(root, locs, True, False)
+    return _Parsed(root, locs, False, False)
 
 
 class HttpSiteDiscovery:
@@ -264,17 +297,26 @@ class HttpSiteDiscovery:
         self.limits = limits
         self.fetch_limits = fetch_limits
         self.clock = clock
-        shared_policy = policy or PublicTargetPolicy()
-        self.fetcher_factory: FetcherFactory = fetcher_factory or (
-            lambda scope: SafePageFetcher(
-                policy=shared_policy, limits=fetch_limits, clock=clock, scope=scope
-            )
+        self.policy = policy or PublicTargetPolicy()
+        self.fetcher_factory = fetcher_factory
+
+    def _factory(self, budget: _Budget) -> FetcherFactory:
+        """The fetchers one run uses: each capped by what remains of that run's deadline."""
+        if self.fetcher_factory is not None:
+            return self.fetcher_factory
+        return lambda scope: SafePageFetcher(
+            policy=self.policy,
+            limits=self.fetch_limits,
+            clock=self.clock,
+            scope=scope,
+            deadline_cap=lambda: budget.deadline,
         )
 
     # --- the port ----------------------------------------------------------------------
 
     def discover(self, target_url: str) -> DiscoveryReport:
         budget = _Budget(self.limits, self.clock)
+        factory = self._factory(budget)
 
         submitted_origin = canonical_origin(target_url)
         if submitted_origin is None:
@@ -289,7 +331,7 @@ class HttpSiteDiscovery:
         # redirect from http://example.com to https://www.example.com must be followable. Each
         # hop is still re-validated and re-resolved by the policy.
         try:
-            seed = self.fetcher_factory(None).fetch(submitted_origin)
+            seed = factory(None).fetch(submitted_origin)
         except Exception:
             # The port reports outcomes, never exceptions: a defect our runtime did not
             # anticipate is our runtime's failure, and it establishes no origin.
@@ -305,7 +347,7 @@ class HttpSiteDiscovery:
             key = canonical_url_key(url)
             return key is not None and is_same_origin(key, origin)
 
-        scoped = self.fetcher_factory(in_origin)
+        scoped = factory(in_origin)
         observations = [DiscoveryObservation(origin, SourceId.CANONICAL_SEED.value)]
         attempts = [SourceAttempt(SourceId.CANONICAL_SEED.value, SourceOutcome.USED)]
 
@@ -380,12 +422,22 @@ class HttpSiteDiscovery:
         observed: list[DiscoveryObservation] = []
         forms: set[str] = set()
         seen: set[tuple[str, str | None]] = set()
+        verdicts: dict[str, bool] = {}
         exhausted = False
         for link in links:
-            observation = DiscoveryObservation(
-                link.href, SourceId.SAME_ORIGIN_PAGE_LINKS.value, link.label
-            )
-            if not in_origin(link.href) or not is_admissible(observation):
+            admissible = verdicts.get(link.href)
+            if admissible is None:
+                # Each distinct target is judged once: a menu that repeats one link a thousand
+                # times costs one canonicalisation, and the number of distinct targets examined
+                # is itself bounded, same-origin or not.
+                if len(verdicts) >= self.limits.max_links_examined:
+                    exhausted = True
+                    break
+                admissible = in_origin(link.href) and is_admissible(
+                    DiscoveryObservation(link.href, SourceId.SAME_ORIGIN_PAGE_LINKS.value)
+                )
+                verdicts[link.href] = admissible
+            if not admissible:
                 continue
             # The budget counts distinct written forms, because each is persisted: a target a
             # menu and a footer both link to costs one, never two.
@@ -396,7 +448,11 @@ class HttpSiteDiscovery:
                 forms.add(link.href)
             if (link.href, link.label) not in seen:
                 seen.add((link.href, link.label))
-                observed.append(observation)
+                observed.append(
+                    DiscoveryObservation(
+                        link.href, SourceId.SAME_ORIGIN_PAGE_LINKS.value, link.label
+                    )
+                )
 
         if exhausted or seed.truncated:
             return SourceOutcome.BUDGET_EXHAUSTED, observed
@@ -437,7 +493,9 @@ class HttpSiteDiscovery:
         declared: list[str] = []
         # The shared decoder, not ``bytes.decode``: a declared charset nobody has heard of is
         # the server's typo, and it must fall back to UTF-8 rather than raise ``LookupError``.
-        text = decode_body(response.body, response.declared_charset)
+        # A byte-order mark is not part of the first line: left in place it hides a Sitemap:
+        # field on line one behind a character the field name does not start with.
+        text = decode_body(response.body, response.declared_charset).removeprefix(chr(0xFEFF))
         for line in text.splitlines():
             field_name, separator, value = line.split("#", 1)[0].partition(":")
             if separator and field_name.strip().lower() == "sitemap" and value.strip():
@@ -484,6 +542,8 @@ class HttpSiteDiscovery:
 
         for url in declared:
             plan(url)
+            if budget_cut:
+                break  # the queue is full: every further declaration would only be dropped
         if not queue:
             plan(urljoin(origin, "/sitemap.xml"))
 
@@ -501,7 +561,12 @@ class HttpSiteDiscovery:
             if refused is not None:
                 reads.append(_SitemapRead(refused))
                 break
-            read = self._read_sitemap(fetcher, queue[index])
+            # Each document under its own guard: one defect ends that document, never the
+            # entries its siblings have already contributed.
+            read = _guarded(
+                functools.partial(self._read_sitemap, fetcher, queue[index]),
+                _SitemapRead(SourceOutcome.RUNTIME_ERROR),
+            )
             index += 1
             reads.append(read)
             if read.outcome is SourceOutcome.TARGET_POLICY_REFUSED:
@@ -537,10 +602,10 @@ class HttpSiteDiscovery:
         xml, cut = _xml_of(response, self.fetch_limits.max_response_bytes)
         if xml is None:
             return _SitemapRead(SourceOutcome.BUDGET_EXHAUSTED if cut else SourceOutcome.MALFORMED)
-        if _DECLARATION.search(xml):
+        parsed = _parse_sitemap(xml)
+        if parsed.refused:
             return _SitemapRead(SourceOutcome.MALFORMED)
-
-        root, locs, failed = _parse_sitemap(xml)
+        root, locs, failed = parsed.root, parsed.locs, parsed.failed
         if root is not None and root not in (_URLSET, _SITEMAP_INDEX):
             return _SitemapRead(SourceOutcome.MALFORMED)
         if failed and not cut:

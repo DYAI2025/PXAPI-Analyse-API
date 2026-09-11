@@ -470,6 +470,11 @@ class HttpSiteDiscovery:
         entries: list[DiscoveryObservation] = []
         index = 0
         while index < len(queue):
+            if len(entries) >= self.limits.max_sitemap_entries:
+                # The entry budget is spent: a further document could only be read to be
+                # discarded, so it is not fetched at all, and the bound is what is reported.
+                budget_cut = True
+                break
             refused = budget.admit()
             if refused is not None:
                 reads.append(_SitemapRead(refused))

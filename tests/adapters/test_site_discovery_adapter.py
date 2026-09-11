@@ -464,3 +464,38 @@ def test_a_target_that_does_not_resolve_is_unreachable_not_refused() -> None:
     )
     assert report.bootstrap_failure is BootstrapFailure.UNREACHABLE
     assert report.target_origin is None
+
+
+def test_once_the_entry_budget_is_spent_no_further_sitemap_is_fetched() -> None:
+    """A document read only to be discarded is work the bound exists to prevent. Measured on
+    rfc-editor.org: the 500-entry budget was spent inside the first child sitemap, and the
+    second (495 KB) was still fetched before this guard existed."""
+    fetched: list[str] = []
+
+    class Recording:
+        def __init__(self, inner: SafePageFetcher) -> None:
+            self.inner = inner
+
+        def fetch(self, url: str) -> Any:
+            fetched.append(url)
+            return self.inner.fetch(url)
+
+    def routes(b: str) -> dict[str, Route]:
+        return {
+            "/": home(),
+            "/robots.txt": robots(f"Sitemap: {b}/a.xml", f"Sitemap: {b}/b.xml"),
+            "/a.xml": urlset(*(f"{b}/a{i}" for i in range(3))),
+            "/b.xml": urlset(*(f"{b}/b{i}" for i in range(3))),
+        }
+
+    report, base = discover(
+        routes,
+        limits=DiscoveryLimits(max_sitemap_entries=2),
+        fetcher_factory=lambda scope: Recording(
+            SafePageFetcher(policy=loopback_policy(), scope=scope)
+        ),
+    )
+    assert outcomes(report)["SITEMAP"] == "BUDGET_EXHAUSTED"
+    assert forms(report, "SITEMAP") == [base + "/a0", base + "/a1"]
+    assert base + "/a.xml" in fetched
+    assert base + "/b.xml" not in fetched

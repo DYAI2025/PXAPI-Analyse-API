@@ -37,6 +37,18 @@ BEHAVIOR_ALLOWED: dict[str, str] = {
     "adapters/composition.py": "PXK-67",
     "config/contract_root.py": "PXK-67",
     "config/fetch_limits.py": "PXK-67",
+    "domain/site_identity.py": "PXAPI-19.B",
+    "domain/site_discovery.py": "PXAPI-19.B",
+    "domain/page_classification.py": "PXAPI-19.B",
+    "domain/acquisition_semantics.py": "PXAPI-19.B",
+    "domain/acquisition_digests.py": "PXAPI-19.B",
+    "domain/sampling_policy.py": "PXAPI-19.B",
+    "ports/site_discovery.py": "PXAPI-19.B",
+    "application/discover_site.py": "PXAPI-19.B",
+    "adapters/web/html_links.py": "PXAPI-19.B",
+    "adapters/web/site_discovery.py": "PXAPI-19.B",
+    "adapters/inbound/discover_cli.py": "PXAPI-19.B",
+    "config/discovery_limits.py": "PXAPI-19.B",
 }
 
 SOURCE_FILES = sorted(SRC.rglob("*.py"))

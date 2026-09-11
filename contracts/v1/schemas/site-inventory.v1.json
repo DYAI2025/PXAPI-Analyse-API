@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:site-inventory:1.0.0",
+  "title": "PXAPI site inventory v1",
+  "description": "The provider-neutral population of publicly discovered targets for one analysed site, at one instant, produced by one named discovery method. It is a technical inventory and never an assessment: no member of this contract can say that a site is good, bad, complete, thin, well structured or deficient, and every outcome it records names the analysis process rather than the website. An inventory exists only once a canonical public target origin has been established, so it always contains at least the canonical target seed: there is deliberately no representable successful inventory with zero candidates, because such a document would read as 'this site has no pages' when what actually happened is that discovery never started. A bootstrap that cannot establish the origin therefore produces no inventory at all — a neutral technical run failure whose wiring belongs to a later slice. sources is the single authority on the state of each attempted discovery source; there is deliberately no second root-level sitemap or robots state beside it, because two authorities for one fact can disagree and a reader would then have to choose. This contract carries no score, no severity, no finding, no raw anchor label and no acquisition result: selecting which of these candidates is actually analysed is the sampling manifest's decision, and fetching them is a later slice's.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Required. Always 1.0.0 for this contract. Each contract is versioned in its own right; this value is not a version of the contract set as a whole."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this inventory belongs to. It is the only link to the run's state document, and it carries no claim about that run's outcome."
+    },
+    "inventory_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. This inventory's own stable identity. A sampling manifest references it by this value, so it must stay stable for as long as anything may point at it."
+    },
+    "generated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When this inventory was assembled. An inventory always states when, because a population with no instant cannot be compared with a later run of the same site."
+    },
+    "target_origin": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_origin",
+      "description": "Required. The canonical public target origin this inventory was built for, and the identity of the canonical target seed: the seed candidate's url_key is this same value. It is an origin and never a page, and the shape says so rather than the name alone: a path beyond the root slash, a query and a fragment are refused, so the member every consumer reads as the authority for the whole analysed site cannot quietly hold one page of that site. Its presence means a safe canonical origin was established, which is the precondition for this document existing at all. It remains a structural shape only — establishing the origin safely is the acquisition runtime's responsibility, and a valid inventory proves no URL safety, reachability, redirect, DNS or egress decision."
+    },
+    "discovery_method": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+      "description": "Required. A stable machine-readable identifier for the method that discovered this population. The vocabulary is deliberately open: this contract fixes the token's lexical shape and never the set of methods, so a method a later slice introduces validates here without a schema change. A consumer treats a method it does not know as an unknown method, never as an error."
+    },
+    "discovery_method_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/single_line_label",
+      "description": "Required. The version of the discovery method. Two inventories of the same site are comparable only when the method and this version agree, so the version travels with the inventory rather than being assumed."
+    },
+    "classifier": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+      "description": "Required. A stable machine-readable identifier for the component that assigned the candidates' page types. The vocabulary is open for the same reason discovery_method's is. It is named even when it classified nothing, so that an unclassified population is attributable rather than anonymous."
+    },
+    "classifier_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/single_line_label",
+      "description": "Required. The version of the classification method. A page type read without the version of the method that assigned it is not reproducible, so the version is recorded rather than assumed."
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "One attempted discovery source and what became of the attempt. The outcome names the analysis process — a source that was absent, malformed, refused, exhausted, failed or timed out — and never the website.",
+        "properties": {
+          "source_id": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+            "description": "Required. A stable machine-readable identifier for the source that was attempted, such as the canonical seed, a robots declaration, a sitemap or same-origin page links. The vocabulary is deliberately open: a source a later slice introduces validates here without a schema change, and the same token is what a candidate's provenance names. One source is reported at most once per inventory: a second entry for the same identifier would be a second outcome for one attempt, and a candidate's provenance naming that identifier could then no longer be resolved to one state. JSON Schema cannot state this — the enclosing array carries no uniqueItems, and uniqueItems would not help because it compares whole entries, so the same source with two different outcomes would satisfy it — so the rule is enforced by the contract-semantic layer in tests/acquisition/semantics.py, which refuses such a document before any digest is computed, and by a producer-side check that is mandatory in PXAPI-19.B."
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "USED",
+              "EMPTY",
+              "ABSENT",
+              "MALFORMED",
+              "NO_SITEMAP_DECLARATION",
+              "BUDGET_EXHAUSTED",
+              "TARGET_POLICY_REFUSED",
+              "PROVIDER_FAILURE",
+              "RUNTIME_ERROR",
+              "TIMEOUT"
+            ],
+            "description": "Required. What became of the attempt on this source. The vocabulary is closed, because each token carries its own rule about whether a non-zero admitted count is even possible, and an open token would arrive with no such rule — and because a closed set is what keeps every outcome a statement about the analysis process rather than about the site. USED means the source was read and its entries enumerated. EMPTY means the source was read, was well formed, and declared nothing. ABSENT means the source was not served where it would be declared. MALFORMED means it was served but could not be parsed as the kind of source it claims to be. NO_SITEMAP_DECLARATION means an applicable source was present and declared no sitemap. BUDGET_EXHAUSTED means one of our own declared bounds stopped the read. TARGET_POLICY_REFUSED means our own target policy refused the fetch. PROVIDER_FAILURE and RUNTIME_ERROR name a component outside our runtime and our own runtime respectively, kept apart exactly as assessment#/$defs/not_assessed_reason keeps them apart. TIMEOUT means a time budget elapsed. None of the ten is a website-quality polarity, and none may be read as one: an absent sitemap, a malformed source, an exhausted budget, a refusal, a failure and a timeout are all facts about this analysis."
+          },
+          "candidate_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Required. How many candidates this inventory admitted from this source. It is a count of what this analysis took, and deliberately not a count of what the source or the website contains: a source that declared a thousand URLs of which two were admitted reports two. Zero therefore means nothing was admitted here — never that the source declared nothing and never that the site has no such pages. Only an outcome under which admission could actually have happened may report a non-zero count; every other outcome is pinned to zero by the rule below, so an absent, malformed, undeclared, refused or failed source is structurally incapable of reporting that it contributed pages."
+          }
+        },
+        "required": ["source_id", "outcome", "candidate_count"],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": { "outcome": { "enum": ["USED", "BUDGET_EXHAUSTED", "TIMEOUT"] } },
+              "required": ["outcome"]
+            },
+            "else": { "properties": { "candidate_count": { "const": 0 } } }
+          }
+        ]
+      },
+      "minItems": 1,
+      "description": "Required. Every discovery source that was attempted, and what became of each. At least one entry is required, because an inventory that names no attempted source states nothing about how it was built. This member is the single authority on source state: there is deliberately no root-level sitemap_state or robots_state beside it, so no reader ever has to reconcile two accounts of the same source. The absence of an entry means the source was not attempted, and carries no further meaning."
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "One discovered target, under its canonical identity, with the provenance of every observation that collapsed onto that identity.",
+        "properties": {
+          "url_key": {
+            "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key",
+            "description": "Required. This candidate's canonical identity. Observations that canonicalise to the same identity are one candidate with aggregated provenance, never several: the same target seen twice is not a defect of the website and not an exclusion. That aggregation is the rule, so one identity appears exactly once in the candidate population — and the schema cannot say so. uniqueItems on the enclosing array compares whole candidate objects, so the same identity carrying two different observed-form lists satisfies it while leaving the population with two entries a consumer must choose between, and the canonical ordering that keys on this member would order them by whichever input sequence it was handed. The rule is therefore enforced by the contract-semantic layer in tests/acquisition/semantics.py, which refuses such a document before any digest is computed, and by a producer-side deduplication check that is mandatory in PXAPI-19.B."
+          },
+          "observed_forms": {
+            "type": "array",
+            "items": { "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/public_url" },
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "Required. The distinct accepted URL forms that were observed and canonicalised onto this identity, so that a repeat run can see what was actually seen rather than only what it reduced to. Each is a public_url, so no credential-bearing form is ever persisted here, and only accepted forms appear: a URL rejected before persistence is not recorded as a string merely so that a digest can be recomputed. The order of this list carries no meaning."
+          },
+          "provenance": {
+            "type": "array",
+            "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code" },
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "Required. The source_id values that contributed this candidate, aggregated: a candidate found by the seed, a sitemap and a page link names all three rather than being recorded three times. At least one is required, because a candidate that came from nowhere is not a discovery. The order of this list carries no meaning, and the number of sources that named a candidate is not a measure of its importance."
+          },
+          "page_type": {
+            "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+            "description": "Optional. The page type the named classifier assigned to this candidate, as a stable open token: this contract fixes the token's lexical shape and deliberately not the taxonomy, which is versioned classification work rather than a set invented here. Absent means the classifier assigned no type to this candidate. It never means the page is irrelevant, low quality, wrong or excluded — an unclassified candidate is a fact about the classifier, and the absence of a member is structurally incapable of carrying a judgement about the site."
+          },
+          "eligibility": {
+            "type": "object",
+            "description": "Required. Whether this candidate is a technically admissible acquisition target, and if not, the technical reason. Its members reference this file's own vocabularies; the reason names the analysis process or the discovery boundary, never a quality of the page.",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["ELIGIBLE", "EXCLUDED"],
+                "description": "Required. Whether this candidate may be offered for acquisition. The vocabulary is closed at two values and is a technical admissibility statement only: EXCLUDED means this analysis will not fetch the candidate, never that the page is deficient."
+              },
+              "exclusion_reason": {
+                "type": "string",
+                "enum": [
+                  "OFF_ORIGIN",
+                  "NON_PAGE_RESOURCE",
+                  "TARGET_POLICY_REFUSED",
+                  "BUDGET_EXHAUSTED",
+                  "UNSUPPORTED"
+                ],
+                "description": "Conditional. Present if and only if the state is EXCLUDED, and refused outright otherwise, so an admissible candidate can never carry a reason it was not excluded for. The vocabulary is closed because each token must be a statement about this analysis: OFF_ORIGIN means the candidate lies outside the canonical target origin this run was authorised for; NON_PAGE_RESOURCE means the source described it as something other than a page; TARGET_POLICY_REFUSED means our own target policy refuses it; BUDGET_EXHAUSTED means one of our own declared bounds was reached before it could be admitted; UNSUPPORTED means this version of the inventory does not represent candidates of that kind. None of the five is a defect of the website, and none may be rendered as one."
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "state": { "const": "EXCLUDED" } },
+                  "required": ["state"]
+                },
+                "then": { "required": ["exclusion_reason"] },
+                "else": { "not": { "required": ["exclusion_reason"] } }
+              }
+            ]
+          }
+        },
+        "required": ["url_key", "observed_forms", "provenance", "eligibility"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Required. Every discovered candidate under its canonical identity. At least one is required and it is the canonical target seed, whose url_key equals target_origin: an inventory is emitted only after the origin was established, so a successful inventory with nothing in it is deliberately not representable — a discovery that found nothing beyond the homepage is a one-candidate inventory with neutral source outcomes, not an empty one. The order of this list carries no meaning: the population is a set, and the output digest reads it under a canonical ordering so that two runs which discovered the same site in a different sequence produce the same digest."
+    },
+    "input_digest": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
+      "description": "Required. The canonical digest of the admitted discovery-observation input this inventory was built from, computed over a deterministic UTF-8 JSON rendering with sorted keys, no floating-point members and a canonical ordering of every order-independent collection — so the order in which observations were enumerated cannot change it. Envelope identities and timestamps, and the two digest members themselves, do not participate. Its role is to bind the inventory to its inputs, which this document does not carry: it is not a digest of this document."
+    },
+    "output_digest": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
+      "description": "Required. The canonical digest of this inventory's stable semantics — target origin, discovery method and version, classifier and version, source outcomes and normalised candidates — computed over the same deterministic canonical JSON. Envelope identities and timestamps, and the two digest members themselves, do not participate, so re-emitting the same population under a new inventory_id at a new instant leaves this value unchanged. The canonical ordering is keyed on the semantic identities — a source's source_id, a candidate's url_key — so a document in which one of those identities appears twice has no canonical ordering at all: the two equal keys would be left in whatever sequence the producer happened to emit, and the digest would silently become order-dependent. The reference implementation therefore refuses to digest such a document rather than returning a value, and the rule is stated at the members that carry those identities. There is deliberately no third content_digest: input and output are the whole digest topology, and a third member would create a second, unowned notion of this document's identity."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "inventory_id",
+    "generated_at",
+    "target_origin",
+    "discovery_method",
+    "discovery_method_version",
+    "classifier",
+    "classifier_version",
+    "sources",
+    "candidates",
+    "input_digest",
+    "output_digest"
+  ],
+  "additionalProperties": false
+}

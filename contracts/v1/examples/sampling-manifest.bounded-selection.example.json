@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000019",
+  "sampling_manifest_id": "smf-01JQ8Z4K2M0000000000000023",
+  "generated_at": "2026-09-10T08:47:02Z",
+  "inventory_ref": "inv-01JQ8Z4K2M0000000000000019",
+  "inventory_output_digest": "sha256:adfe03a2515a73525877d130817f70827e9cff592505cd9aef0fef9885028bbc",
+  "policy_id": "CENSUS_FIRST_DETERMINISTIC",
+  "policy_version": "1.0.0",
+  "budgets": { "max_selected_pages": 2 },
+  "mode": "CENSUS",
+  "selection_complete": false,
+  "incompleteness": { "cause": "SELECTION_BUDGET_EXHAUSTED" },
+  "selections": [
+    {
+      "url_key": "https://example.com/",
+      "selection_rank": 1,
+      "selection_reason": "SEED",
+      "stratum": "HOMEPAGE"
+    },
+    {
+      "url_key": "https://example.com/kontakt",
+      "selection_rank": 2,
+      "selection_reason": "CENSUS",
+      "stratum": "CONTACT"
+    }
+  ],
+  "exclusions": [
+    { "reason": "INELIGIBLE_IN_INVENTORY", "candidate_count": 1 },
+    { "reason": "SELECTION_BUDGET_EXHAUSTED", "candidate_count": 2 }
+  ],
+  "input_digest": "sha256:a3b494f4b13badb5a3c79ac24641869ac63ba5517c91ede49aac3af110e96828",
+  "output_digest": "sha256:f4986be76abd0960033699c33323476f1db1b0e20a22fd680b8140dd65cdea0a"
+}

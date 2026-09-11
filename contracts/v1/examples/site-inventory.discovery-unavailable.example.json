@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000021",
+  "inventory_id": "inv-01JQ8Z4K2M0000000000000021",
+  "generated_at": "2026-09-10T09:03:47Z",
+  "target_origin": "https://example.net/",
+  "discovery_method": "SAME_ORIGIN_PUBLIC_DISCOVERY",
+  "discovery_method_version": "1.0.0",
+  "classifier": "PAGE_TYPE_BASELINE",
+  "classifier_version": "1.0.0",
+  "sources": [
+    { "source_id": "CANONICAL_SEED", "outcome": "USED", "candidate_count": 1 },
+    { "source_id": "ROBOTS_DECLARATION", "outcome": "MALFORMED", "candidate_count": 0 },
+    { "source_id": "SITEMAP", "outcome": "TIMEOUT", "candidate_count": 0 },
+    { "source_id": "SITEMAP_INDEX", "outcome": "PROVIDER_FAILURE", "candidate_count": 0 },
+    { "source_id": "SAME_ORIGIN_PAGE_LINKS", "outcome": "BUDGET_EXHAUSTED", "candidate_count": 1 },
+    { "source_id": "OFF_ORIGIN_FEED", "outcome": "TARGET_POLICY_REFUSED", "candidate_count": 0 },
+    { "source_id": "RENDERED_PAGE_LINKS", "outcome": "RUNTIME_ERROR", "candidate_count": 0 }
+  ],
+  "candidates": [
+    {
+      "url_key": "https://example.net/",
+      "observed_forms": ["https://example.net/"],
+      "provenance": ["CANONICAL_SEED"],
+      "page_type": "HOMEPAGE",
+      "eligibility": { "state": "ELIGIBLE" }
+    },
+    {
+      "url_key": "https://cdn.example.net/assets/index",
+      "observed_forms": ["https://cdn.example.net/assets/index"],
+      "provenance": ["SAME_ORIGIN_PAGE_LINKS"],
+      "eligibility": { "state": "EXCLUDED", "exclusion_reason": "OFF_ORIGIN" }
+    }
+  ],
+  "input_digest": "sha256:af8a9c50cee3dd6e6607887e8bc5bc53e114bd5626d469f4be86e8768e6b5fe9",
+  "output_digest": "sha256:b0aab4d1875b5cf10659d6fdef6814255f9f7327ed0878558bc28a7c0cc69a14"
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000019",
+  "sampling_manifest_id": "smf-01JQ8Z4K2M0000000000000022",
+  "generated_at": "2026-09-10T08:44:33Z",
+  "inventory_ref": "inv-01JQ8Z4K2M0000000000000019",
+  "inventory_output_digest": "sha256:adfe03a2515a73525877d130817f70827e9cff592505cd9aef0fef9885028bbc",
+  "policy_id": "STRATIFIED_DETERMINISTIC",
+  "policy_version": "1.0.0",
+  "budgets": { "max_candidates_considered": 500, "max_selected_pages": 3 },
+  "mode": "STRATIFIED_SAMPLE",
+  "selection_complete": true,
+  "selections": [
+    {
+      "url_key": "https://example.com/",
+      "selection_rank": 1,
+      "selection_reason": "SEED",
+      "stratum": "HOMEPAGE"
+    },
+    {
+      "url_key": "https://example.com/leistungen",
+      "selection_rank": 2,
+      "selection_reason": "STRATUM_QUOTA",
+      "stratum": "OFFER"
+    },
+    {
+      "url_key": "https://example.com/referenzen",
+      "selection_rank": 3,
+      "selection_reason": "STRATUM_QUOTA",
+      "stratum": "PROOF"
+    }
+  ],
+  "exclusions": [
+    { "reason": "INELIGIBLE_IN_INVENTORY", "candidate_count": 1 },
+    { "reason": "NOT_SELECTED_BY_POLICY", "candidate_count": 1 }
+  ],
+  "input_digest": "sha256:4a2e599d2446122cfa007f21edcce744ea6e3780f8cd42db2aa876df50b9c050",
+  "output_digest": "sha256:952b7e43737757ea734b48deec873a38e943d5dcf2c839143e3bbc3fc6010b86"
+}

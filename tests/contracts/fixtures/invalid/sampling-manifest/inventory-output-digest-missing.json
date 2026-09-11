@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000019",
+  "sampling_manifest_id": "smf-01JQ8Z4K2M0000000000000019",
+  "generated_at": "2026-09-10T08:41:19Z",
+  "inventory_ref": "inv-01JQ8Z4K2M0000000000000019",
+  "policy_id": "CENSUS_FIRST_DETERMINISTIC",
+  "policy_version": "1.0.0",
+  "budgets": { "max_selected_pages": 25 },
+  "mode": "CENSUS",
+  "selection_complete": true,
+  "selections": [
+    {
+      "url_key": "https://example.com/",
+      "selection_rank": 1,
+      "selection_reason": "SEED",
+      "stratum": "HOMEPAGE"
+    }
+  ],
+  "exclusions": [{ "reason": "INELIGIBLE_IN_INVENTORY", "candidate_count": 1 }],
+  "input_digest": "sha256:abababababababababababababababababababababababababababababababab",
+  "output_digest": "sha256:abababababababababababababababababababababababababababababababab"
+}

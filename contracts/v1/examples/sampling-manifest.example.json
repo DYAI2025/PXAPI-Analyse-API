@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000019",
+  "sampling_manifest_id": "smf-01JQ8Z4K2M0000000000000019",
+  "generated_at": "2026-09-10T08:41:19Z",
+  "inventory_ref": "inv-01JQ8Z4K2M0000000000000019",
+  "inventory_output_digest": "sha256:adfe03a2515a73525877d130817f70827e9cff592505cd9aef0fef9885028bbc",
+  "policy_id": "CENSUS_FIRST_DETERMINISTIC",
+  "policy_version": "1.0.0",
+  "budgets": { "max_selected_pages": 25 },
+  "mode": "CENSUS",
+  "selection_complete": true,
+  "selections": [
+    {
+      "url_key": "https://example.com/",
+      "selection_rank": 1,
+      "selection_reason": "SEED",
+      "stratum": "HOMEPAGE"
+    },
+    {
+      "url_key": "https://example.com/kontakt",
+      "selection_rank": 2,
+      "selection_reason": "CENSUS",
+      "stratum": "CONTACT"
+    },
+    {
+      "url_key": "https://example.com/leistungen",
+      "selection_rank": 3,
+      "selection_reason": "CENSUS",
+      "stratum": "OFFER"
+    },
+    {
+      "url_key": "https://example.com/referenzen",
+      "selection_rank": 4,
+      "selection_reason": "CENSUS",
+      "stratum": "PROOF"
+    }
+  ],
+  "exclusions": [{ "reason": "INELIGIBLE_IN_INVENTORY", "candidate_count": 1 }],
+  "input_digest": "sha256:8bf57a13b854a0d81275ab2b136367604e7631fac97b178d9f6c9fab22dba62f",
+  "output_digest": "sha256:115c04ffac72ddfa48295fb2f59e2ae354278e6aa852159b03fd45b713e9c056"
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000020",
+  "inventory_id": "inv-01JQ8Z4K2M0000000000000020",
+  "generated_at": "2026-09-10T08:52:04Z",
+  "target_origin": "https://example.org/",
+  "discovery_method": "SAME_ORIGIN_PUBLIC_DISCOVERY",
+  "discovery_method_version": "1.0.0",
+  "classifier": "PAGE_TYPE_BASELINE",
+  "classifier_version": "1.0.0",
+  "sources": [
+    { "source_id": "CANONICAL_SEED", "outcome": "USED", "candidate_count": 1 },
+    { "source_id": "ROBOTS_DECLARATION", "outcome": "NO_SITEMAP_DECLARATION", "candidate_count": 0 },
+    { "source_id": "SITEMAP", "outcome": "ABSENT", "candidate_count": 0 },
+    { "source_id": "SAME_ORIGIN_PAGE_LINKS", "outcome": "EMPTY", "candidate_count": 0 }
+  ],
+  "candidates": [
+    {
+      "url_key": "https://example.org/",
+      "observed_forms": ["https://example.org/"],
+      "provenance": ["CANONICAL_SEED"],
+      "page_type": "HOMEPAGE",
+      "eligibility": { "state": "ELIGIBLE" }
+    }
+  ],
+  "input_digest": "sha256:325a3697535970ec60313f81ff161f5b98f957c7d712fa05456f3c73f0d5af2d",
+  "output_digest": "sha256:e43b5a0ab8969b9317dda6255c531d1d7bbf6c0818cde6370cddd016d93f67a8"
+}

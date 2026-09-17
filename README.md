@@ -24,14 +24,10 @@ PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 ## Analysing a page
 
 ```bash
-# the homepage analysis command line
+# homepage analysis, on the command line
 uv run python -m pxapi.adapters.inbound.cli https://example.com/
 
-# site discovery: one URL in, the inventory and the sampling manifest out. This is the
-# entry point the PXAPI-19 real-boundary smoke records.
-uv run python -m pxapi.adapters.inbound.discover_cli https://example.com/
-
-# the same use case over HTTP
+# the same homepage analysis over HTTP
 uv run uvicorn pxapi.adapters.inbound.http_api:app --port 8000
 curl -sS -X POST localhost:8000/v1/analysis-runs -H 'Content-Type: application/json' -d '{
   "schema_version": "1.0.0", "run_id": "run-1", "request_id": "req-1",
@@ -40,11 +36,29 @@ curl -sS -X POST localhost:8000/v1/analysis-runs -H 'Content-Type: application/j
 }'
 ```
 
-Both return the same canonical envelope — the accepted request, the run state, the stage
-executions, the measurements, the website evidence and the diagnostic findings — in which
-**every member validates against its own merged contract on its own**. The envelope itself
-is deliberately not a registered contract: it adds no analysis meaning, and registering it
-would create a second authority beside the contracts it carries.
+Those two are the same use case through two entry points. They return the same canonical
+envelope — the accepted request, the run state, the stage executions, the measurements, the
+website evidence and the diagnostic findings — in which **every member validates against its
+own merged contract on its own**. The envelope itself is deliberately not a registered
+contract: it adds no analysis meaning, and registering it would create a second authority
+beside the contracts it carries.
+
+Site discovery is a **different use case**, and it has **no HTTP interface**:
+
+```bash
+# site discovery: one URL in, the site inventory and the sampling manifest out.
+# Command line only — no HTTP endpoint exposes this. It is the entry point the
+# PXAPI-19 real-boundary smoke records.
+uv run python -m pxapi.adapters.inbound.discover_cli https://example.com/
+```
+
+`POST /v1/analysis-runs` is the homepage-analysis interface and nothing else. It carries no
+`site_inventory` and no `sampling_manifest` member, so it cannot stand in for the command
+above. Discovery returns its own envelope — the accepted request, the run state, the stage
+executions, a `site-inventory.v1` and a `sampling-manifest.v1` — and PXAPI-19.B delivered it
+through the application path and that command line alone. PXAPI-19 introduced no HTTP
+discovery surface, this document describes none because none exists, and the pages the
+manifest selects are **not acquired**: acquiring them is PXAPI-20, which is not implemented.
 
 **A technical failure is never a finding about the website.** A timeout, a DNS failure, a
 refused target, a broken parser and a response we cannot decode each record why *our process*

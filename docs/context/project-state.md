@@ -1,7 +1,7 @@
 # PXAPI Project State
 
 **Snapshot date:** 2026-09-17  
-**Execution mode:** PXAPI-19 ticket-level closeout reconcile; 19.A and 19.B are both merged  
+**Execution mode:** PXAPI-19 discovery-correctness repair required; 19.A and 19.B are both merged, and 19.B's merged implementation is `NOT_GREEN`  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
 **19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`  
 **19.B integrated implementation baseline / current `main`:** `fe8d838023c8f9967151cad9aa1981e76dcf7d75`
@@ -36,6 +36,8 @@ At current `main` `fe8d838023c8f9967151cad9aa1981e76dcf7d75`, the PXAPI-19.B sit
 
 Acquisition is therefore no longer homepage-only at the discovery layer: one run establishes a canonical public origin, reads `/robots.txt` for `Sitemap:` declarations only, reads sitemaps and bounded same-origin seed links, canonicalizes and deduplicates them into a `site-inventory.v1`, and plans a `sampling-manifest.v1` in `CENSUS` mode. **No discovered page is fetched** — page acquisition over the manifest is PXAPI-20 and is not implemented.
 
+**That runtime is present but not accepted.** A post-merge review found material defects inside this same authorized boundary — malformed-link isolation, fragment canonicalization, canonical-seed source truth and what the named discovery limits actually bound. They are recorded in AD-007 and in `C-PXAPI-013` … `C-PXAPI-016`, and they are why 19.B IC is `NOT_GREEN`. Read no completeness claim about a real site's inventory from this section until they are repaired or shown non-material.
+
 PXAPI-19.A had added the provider-neutral contract/foundation layer for that step, including registered `site-inventory.v1` and `sampling-manifest.v1` schemas, shared acquisition definitions, valid examples, targeted invalid fixtures, deterministic digest/semantic guards and contract evidence. 19.A intentionally introduced no runtime; 19.B is what made those contracts executable.
 
 Still **not** present at `fe8d838`: browser/Crawl4AI execution, `RenderedPagePort`, multi-page static acquisition, `page-acquisition-record.v1`, scoring/customer output changes, queueing, CRM integration and deployment behavior. No customer-value claim follows from the 19.B merge.
@@ -57,7 +59,7 @@ Overall Jira item `PXAPI-19` remains incomplete and `In Arbeit` until 19.B satis
 
 ## PXAPI-19.B closeout
 
-**Bounded 19.B state:** `MERGED / CLOSEOUT OPEN`
+**Bounded 19.B state:** `MERGED / REPAIR REQUIRED`
 
 - PR head/candidate: `7e5d67eb95f85216eff32d99ff82227cb5786efc`
 - PR: `#16`, merged 2026-09-11T23:54:09Z
@@ -66,13 +68,13 @@ Overall Jira item `PXAPI-19` remains incomplete and `In Arbeit` until 19.B satis
 - candidate CI: `python-compat` run `34653734998` (`push`) and `34653738494` (`pull_request`), both exact head `7e5d67eb95f85216eff32d99ff82227cb5786efc`, both `success`, Python 3.13 and 3.14 jobs `success`
 - post-merge main CI: `python-compat` run `34659764590`, exact head `fe8d838023c8f9967151cad9aa1981e76dcf7d75`, `success`
 - `git diff fd3ad8a..7e5d67e -- src/ tests/ contracts/` is **0 bytes**, so the gate results measured on `fd3ad8a` carry to the merged head for code, lint and tests
-- 19.B IC: `GREEN` — the authorized 19.B scope is implemented and present on `main`
-- 19.B R2G: `GREEN` on the exact candidate, bounded by the gates this repository actually runs (see below)
+- 19.B IC: **`NOT_GREEN — REPAIR REQUIRED`**. The authorized 19.B scope is present on `main`, but a post-merge review found material defects inside that same authorized discovery/canonicalization boundary. Superseded the earlier `GREEN` claim. Decision authority: Jira `PXAPI-19` comment `16045` (2026-09-17). See AD-007.
+- 19.B R2G: **`NOT_GREEN`**. R2G requires IC `GREEN` on the same candidate, and IC is not green. This is a gate verdict, not a CI result: the CI runs below really did pass on the exact candidate and on the merge SHA, and they remain accurate — passing gates do not make R2G green when the implementation they gate is known defective.
 - 19.B R4M: `UNKNOWN — HISTORICAL GOVERNANCE EXCEPTION`. Never independently evidenced, and **never to be recorded as `GREEN`**. Decision authority: Jira `PXAPI-19` comment `16044` (2026-09-17). See AD-005.
 
 **What R2G covers here.** `.github/workflows/python-compat.yml` is the only workflow. It runs `uv sync --locked`, `uv lock --check`, `ruff check`, `ruff format --check` and `uv run pytest` on Python 3.13 and 3.14. Contract validation runs inside that suite. The workflow's own header records that repository-wide security, secret and dependency-security scanning are deliberately **not** implemented here and belong to A8. `main` carries no branch protection, so no review was required to merge.
 
-Overall Jira item `PXAPI-19` remains `In Arbeit`. What is open is ticket-level closeout, not implementation: see AD-006. AD-005 is no longer an open evidence search — it is a decided and preserved historical governance exception.
+Overall Jira item `PXAPI-19` remains `In Arbeit`, and what is open is **no longer closeout alone**: a bounded discovery-correctness repair inside the already authorized 19.B scope is required first (AD-007), and the AC8 evidence-class question stays open behind it (AD-006). AD-005 is neither — it is a decided and preserved historical governance exception, not an open item.
 
 ## Completed prerequisite
 
@@ -89,11 +91,12 @@ This completion proves the source-bound parity/gap decision artifact, not implem
 
 ## Current prioritized delivery sequence
 
-1. `PXAPI-19` ticket-level closeout. 19.A and 19.B are both merged; the remaining work is evidence-bound closeout and anti-drift reconcile, not implementation. The open item is AD-006 (AC8 real-boundary evidence class). AD-005 is **decided, not open**: the historical 19.B `R4M` stays `UNKNOWN` as a preserved governance exception per Jira `PXAPI-19` comment `16044`, so it is no longer a closeout blocker and no longer an evidence search. No mutating implementation theme is currently authorized, so the `WIP=1` slot is free but unclaimed.
-2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after PXAPI-19 receives its ticket-level closeout/readback. Merging 19.B did **not** release it, and neither does deciding AD-005: a governance exception resolves a historical gate state, it authorises nothing. See AD-006 for what is still open, and Jira `PXAPI-19` comment `16044`, which keeps `PXAPI-20` blocked in the same breath as it decides AD-005.
-3. Re-measure evidence gain before paying browser/async complexity.
-4. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
-5. Strategic lever / impact verification contracts (`PXAPI-24`) later.
+1. **`PXAPI-19` discovery-correctness repair.** A bounded repair of the AD-007 defects inside the already authorized 19.B discovery/canonicalization scope. This is the current and only mutating implementation theme: **`WIP=1` is PXAPI-19**, claimed, not free. It opens no new scope — every defect sits inside what 19.B was already authorized to deliver — and it is sequenced to begin only after this documentation-truth reconcile is merged and read back on a freshly rebound `main`.
+2. `PXAPI-19` Real-Boundary / final ticket closeout, **after** the repair. AD-006 (AC8 evidence class) is settled here, together with a re-evaluation of ticket-wide IC, R2G and the AC/DoD against the then-current `main`. AD-005 is **decided, not open**: the historical 19.B `R4M` stays `UNKNOWN` as a preserved governance exception per Jira `PXAPI-19` comment `16044`.
+3. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after **complete** PXAPI-19 closeout, meaning repair *and* final readback. Merging 19.B did not release it; deciding AD-005 did not release it; and neither does this reconcile. Jira `PXAPI-19` comments `16044` and `16045` both keep it blocked.
+4. Re-measure evidence gain before paying browser/async complexity.
+5. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
+6. Strategic lever / impact verification contracts (`PXAPI-24`) later.
 
 The 80/20 expectation is a Product Owner hypothesis, not production-measured fact.
 
@@ -156,10 +159,28 @@ The controlled public Real-Boundary-Smoke required by PXAPI-19 AC8 exists in thi
 
 Status: `OPEN / EVIDENCE CLASS`. The prose record is `DOC_PERSISTED`, not independently verified by any committed artifact. Re-deriving it requires outbound network access. See `C-PXAPI-009`.
 
+### AD-007 — the merged 19.B discovery implementation has material defects
+
+**Status: `OPEN / REPAIR REQUIRED`. This is the current mutating theme.**
+
+**Decision authority:** Jira `PXAPI-19` comment `16045`, 2026-09-17 — *"PXAPI-19 closeout reopened — implementation repair required"*, which supersedes the earlier `19.B IC = GREEN` closeout claim.
+
+A post-merge review of the already merged 19.B implementation surfaced four defect classes inside the boundary 19.B was **already authorized** to deliver. They were first reported by a coding agent and then independently corroborated against the exact current `main` `fe8d838023c8f9967151cad9aa1981e76dcf7d75`. None of them opens new scope, and none of them is a PXAPI-20 concern.
+
+**A — malformed-link isolation is not preserved.** `read_links()` (`src/pxapi/adapters/web/html_links.py`) wraps only the parser feed loop in the guard that converts failures into `HtmlUnreadable`; `_base_for(...)` and the `urljoin(base, target)` loop run outside it. A malformed `<base href>` or a malformed `href` therefore raises after parsing, and the whole `SAME_ORIGIN_PAGE_LINKS` source ends as `RUNTIME_ERROR` with zero observations — discarding the valid sibling links of the same document. The module's own contract says the opposite: *"Unclosed tags, stray markup and links nested in ways the standard forbids are ordinary input and are read tolerantly."* See `C-PXAPI-013`.
+
+**B — canonicalization contradicts its own fragment rule.** `_canonicalise()` (`src/pxapi/domain/site_identity.py`) scans the whole raw written form for forbidden characters *before* `urlsplit`, while `URL_CANONICAL_BASELINE` and the module's own comment state that the fragment is dropped without being examined. A URL whose page identity is perfectly valid but whose fragment contains a space is therefore refused outright and omitted from the inventory — losing a page, which that module names as the one error it must not make. See `C-PXAPI-014`.
+
+**C — canonical-seed source truth is overstated.** `HttpSiteDiscovery` (`src/pxapi/adapters/web/site_discovery.py`) initializes `CANONICAL_SEED` as `SourceOutcome.USED` immediately after origin bootstrap, without deriving that outcome from the seed's HTTP status; the link source evaluates the same status separately two lines later. A 4xx/5xx seed response can therefore be reported as a successfully used canonical-seed source. This bears directly on AC6, which requires technical states to be modelled truthfully and neutrally. See `C-PXAPI-015`.
+
+**D — the named discovery limits do not bound what the prose implies they bound.** Off-origin `Sitemap:` declarations return from the planning step before the queue-size gate, so `max_sitemap_documents` does not stop the declaration loop and every declaration is canonicalized. Separately, `max_page_links` bounds distinct written `href` forms while persisted `DiscoveryObservation`s are keyed on `(href, label)`, so one target carrying many labels yields many observations without the source ever reporting `BUDGET_EXHAUSTED`. **Execution remains bounded** — the outer `FetchLimits` response cap still applies to both paths — so this is *not* an unbounded-runtime claim. The defect is precise and narrower: the named limits do not mean what the implementation and the 19.B evidence prose say they mean. See `C-PXAPI-016`.
+
+**Consequences.** 19.B IC is `NOT_GREEN — REPAIR REQUIRED` and 19.B R2G is `NOT_GREEN`. The historical 19.B `R4M` is untouched by this and stays `UNKNOWN` (AD-005). These defects sit inside still-open PXAPI-19 scope and get **no separate ticket**: they are repaired, or explicitly shown non-material, before PXAPI-19 closes. `PXAPI-20` stays blocked throughout.
+
 ## Current Jira focus
 
 - `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
-- `PXAPI-19` — **In Arbeit**, closeout-only. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged (`MERGED / CLOSEOUT OPEN`) with its historical `R4M` decided `UNKNOWN` per AD-005. The remaining work is ticket-level closeout, open on AD-006 alone.
+- `PXAPI-19` — **In Arbeit / REPAIR REQUIRED**. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged (`MERGED / REPAIR REQUIRED`) with IC and R2G `NOT_GREEN` per Jira comment `16045`, and its historical `R4M` decided `UNKNOWN` per AD-005. Open: AD-007 (discovery-correctness repair, the current `WIP=1` theme) and AD-006 (AC8 evidence class) behind it.
 - `PXAPI-20` — `NEXT / NOT AUTHORIZED` until PXAPI-19 receives its ticket-level closeout/readback. The 19.B merge alone does not release it.
 
 No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.

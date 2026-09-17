@@ -68,11 +68,11 @@ Overall Jira item `PXAPI-19` remains incomplete and `In Arbeit` until 19.B satis
 - `git diff fd3ad8a..7e5d67e -- src/ tests/ contracts/` is **0 bytes**, so the gate results measured on `fd3ad8a` carry to the merged head for code, lint and tests
 - 19.B IC: `GREEN` — the authorized 19.B scope is implemented and present on `main`
 - 19.B R2G: `GREEN` on the exact candidate, bounded by the gates this repository actually runs (see below)
-- 19.B R4M: `SOURCE_NEEDED` — see AD-005
+- 19.B R4M: `UNKNOWN — HISTORICAL GOVERNANCE EXCEPTION`. Never independently evidenced, and **never to be recorded as `GREEN`**. Decision authority: Jira `PXAPI-19` comment `16044` (2026-09-17). See AD-005.
 
 **What R2G covers here.** `.github/workflows/python-compat.yml` is the only workflow. It runs `uv sync --locked`, `uv lock --check`, `ruff check`, `ruff format --check` and `uv run pytest` on Python 3.13 and 3.14. Contract validation runs inside that suite. The workflow's own header records that repository-wide security, secret and dependency-security scanning are deliberately **not** implemented here and belong to A8. `main` carries no branch protection, so no review was required to merge.
 
-Overall Jira item `PXAPI-19` remains `In Arbeit`. What is open is ticket-level closeout, not implementation: see AD-005 and AD-006.
+Overall Jira item `PXAPI-19` remains `In Arbeit`. What is open is ticket-level closeout, not implementation: see AD-006. AD-005 is no longer an open evidence search — it is a decided and preserved historical governance exception.
 
 ## Completed prerequisite
 
@@ -89,8 +89,8 @@ This completion proves the source-bound parity/gap decision artifact, not implem
 
 ## Current prioritized delivery sequence
 
-1. `PXAPI-19` ticket-level closeout. 19.A and 19.B are both merged; the remaining work is evidence-bound closeout and anti-drift reconcile, not implementation. The blocking items are AD-005 (no independent exact-head `R4M` artifact) and AD-006 (AC8 real-boundary evidence class). No mutating implementation theme is currently authorized, so the `WIP=1` slot is free but unclaimed.
-2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after PXAPI-19 receives its ticket-level closeout/readback. Merging 19.B did **not** release it; see AD-005 and AD-006 for what is still open.
+1. `PXAPI-19` ticket-level closeout. 19.A and 19.B are both merged; the remaining work is evidence-bound closeout and anti-drift reconcile, not implementation. The open item is AD-006 (AC8 real-boundary evidence class). AD-005 is **decided, not open**: the historical 19.B `R4M` stays `UNKNOWN` as a preserved governance exception per Jira `PXAPI-19` comment `16044`, so it is no longer a closeout blocker and no longer an evidence search. No mutating implementation theme is currently authorized, so the `WIP=1` slot is free but unclaimed.
+2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after PXAPI-19 receives its ticket-level closeout/readback. Merging 19.B did **not** release it, and neither does deciding AD-005: a governance exception resolves a historical gate state, it authorises nothing. See AD-006 for what is still open, and Jira `PXAPI-19` comment `16044`, which keeps `PXAPI-20` blocked in the same breath as it decides AD-005.
 3. Re-measure evidence gain before paying browser/async complexity.
 4. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
 5. Strategic lever / impact verification contracts (`PXAPI-24`) later.
@@ -134,11 +134,21 @@ Status: `CONFLICT / OPEN / NON-BLOCKING FOR PXAPI-19 CLOSEOUT`. Do not mutate, r
 
 The census-to-stratified-sampling threshold remains `MISSING`. No numeric threshold may be invented in 19.B. Executable policy remains `CENSUS`-only until representative benchmark evidence and an explicit versioned decision exist.
 
-### AD-005 — no independent exact-head R4M artifact for the 19.B candidate
+### AD-005 — the 19.B candidate merged without an independent exact-head R4M
 
-The merge commit `fe8d838` states that PR #16 was merged "after exact-head R4M". No artifact independently supporting that statement has been located. Measured on this tree: `git grep -l '7e5d67eb95f85216eff32d99ff82227cb5786efc' HEAD` returns **0** tracked files, and `grep -c '7e5d67e' docs/evidence/PXAPI-19B-site-discovery-runtime.md` returns **0**. The 19.B evidence document explicitly declines to declare one ("`R4M` is not declared here"; "**MISSING:** an independent `R4M`"), and the candidate's own tip commit message says the same. The only GitHub review on PR #16 is from `sourcery-ai[bot]`, state `COMMENTED`, declining to review because the diff exceeds its 150,000-character limit; there are zero issue comments and zero review comments.
+**Status: `DECIDED / HISTORICAL GOVERNANCE EXCEPTION — PRESERVED`. Not an open evidence search.**
 
-Status: `SOURCE_NEEDED`. A retrospective approval must not be manufactured. Either an exact-head R4M artifact for `7e5d67eb95f85216eff32d99ff82227cb5786efc` is produced from a source outside this repository, or the ticket-level R4M is recorded as never independently evidenced. See `C-PXAPI-008`.
+**Historical gate state: `R4M = UNKNOWN`.** Permanently. It is **never** to be reconstructed, inferred or retroactively recorded as `GREEN`.
+
+**Decision authority:** Jira `PXAPI-19` comment `16044`, 2026-09-17 — *"AD-005 — Historical R4M decision / closeout governance"*.
+
+What was measured, and remains true on this tree: the merge commit `fe8d838` states that PR #16 was merged "after exact-head R4M", and no artifact independently supporting that statement exists. `git grep -l '7e5d67eb95f85216eff32d99ff82227cb5786efc' HEAD` returns **0** tracked files, and `grep -c '7e5d67e' docs/evidence/PXAPI-19B-site-discovery-runtime.md` returns **0**. The 19.B evidence document explicitly declines to declare one ("`R4M` is not declared here"; "**MISSING:** an independent `R4M`"), and the candidate's own tip commit message says the same. The only GitHub review on PR #16 is from `sourcery-ai[bot]`, state `COMMENTED`, aborting the review because the diff exceeds its 150,000-character limit; there are zero issue comments and zero review comments. `main` carries no branch protection, so nothing required a review.
+
+**What the Product Owner decided.** Of the two lawful paths this finding originally offered, the second was taken: PR #16 merged **without** independently evidenced exact-head R4M, and that is recorded rather than repaired. The merge is a fact; the missing evidence may be neither reconstructed nor marked passed. The gap is preserved as a governance deviation, not closed by producing something that does not exist. **No retrospective approval has been or may be manufactured.**
+
+**What this is not.** It is not a new implementation defect, and it is not evidence against any PXAPI-19 acceptance criterion. It does bar any claim that the original 19.B merge process was fully DRS-conformant, and that bar is permanent.
+
+**What it no longer is.** A current closeout blocker. AD-005 does not gate PXAPI-19's ticket-level closeout any more, and deciding it authorises nothing: `PXAPI-20` stays blocked, and AD-006 is untouched and still open. See `C-PXAPI-008`.
 
 ### AD-006 — AC8 real-boundary evidence class
 
@@ -149,7 +159,7 @@ Status: `OPEN / EVIDENCE CLASS`. The prose record is `DOC_PERSISTED`, not indepe
 ## Current Jira focus
 
 - `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
-- `PXAPI-19` — **In Arbeit**. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged (`MERGED / CLOSEOUT OPEN`). The remaining work is ticket-level closeout, blocked on AD-005 and AD-006.
+- `PXAPI-19` — **In Arbeit**, closeout-only. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged (`MERGED / CLOSEOUT OPEN`) with its historical `R4M` decided `UNKNOWN` per AD-005. The remaining work is ticket-level closeout, open on AD-006 alone.
 - `PXAPI-20` — `NEXT / NOT AUTHORIZED` until PXAPI-19 receives its ticket-level closeout/readback. The 19.B merge alone does not release it.
 
 No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.

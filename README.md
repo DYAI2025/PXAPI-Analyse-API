@@ -2,23 +2,34 @@
 
 PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 
-> **This repository analyses one public homepage, and nothing more** (slices A3 / PXK-16,
-> PXK-59, PXK-60, PXK-61, PXK-67 and PXK-20.A). PXK-67 added the first vertical product
-> path: a real public URL in, real HTTP and HTML observations out, as canonical contract
-> documents. PXK-20.A adds the first *actionable* step on that path — three fixed rules turn
-> established website evidence into evidence-bound diagnostic findings. The repository
-> contains **no** scoring, score model, severity, confidence, ranking or intervention level, and
-> no product diagnosis, contextual synthesis, customer projection, rendering, delivery,
+> **This repository analyses one public homepage, and discovers which further pages a site
+> has — it acquires none of them** (slices A3 / PXK-16, PXK-59, PXK-60, PXK-61, PXK-67,
+> PXK-20.A, PXAPI-19.A and PXAPI-19.B). PXK-67 added the first vertical product path: a real
+> public URL in, real HTTP and HTML observations out, as canonical contract documents.
+> PXK-20.A adds the first *actionable* step on that path — three fixed rules turn established
+> website evidence into evidence-bound diagnostic findings. PXAPI-19.A registered the
+> `site-inventory.v1` and `sampling-manifest.v1` contracts; PXAPI-19.B made them executable:
+> one safely established public origin, `/robots.txt` read for `Sitemap:` declarations only,
+> bounded sitemap and same-origin seed-link discovery, canonicalisation and deduplication into
+> a site inventory, and a deterministic `CENSUS` sampling manifest. The repository contains
+> **no** scoring, score model, severity, confidence, ranking or intervention level, and no
+> product diagnosis, contextual synthesis, customer projection, rendering, delivery,
 > persistence, queueing, browser execution, SERP or business-context capability, and **no
-> authentication, authorisation, rate limiting or deployment**. It does not crawl: it fetches
-> exactly one page. `contracts/` remains the versioned vocabulary, as data rather than
+> authentication, authorisation, rate limiting or deployment**. It does not crawl: discovery
+> fetches the seed document, `/robots.txt` and sitemaps within a declared request bound, and
+> **fetches no discovered page**. Acquiring the selected pages is PXAPI-20 and is not
+> implemented here. `contracts/` remains the versioned vocabulary, as data rather than
 > behavior, and is still the single contract authority.
 
 ## Analysing a page
 
 ```bash
-# the command line, which is what the real-boundary smoke uses
+# the homepage analysis command line
 uv run python -m pxapi.adapters.inbound.cli https://example.com/
+
+# site discovery: one URL in, the inventory and the sampling manifest out. This is the
+# entry point the PXAPI-19 real-boundary smoke records.
+uv run python -m pxapi.adapters.inbound.discover_cli https://example.com/
 
 # the same use case over HTTP
 uv run uvicorn pxapi.adapters.inbound.http_api:app --port 8000
@@ -159,7 +170,10 @@ contracts/v1/        the versioned contract registry: manifest, schemas, valid e
 tests/architecture/  the import-boundary guard (and the proofs it can fail)
 tests/contracts/     the contract validation harness and its invalid fixtures
 tests/domain/        the run-state transition matrix and the orthogonality proofs
+tests/acquisition/   the acquisition contract semantics: digest topology and ordering rules
+tests/smoke/         the opt-in real-boundary smoke; skipped unless a public target is named
 oracle/              frozen regression oracle from A2 — reference evidence, not application code
+docs/context/        project state and the decision / contradiction ledgers
 docs/evidence/       per-slice verification records
 ```
 
@@ -226,9 +240,15 @@ entry that is stale, unearned, outside a layer or blanket fails on its own. The 
 | `application/analyze_homepage.py` | PXK-67 |
 | `application/derive_findings.py` | PXK-20 |
 | `adapters/contracts/registry.py` | PXK-67 |
-| `adapters/web/*` | PXK-67 |
-| `adapters/inbound/*`, `adapters/composition.py` | PXK-67 |
+| `adapters/web/target_policy.py`, `adapters/web/page_fetcher.py`, `adapters/web/html_observations.py` | PXK-67 |
+| `adapters/inbound/http_api.py`, `adapters/inbound/cli.py`, `adapters/composition.py` | PXK-67 |
 | `config/contract_root.py`, `config/fetch_limits.py` | PXK-67 |
+| `domain/indexability.py` | PXK-20.B1 |
+| `domain/site_identity.py`, `domain/site_discovery.py`, `domain/page_classification.py` | PXAPI-19.B |
+| `domain/acquisition_semantics.py`, `domain/acquisition_digests.py`, `domain/sampling_policy.py` | PXAPI-19.B |
+| `ports/site_discovery.py`, `application/discover_site.py` | PXAPI-19.B |
+| `adapters/web/html_links.py`, `adapters/web/site_discovery.py` | PXAPI-19.B |
+| `adapters/inbound/discover_cli.py`, `config/discovery_limits.py` | PXAPI-19.B |
 
 ### The Analysis Run lifecycle
 

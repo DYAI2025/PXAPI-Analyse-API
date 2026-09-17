@@ -1,9 +1,10 @@
 # PXAPI Project State
 
-**Snapshot date:** 2026-09-11  
-**Execution mode:** PXAPI-19.A governance closeout / PXAPI-19.B PRE_IMPLEMENTATION rebaseline  
+**Snapshot date:** 2026-09-17  
+**Execution mode:** PXAPI-19 ticket-level closeout reconcile; 19.A and 19.B are both merged  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
-**19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`
+**19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`  
+**19.B integrated implementation baseline / current `main`:** `fe8d838023c8f9967151cad9aa1981e76dcf7d75`
 
 ## Purpose
 
@@ -31,13 +32,13 @@ This file is a compact rehydration snapshot for delivery gates. It does not repl
 
 ## Current code truth
 
-At the 19.A integrated implementation baseline `926c2415503f27084ab314629548b2e79ddce8a9`, PXAPI still has no PXAPI-19.B site-discovery runtime. The existing application runtime therefore remains homepage-scoped for acquisition behavior.
+At current `main` `fe8d838023c8f9967151cad9aa1981e76dcf7d75`, the PXAPI-19.B site-discovery runtime **is present**. `SiteDiscoveryPort`, `HttpSiteDiscovery`, the `DiscoverSite` use case, the deterministic `CENSUS_FIRST_DETERMINISTIC` planner, producer-side semantic enforcement and `python -m pxapi.adapters.inbound.discover_cli` are all on `main`, authorized by the twelve `PXAPI-19.B` entries in `BEHAVIOR_ALLOWED` (`tests/test_package_scaffold.py`).
 
-PXAPI-19.A added the provider-neutral contract/foundation layer for the next acquisition step, including registered `site-inventory.v1` and `sampling-manifest.v1` schemas, shared acquisition definitions, valid examples, targeted invalid fixtures, deterministic digest/semantic guards and contract evidence.
+Acquisition is therefore no longer homepage-only at the discovery layer: one run establishes a canonical public origin, reads `/robots.txt` for `Sitemap:` declarations only, reads sitemaps and bounded same-origin seed links, canonicalizes and deduplicates them into a `site-inventory.v1`, and plans a `sampling-manifest.v1` in `CENSUS` mode. **No discovered page is fetched** — page acquisition over the manifest is PXAPI-20 and is not implemented.
 
-19.A intentionally did **not** introduce SiteDiscoveryPort production, sitemap/robots/link runtime discovery, producer canonicalization/deduplication, page classification/planning runtime, Real-Boundary-Smoke, browser/Crawl4AI execution, scoring/customer output, queueing, CRM integration or deployment behavior.
+PXAPI-19.A had added the provider-neutral contract/foundation layer for that step, including registered `site-inventory.v1` and `sampling-manifest.v1` schemas, shared acquisition definitions, valid examples, targeted invalid fixtures, deterministic digest/semantic guards and contract evidence. 19.A intentionally introduced no runtime; 19.B is what made those contracts executable.
 
-No runtime or customer-value claim follows from the 19.A contract merge alone.
+Still **not** present at `fe8d838`: browser/Crawl4AI execution, `RenderedPagePort`, multi-page static acquisition, `page-acquisition-record.v1`, scoring/customer output changes, queueing, CRM integration and deployment behavior. No customer-value claim follows from the 19.B merge.
 
 ## PXAPI-19.A closeout
 
@@ -54,6 +55,25 @@ No runtime or customer-value claim follows from the 19.A contract merge alone.
 
 Overall Jira item `PXAPI-19` remains incomplete and `In Arbeit` until 19.B satisfies the remaining runtime and Real-Boundary acceptance criteria.
 
+## PXAPI-19.B closeout
+
+**Bounded 19.B state:** `MERGED / CLOSEOUT OPEN`
+
+- PR head/candidate: `7e5d67eb95f85216eff32d99ff82227cb5786efc`
+- PR: `#16`, merged 2026-09-11T23:54:09Z
+- bound base: `468ce6f187efcd108a930bf977858a3790e4bc52`
+- merge / integrated implementation baseline: `fe8d838023c8f9967151cad9aa1981e76dcf7d75`
+- candidate CI: `python-compat` run `34653734998` (`push`) and `34653738494` (`pull_request`), both exact head `7e5d67eb95f85216eff32d99ff82227cb5786efc`, both `success`, Python 3.13 and 3.14 jobs `success`
+- post-merge main CI: `python-compat` run `34659764590`, exact head `fe8d838023c8f9967151cad9aa1981e76dcf7d75`, `success`
+- `git diff fd3ad8a..7e5d67e -- src/ tests/ contracts/` is **0 bytes**, so the gate results measured on `fd3ad8a` carry to the merged head for code, lint and tests
+- 19.B IC: `GREEN` — the authorized 19.B scope is implemented and present on `main`
+- 19.B R2G: `GREEN` on the exact candidate, bounded by the gates this repository actually runs (see below)
+- 19.B R4M: `SOURCE_NEEDED` — see AD-005
+
+**What R2G covers here.** `.github/workflows/python-compat.yml` is the only workflow. It runs `uv sync --locked`, `uv lock --check`, `ruff check`, `ruff format --check` and `uv run pytest` on Python 3.13 and 3.14. Contract validation runs inside that suite. The workflow's own header records that repository-wide security, secret and dependency-security scanning are deliberately **not** implemented here and belong to A8. `main` carries no branch protection, so no review was required to merge.
+
+Overall Jira item `PXAPI-19` remains `In Arbeit`. What is open is ticket-level closeout, not implementation: see AD-005 and AD-006.
+
 ## Completed prerequisite
 
 `PXAPI-4` — Skill Capability Baseline & Parity Gap Contract — is **Erledigt** as of 2026-09-10 for its discovery/contract scope.
@@ -69,19 +89,17 @@ This completion proves the source-bound parity/gap decision artifact, not implem
 
 ## Current prioritized delivery sequence
 
-1. `PXAPI-19.B` — provider-neutral discovery/runtime production for the already merged 19.A contracts, including required Real-Boundary-Smoke. This is the next allowed mutating implementation theme (`WIP=1`) after this governance closeout is merged/read back and its exact new `main` SHA is bound.
-2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after full PXAPI-19 closeout/readback including 19.B.
+1. `PXAPI-19` ticket-level closeout. 19.A and 19.B are both merged; the remaining work is evidence-bound closeout and anti-drift reconcile, not implementation. The blocking items are AD-005 (no independent exact-head `R4M` artifact) and AD-006 (AC8 real-boundary evidence class). No mutating implementation theme is currently authorized, so the `WIP=1` slot is free but unclaimed.
+2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after PXAPI-19 receives its ticket-level closeout/readback. Merging 19.B did **not** release it; see AD-005 and AD-006 for what is still open.
 3. Re-measure evidence gain before paying browser/async complexity.
 4. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
 5. Strategic lever / impact verification contracts (`PXAPI-24`) later.
 
 The 80/20 expectation is a Product Owner hypothesis, not production-measured fact.
 
-## PXAPI-19.B PRE_IMPLEMENTATION boundary
+## PXAPI-19.B delivered scope
 
-19.B may be bound only to the freshly re-read exact `main` after this governance closeout merges; the 19.A merge SHA above is an implementation baseline, not a permanent moving-head claim.
-
-19.B intended scope remains bounded to:
+19.B was implemented from base `468ce6f187efcd108a930bf977858a3790e4bc52` and merged as `fe8d838023c8f9967151cad9aa1981e76dcf7d75`. The scope below is what it was authorized to deliver and what the merged tree carries:
 
 - provider-neutral `SiteDiscoveryPort`;
 - safe canonical public target-origin establishment and same-origin discovery;
@@ -94,7 +112,7 @@ The 80/20 expectation is a Product Owner hypothesis, not production-measured fac
 - producer-side enforcement of 19.A semantic invariants;
 - controlled public Real-Boundary-Smoke for PXAPI-19 acceptance.
 
-Out of scope for 19.B: browser/Crawl4AI, PXAPI-20 multi-page static acquisition pipeline, scoring/PDF/customer projection, PostgreSQL queue/worker, CRM/buyer-intent and deployment changes.
+Out of scope for 19.B, and verified absent on `fe8d838`: browser/Crawl4AI, PXAPI-20 multi-page static acquisition pipeline, scoring/PDF/customer projection, PostgreSQL queue/worker, CRM/buyer-intent and deployment changes. `pyproject.toml`, `uv.lock`, `.github/` and `contracts/` are each a **0-byte** diff against the base, so 19.B added no dependency, changed no CI and changed no contract.
 
 ## Active anti-drift findings
 
@@ -110,17 +128,29 @@ The repository context documents exist and are maintained as rehydration aids. T
 
 Jira's raw issue-link representation for `PXAPI-19` currently exposes `PXAPI-20` and `PXAPI-21` as `inwardIssue` values under the `Blocks` link type (`is blocked by`), while the accepted product sequence and downstream Jira descriptions require full `PXAPI-19` before `PXAPI-20`. Other Jira graph rendering may present the relationship differently.
 
-Status: `CONFLICT / OPEN / NON-BLOCKING FOR 19.B`. Do not mutate, reverse or delete these links until the current link semantics and a safe reversible operation are independently verified. Do not infer PXAPI-20 authorization from the link representation.
+Status: `CONFLICT / OPEN / NON-BLOCKING FOR PXAPI-19 CLOSEOUT`. Do not mutate, reverse or delete these links until the current link semantics and a safe reversible operation are independently verified. Do not infer PXAPI-20 authorization from the link representation.
 
 ### AD-004 — sampling threshold remains missing
 
 The census-to-stratified-sampling threshold remains `MISSING`. No numeric threshold may be invented in 19.B. Executable policy remains `CENSUS`-only until representative benchmark evidence and an explicit versioned decision exist.
 
+### AD-005 — no independent exact-head R4M artifact for the 19.B candidate
+
+The merge commit `fe8d838` states that PR #16 was merged "after exact-head R4M". No artifact independently supporting that statement has been located. Measured on this tree: `git grep -l '7e5d67eb95f85216eff32d99ff82227cb5786efc' HEAD` returns **0** tracked files, and `grep -c '7e5d67e' docs/evidence/PXAPI-19B-site-discovery-runtime.md` returns **0**. The 19.B evidence document explicitly declines to declare one ("`R4M` is not declared here"; "**MISSING:** an independent `R4M`"), and the candidate's own tip commit message says the same. The only GitHub review on PR #16 is from `sourcery-ai[bot]`, state `COMMENTED`, declining to review because the diff exceeds its 150,000-character limit; there are zero issue comments and zero review comments.
+
+Status: `SOURCE_NEEDED`. A retrospective approval must not be manufactured. Either an exact-head R4M artifact for `7e5d67eb95f85216eff32d99ff82227cb5786efc` is produced from a source outside this repository, or the ticket-level R4M is recorded as never independently evidenced. See `C-PXAPI-008`.
+
+### AD-006 — AC8 real-boundary evidence class
+
+The controlled public Real-Boundary-Smoke required by PXAPI-19 AC8 exists in this repository in two forms, and they are not the same thing. The **mechanism** is committed and executable: `tests/smoke/test_real_boundary_smoke.py` drives the shipped composition against a real public origin and is opt-in through `PXAPI_REAL_BOUNDARY_SMOKE_URL`, so it is skipped in CI. The **execution record** of the runs against `www.rfc-editor.org` and `example.com` is prose in `docs/evidence/PXAPI-19B-site-discovery-runtime.md` section D; no machine-readable capture accompanies it (`git ls-files docs/` matches **0** `.json`/`.txt`/`.log`/`.csv` files), and the document states its run driver is scratchpad tooling outside the repository.
+
+Status: `OPEN / EVIDENCE CLASS`. The prose record is `DOC_PERSISTED`, not independently verified by any committed artifact. Re-deriving it requires outbound network access. See `C-PXAPI-009`.
+
 ## Current Jira focus
 
 - `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
-- `PXAPI-19` — **In Arbeit**. 19.A is bounded `CLOSED / VERIFIED`; 19.B is the next implementation slice after post-governance exact-main binding.
-- `PXAPI-20` — `NEXT / NOT AUTHORIZED` until full PXAPI-19, including 19.B and Real-Boundary-Smoke, is closed/readback-verified.
+- `PXAPI-19` — **In Arbeit**. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged (`MERGED / CLOSEOUT OPEN`). The remaining work is ticket-level closeout, blocked on AD-005 and AD-006.
+- `PXAPI-20` — `NEXT / NOT AUTHORIZED` until PXAPI-19 receives its ticket-level closeout/readback. The 19.B merge alone does not release it.
 
 No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.
 

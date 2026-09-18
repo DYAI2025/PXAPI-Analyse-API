@@ -768,3 +768,155 @@ def test_a_document_our_decoder_cannot_read_is_still_our_runtime_error(
     report, _ = discover(lambda b: {"/": home(("/leistungen", "L"))})
     assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "RUNTIME_ERROR"
     assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == []
+
+
+# --- NF-5: a malformed Sitemap: declaration is one declaration, never the whole source -------
+#
+# The same tolerant-input defect C-PXAPI-013 closes for document links, in the sibling reader of
+# the same theme. ``_robots`` resolved every declaration with an unguarded
+# ``urljoin(response.final_url, value.strip())``, so one value the URL parser will not read —
+# ``http://[`` and its kind — raised ``ValueError`` out of ``_robots``, was caught only by the
+# module-level ``_guarded``, and turned the whole ROBOTS_DECLARATION source into RUNTIME_ERROR
+# with zero declarations: the run claimed *our* runtime failed on a robots.txt it read perfectly,
+# and every valid sibling declaration — with the sitemap and the pages behind it — was discarded.
+
+BAD_DECLARATION = "Sitemap: http://[::1"
+
+
+def test_a_malformed_sitemap_declaration_before_a_valid_one_does_not_discard_it() -> None:
+    """Scenario A."""
+    report, base = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots(BAD_DECLARATION, f"Sitemap: {b}/karte.xml"),
+            "/karte.xml": urlset(b + "/leistungen"),
+        }
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "USED"
+    assert outcomes(report)["SITEMAP"] == "USED"
+    assert forms(report, "SITEMAP") == [base + "/leistungen"]
+
+
+def test_a_malformed_sitemap_declaration_between_two_valid_ones_discards_neither() -> None:
+    """Scenario B — the ordering the brief names explicitly: both siblings must survive."""
+    report, base = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots(
+                f"Sitemap: {b}/one.xml", BAD_DECLARATION, f"Sitemap: {b}/two.xml"
+            ),
+            "/one.xml": urlset(b + "/eins"),
+            "/two.xml": urlset(b + "/zwei"),
+        }
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "USED"
+    assert outcomes(report)["SITEMAP"] == "USED"
+    assert forms(report, "SITEMAP") == [base + "/eins", base + "/zwei"]
+
+
+def test_a_malformed_sitemap_declaration_after_a_valid_one_does_not_discard_it() -> None:
+    """Scenario C."""
+    report, base = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots(f"Sitemap: {b}/karte.xml", BAD_DECLARATION),
+            "/karte.xml": urlset(b + "/kontakt"),
+        }
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "USED"
+    assert outcomes(report)["SITEMAP"] == "USED"
+    assert forms(report, "SITEMAP") == [base + "/kontakt"]
+
+
+def test_a_malformed_declaration_is_never_fetched_and_never_persisted() -> None:
+    """Scenarios A to D share one safety floor: isolation preserves siblings, it never widens
+    what may be reached or written. The unreadable value names no target, so nothing is
+    requested for it and nothing carrying it reaches the boundary."""
+    fetched: list[str] = []
+    report, base = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots(BAD_DECLARATION, f"Sitemap: {b}/karte.xml"),
+            "/karte.xml": urlset(b + "/leistungen"),
+        },
+        fetcher_factory=recording(fetched),
+    )
+    assert fetched == [base + "/", base + "/robots.txt", base + "/karte.xml"]
+    assert not any("[" in url for url in fetched)
+    assert not any("[" in o.observed_form for o in report.observations)
+
+
+def test_robots_declaring_only_malformed_sitemaps_is_malformed_not_a_missing_declaration() -> None:
+    """Scenario D. A ``Sitemap:`` field *was* present, so NO_SITEMAP_DECLARATION would be a
+    false statement about the file; none of them resolved, so USED would be a false statement
+    about what was recovered. MALFORMED is the existing neutral technical state for exactly
+    that, and it is pinned to zero declarations — no new SourceOutcome is invented."""
+    fetched: list[str] = []
+    report, base = discover(
+        lambda b: {"/": home(), "/robots.txt": robots(BAD_DECLARATION, "Sitemap: http://[")},
+        fetcher_factory=recording(fetched),
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "MALFORMED"
+    assert not any("[" in url for url in fetched)
+    assert not any("[" in o.observed_form for o in report.observations)
+    # The conventional /sitemap.xml is still tried, exactly as it is for any robots file that
+    # hands the sitemap stage nothing. It is absent here, and that is what SITEMAP reports.
+    assert fetched == [base + "/", base + "/robots.txt", base + "/sitemap.xml"]
+    assert outcomes(report)["SITEMAP"] == "ABSENT"
+
+
+def test_a_robots_file_with_no_sitemap_field_is_still_a_missing_declaration() -> None:
+    """Scenario E — the negative control that keeps MALFORMED from swallowing the empty case.
+    No ``Sitemap:`` field was recognised at all, so nothing was malformed."""
+    report, _ = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots("User-agent: *", "Disallow: /privat", "Sitemap:", "Sitemap:  "),
+        }
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "NO_SITEMAP_DECLARATION"
+
+
+def test_a_valid_off_origin_declaration_is_refused_not_called_malformed() -> None:
+    """Scenario F. An off-origin sitemap URL is perfectly readable; it is simply not ours.
+    It must keep resolving, so the existing same-origin scope decides it downstream and
+    REFUSED_SITEMAP still speaks — collapsing it into MALFORMED would lose that fact."""
+    recorder = Recorder()
+    report, _ = discover(
+        lambda b: {
+            "/": home(),
+            "/robots.txt": robots("Sitemap: http://evil.test/sitemap.xml", BAD_DECLARATION),
+        },
+        policy=LoopbackTargetPolicy(resolve=recorder),
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "USED"
+    assert outcomes(report)["REFUSED_SITEMAP"] == "TARGET_POLICY_REFUSED"
+    assert "evil.test" not in recorder.hosts
+    assert not any("evil.test" in o.observed_form for o in report.observations)
+
+
+def test_the_declaration_guard_does_not_turn_our_own_defect_into_malformed_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario G — the lock that keeps this repair from becoming a broad ``except``.
+
+    Only ``ValueError`` means "this website value names no readable target". Any other type
+    from that call is a defect of ours, and it must still leave ``_robots`` and be reported as
+    RUNTIME_ERROR by ``_guarded`` — never relabelled as something the site did wrong.
+    ``urljoin`` is patched for the declaration value alone, so the robots fetch itself still
+    resolves and the failure can only come from the resolution this guard wraps.
+    """
+    from pxapi.adapters.web import site_discovery as module
+
+    real = module.urljoin
+
+    def selective(base: str, url: str) -> str:
+        if url == "/unser-defekt.xml":
+            raise RuntimeError("a defect of ours, not a malformed value")
+        return real(base, url)
+
+    monkeypatch.setattr(module, "urljoin", selective)
+    report, _ = discover(
+        lambda b: {"/": home(), "/robots.txt": robots("Sitemap: /unser-defekt.xml")}
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "RUNTIME_ERROR"

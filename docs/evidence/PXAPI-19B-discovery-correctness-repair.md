@@ -8,12 +8,14 @@ slice and nothing here authorises it.**
 exception), comment `16045` (implementation repair required); Confluence `55181314` (current DRS
 semantics), `54362115` (current acquisition / site-intelligence architecture).
 **Implementation base:** `aa75d6b52fe060b76a7cf900617ad5f990901183`, verified before any change.
-**Candidate:** `fix/pxapi-19-discovery-correctness`, four commits on top of the base:
+**Candidate:** `fix/pxapi-19-discovery-correctness`, on top of the base:
 `9f19db1b7a8263e355ee9913e4f85a53d10e66b3` (the repair and its tests),
 `179107b2a9bdc68a0ec4d26175ae03acdec65082` (three guards the countermutation pass found
-asleep), `94939ade509d5b104688d63ee005a153e73cb9b3` (this document) and the commit carrying
-the code-review answer of §10, which is the candidate head. A commit cannot record its own
-identity, so the exact head SHA is stated on PR #18 and by `git rev-parse HEAD`.
+asleep), `94939ade509d5b104688d63ee005a153e73cb9b3` (this document),
+`46669a9d32738e9d7876686b9c273264b4132a09` (the code-review answer of §10 — the head the
+Orchestrator reviewed and returned as CHANGES REQUIRED) and the commit carrying the **NF-5
+repair of §12**, which is the candidate head. A commit cannot record its own identity, so the
+exact head SHA is stated on PR #18 and by `git rev-parse HEAD`.
 
 This document records what was verified, by which command, with which result. **It is not an
 acceptance decision.** `IC`, `R2G` and `R4M` on this candidate remain Orchestrator authority and
@@ -405,16 +407,21 @@ persisted contract field or dependency was invented.
 | Path | Layer | Status | What changed |
 | --- | --- | --- | --- |
 | `src/pxapi/adapters/web/html_links.py` | adapter | modified | C-PXAPI-013: per-link and per-base `ValueError` isolation; module docstring gains the third rule |
+| `src/pxapi/adapters/web/site_discovery.py` | adapter | modified | **NF-5 (§12):** per-declaration `ValueError` isolation in `_robots`; malformed-only → `MALFORMED`; docstring gains the tolerance rule |
 | `src/pxapi/domain/site_identity.py` | domain | modified | C-PXAPI-014: the fragment is split off before rule 1; rule list gains rule 0; two docstrings corrected to say "addressing part" |
 | `tests/adapters/test_html_links.py` | tests | modified | C-PXAPI-013 unit RED/GREEN + guard-narrowness lock |
-| `tests/adapters/test_site_discovery_adapter.py` | tests | modified | C-PXAPI-013 end-to-end RED/GREEN against a real loopback server |
+| `tests/adapters/test_site_discovery_adapter.py` | tests | modified | C-PXAPI-013 end-to-end RED/GREEN against a real loopback server; **NF-5 scenarios A–G (§12.2)** |
 | `tests/domain/test_site_identity.py` | tests | modified | C-PXAPI-014 RED/GREEN + 21 negative controls + idempotence/contract-shape re-proof |
 | `tests/application/test_discover_site.py` | tests | modified | C-PXAPI-015 contract-conflict locks |
 | `tests/adapters/test_discovery_bounds.py` | tests | modified | C-PXAPI-016 A/B materiality locks |
 
-`git diff --shortstat aa75d6b… HEAD` over `src/` and `tests/`: **7 files, +473 −16.**
-`src/` alone is **+58 −16 across 2 files** (`html_links.py` +29 −5, `site_identity.py` +29 −11),
-the larger part of it documentation.
+`git diff --shortstat aa75d6b… HEAD` over `src/` and `tests/`: **8 files, +660 −18.**
+`src/` alone is **+93 −18 across 3 files** (`html_links.py` +29 −5, `site_discovery.py` +28 −2,
+`site_identity.py` +36 −11), the larger part of it documentation.
+
+**This table is cumulative over the whole branch.** `site_discovery.py` and the 152 added lines in
+`test_site_discovery_adapter.py` marked NF-5 arrived *after* the review of head `46669a9…`; §12.7
+isolates exactly that delta.
 
 ---
 
@@ -437,6 +444,12 @@ two rows are green against the base *is* the evidence that neither finding is an
 defect.
 
 ### GREEN, on the candidate
+
+> **Scope of this subsection: head `46669a9…`, the head the Orchestrator reviewed.** The figures
+> below are that measurement and are kept as recorded. The NF-5 repair of §12 added 8 tests after
+> it, so the current head collects **2876** and runs **2875 passed, 1 skipped** on both
+> interpreters — **§12.6 carries the gate results for the current head.** The lock, lint and
+> format rows below are unchanged on it.
 
 | Gate | Command | Result | rc |
 | --- | --- | --- | --- |
@@ -519,7 +532,7 @@ it.
 | `pyproject.toml` | untouched | base blob = head blob |
 | `uv.lock` | untouched | base blob = head blob |
 | `docs/evidence/PXAPI-19B-site-discovery-runtime.md` | untouched | base blob `68986e4b787ab57b7f36ce17d623d6636ee8dd5e` = head blob |
-| `src/pxapi/adapters/web/site_discovery.py` | untouched | not in `git diff --name-only aa75d6b… HEAD` |
+| `src/pxapi/adapters/web/site_discovery.py` | **no longer untouched — see §12** | `_robots()` alone changed, for NF-5, after the review of head `46669a9…`. Everything else in the file — `_links`, `_sitemaps`, `_read_sitemap`, `_guarded`, `_Budget`, the bootstrap and the `CANONICAL_SEED` path — is unchanged; `git diff 46669a9… -- src/` touches this one method |
 | `src/pxapi/config/discovery_limits.py` | untouched | not in the diff |
 | `src/pxapi/domain/acquisition_semantics.py` | untouched | not in the diff |
 | PXAPI-20 surface | absent | no `page-acquisition-record`, `RenderedPagePort`, Crawl4AI, browser runtime, scoring, projection, PDF, PostgreSQL, queue or worker touched |
@@ -566,7 +579,13 @@ again; with `is_same_origin`'s internal re-canonicalisation the measured cost is
 as shown in §4. **Not changed**: touching `site_discovery.py` for a finding this document rules
 NON_MATERIAL would blur the materiality verdict, and the brief asks for minimal change.
 
-### NF-5 — the same malformed-value defect is live in `_robots` (severity: HIGH; out of this theme's scope)
+### NF-5 — the same malformed-value defect is live in `_robots` (severity: HIGH) → **REPAIRED, see §12**
+
+> **Status update.** This entry is the original finding record and is kept verbatim below. The
+> Orchestrator ruled NF-5 a material defect inside the authorised PXAPI-19.B boundary and returned
+> head `46669a9…` as CHANGES REQUIRED. **It is repaired; §12 carries the RED/GREEN, the exception
+> surface and the countermutation.** The "Why it was not fixed here" paragraph below is therefore
+> historical: it records the reasoning at the time, not the current state of the branch.
 
 `src/pxapi/adapters/web/site_discovery.py:502` resolves every `Sitemap:` declaration with an
 unguarded `urljoin(response.final_url, value.strip())`. It is the *same* defect C-PXAPI-013
@@ -662,7 +681,7 @@ PR #18. Neither was permitted to merge or to widen scope.
 
 | Review finding | Re-derived? | Disposition |
 | --- | --- | --- |
-| 1 — the same unguarded `urljoin` in `_robots` (HIGH) | **yes**, reproduced with the repo's own helpers | **NF-5**, out of scope, not fixed |
+| 1 — the same unguarded `urljoin` in `_robots` (HIGH) | **yes**, reproduced with the repo's own helpers | **NF-5** — judged out of scope at the time; the Orchestrator overruled that and it is now **fixed, see §12** |
 | 2 — the new comment's motivating example is not actually recovered (MEDIUM) | **yes**, `is_admissible` is still `False` for it | **fixed** — the comment now states precisely which fragment classes are recovered and which still need a contract decision |
 | 3 — `EMPTY` is a claim about the website (LOW) | already measured in §3 | **NF-6**, not changed |
 | 4 — `CANONICALISATION_VERSION` names two behaviours (LOW) | already open in §9 | recorded in §9, Orchestrator's call |
@@ -670,6 +689,10 @@ PR #18. Neither was permitted to merge or to widen scope.
 Only finding 2 produced a change, and it is confined to a comment inside a file this branch
 already modifies. Findings 1 and 3 are behaviour changes outside what C-PXAPI-013…016 authorise and
 were left unresolved on purpose.
+
+**Superseded for finding 1.** The Orchestrator's independent review of head `46669a9…` ruled NF-5
+material and inside the authorised PXAPI-19.B boundary. That ruling is the authority this branch
+follows, and §12 closes it. Finding 3 (NF-6) and findings 2 and 4 are unaffected.
 
 ## 11. Evidence ceiling
 
@@ -687,15 +710,238 @@ What this document does **not** establish:
 5. **Worst-case figures are from this machine** (Darwin 25.6.0, Apple Silicon, loopback server).
    2.108 s and 10.443 s are margin evidence against a 60 s deadline, not performance guarantees.
 6. **The fuzz is evidence, not proof.** 2 705 652 calls produced only `ValueError` from `urljoin`
-   and `urlsplit` on CPython 3.13.3 and the full suite agrees on 3.14.6. A future interpreter
-   raising a different type from those functions would surface as an escaping exception, which
-   `_guarded` records as `RUNTIME_ERROR` — the pre-repair behaviour, never something quieter.
-7. **Mutation coverage is per-guard, not exhaustive.** Thirteen mutations were run; they cover
-   every guard this branch adds and the two contract authorities behind the C-PXAPI-015 verdict.
-   They are not a mutation score over the module.
-8. **The malformed-value repair is not module-wide.** It closes the defect in `html_links.py`,
-   which is what C-PXAPI-013 names. The identical pattern is still live in `_robots`
-   (NF-5, re-derived and HIGH) and unguarded at `page_fetcher.py:168` and
-   `analyze_homepage.py:478`. Reading this slice as "malformed URL values are now isolated"
-   would be wrong; it isolates them in one reader.
+   and `urlsplit` on CPython 3.13.3 and the full suite agrees on 3.14.6; the NF-5 probe in §12.1
+   adds 1 006 240 calls per interpreter against its own call shape, on both 3.13.3 and 3.14.6,
+   with the same single type. A future interpreter raising a different type from those functions
+   would surface as an escaping exception, which `_guarded` records as `RUNTIME_ERROR` — the
+   pre-repair behaviour, never something quieter.
+7. **Mutation coverage is per-guard, not exhaustive.** Eighteen mutations were run — thirteen for
+   C-PXAPI-013/014/015/016, five more for NF-5 in §12.5. They cover every guard this branch adds
+   and the two contract authorities behind the C-PXAPI-015 verdict. They are not a mutation score
+   over the module.
+8. **The malformed-value repair is still not module-wide.** It closes the defect in
+   `html_links.py` (C-PXAPI-013) and in `site_discovery._robots` (NF-5, §12). The same unguarded
+   `urljoin` pattern remains at `page_fetcher.py:168` and `analyze_homepage.py:478`, which this
+   slice deliberately did not touch: they are separate findings and are untriaged. Reading this
+   branch as "malformed URL values are now isolated everywhere" would be wrong; it isolates them
+   in the two readers named above.
 9. **No Jira or Confluence write occurred.** No merge occurred. No deployment occurred.
+10. **NF-5 is closed as a defect, not as a robots specification.** §12 makes one malformed
+    declaration cost one declaration. It does not make this a conforming robots.txt parser: only
+    the `Sitemap` field is still read, no directive is still applied, and the slice still claims
+    no robots compliance of any kind.
+11. **`MALFORMED` for a malformed-only robots file is a technical neutrality choice, not a
+    contract ruling.** It reuses an existing `SourceOutcome` because inventing one is not
+    authorised and `NO_SITEMAP_DECLARATION` would be false. If an authority decides that
+    "declared but unresolvable" deserves its own state, that is a contract change and is not
+    made here.
+12. **The NF-5 tests are scenario coverage, not a fuzz of `_robots`.** Eight tests cover the
+    orderings A–G plus the never-fetched/never-persisted floor, and five mutations prove each can
+    fail. No property-based test over arbitrary robots files was written.
+
+---
+
+## 12. NF-5 repair — malformed `Sitemap:` declaration isolation
+
+Added after the code review of §10. The Orchestrator's independent verdict on head
+`46669a9d32738e9d7876686b9c273264b4132a09` was **CHANGES REQUIRED** (`IC: NOT_GREEN`,
+`R2G: NOT_GREEN`, `R4M: NOT EVALUATED`) because **NF-5 — recorded in §8 of this document as HIGH
+and deliberately left unrepaired — is a material defect inside the same authorised PXAPI-19.B
+discovery boundary.** It is now closed. **§8's NF-5 entry stands as the original finding record;
+this section supersedes its "Why it was not fixed here" paragraph, which is now historical.**
+
+Scope of this section: **NF-5 only.** `C-PXAPI-014` (fragment canonicalisation) is accepted as
+implemented and is not extended here; `C-PXAPI-015` (`CANONICAL_SEED`) and `C-PXAPI-016`
+(discovery limits) are untouched, as are `contracts/`, `DiscoveryLimits`, dependencies, workflows
+and PXAPI-20. The remaining raw-ASCII-space observed-form issue (NF-2) stays a contract-boundary
+question and is not addressed.
+
+### Start state, measured before any change
+
+| Fact | Value |
+| --- | --- |
+| `origin/main` | `aa75d6b52fe060b76a7cf900617ad5f990901183` |
+| PR #18 head before mutation | `46669a9d32738e9d7876686b9c273264b4132a09` |
+| local `HEAD` | `46669a9d32738e9d7876686b9c273264b4132a09` |
+| `git status --porcelain` | empty |
+| exact-head CI | push `35294573198` success; pull_request `35294576588` success; Python 3.13 and 3.14 success |
+| open review threads | 0 |
+
+### 12.1 Exception surface — re-derived, not inherited
+
+The brief requires stopping rather than guessing if `ValueError` is not the complete exception
+surface for the call this repair guards. It was re-derived here against the **exact call shape**
+`urljoin(response.final_url, value.strip())` — an absolute http(s) base the fetcher already
+retrieved, and an attacker-controlled value — over hand-picked hostile seeds, their pairwise
+concatenations, and deterministic random strings over a hostile alphabet:
+
+| Interpreter | calls | raises | exception types | non-`ValueError` types |
+| --- | --- | --- | --- | --- |
+| CPython 3.13.3 | 1 006 240 | 321 634 | `{'ValueError': 321634}` | `{}` |
+| CPython 3.14.6 | 1 006 240 | 321 634 | `{'ValueError': 321634}` | `{}` |
+
+`VERDICT=VALUEERROR_IS_COMPLETE` on both. The narrow guard is therefore the correct and complete
+surface, and the same one the accepted `C-PXAPI-013` repair uses in `html_links.py`. This is
+evidence, not proof — see the ceiling.
+
+### 12.2 RED reproduction, against the unmodified source at `46669a9…`
+
+`git diff --stat -- src/` was empty at the time of this run: the source was the reviewed head.
+Measured with the repository's own loopback server and a recording fetcher.
+
+| Scenario | `robots.txt` | `ROBOTS_DECLARATION` | `SITEMAP` | sitemap forms retained | URLs fetched |
+| --- | --- | --- | --- | --- | --- |
+| control | one valid declaration | `USED` | `USED` | `['/leistungen']` | `/`, `/robots.txt`, `/karte.xml` |
+| **A** | malformed **before** valid | `RUNTIME_ERROR` | `ABSENT` | `[]` — **valid sibling lost** | `/`, `/robots.txt`, `/sitemap.xml` |
+| **B** | valid, malformed, valid | `RUNTIME_ERROR` | `ABSENT` | `[]` — **both siblings lost** | `/`, `/robots.txt`, `/sitemap.xml` |
+| **C** | malformed **after** valid | `RUNTIME_ERROR` | `ABSENT` | `[]` — **valid sibling lost** | `/`, `/robots.txt`, `/sitemap.xml` |
+| **D** | malformed only | `RUNTIME_ERROR` | `ABSENT` | `[]` | `/`, `/robots.txt`, `/sitemap.xml` |
+| **E** | no `Sitemap` field | `NO_SITEMAP_DECLARATION` | `ABSENT` | `[]` | `/`, `/robots.txt`, `/sitemap.xml` |
+| **F** | valid off-origin + malformed | `RUNTIME_ERROR` | `REFUSED_SITEMAP` **absent from the report** | — | `evil.test` never resolved |
+
+In A–D and F the run claims *our* runtime failed on a `robots.txt` it decoded and parsed
+perfectly. In F the off-origin declaration's own source, `REFUSED_SITEMAP`, does not appear at
+all — the whole robots source died before it could be reported.
+
+RED test identifiers, all in `tests/adapters/test_site_discovery_adapter.py`:
+
+| Scenario | Test | Pre-repair |
+| --- | --- | --- |
+| A | `test_a_malformed_sitemap_declaration_before_a_valid_one_does_not_discard_it` | FAILED |
+| B | `test_a_malformed_sitemap_declaration_between_two_valid_ones_discards_neither` | FAILED |
+| C | `test_a_malformed_sitemap_declaration_after_a_valid_one_does_not_discard_it` | FAILED |
+| A–D | `test_a_malformed_declaration_is_never_fetched_and_never_persisted` | FAILED |
+| D | `test_robots_declaring_only_malformed_sitemaps_is_malformed_not_a_missing_declaration` | FAILED |
+| E | `test_a_robots_file_with_no_sitemap_field_is_still_a_missing_declaration` | PASSED (negative control) |
+| F | `test_a_valid_off_origin_declaration_is_refused_not_called_malformed` | FAILED |
+| G | `test_the_declaration_guard_does_not_turn_our_own_defect_into_malformed_input` | PASSED (narrowness lock) |
+
+`6 failed, 3 passed, 62 deselected`. E and G are locks, not reproductions: they state what must
+*not* change, and they were already green — which is exactly why the countermutation pass in
+§12.5 is what proves they can fail at all.
+
+### 12.3 Implementation — `src/pxapi/adapters/web/site_discovery.py`, `_robots()`
+
+One behavioural change: **each declaration is resolved under its own `ValueError` guard, and a
+file whose recognised declarations all fail to resolve is `MALFORMED` rather than
+`NO_SITEMAP_DECLARATION`.**
+
+```python
+if separator and field_name.strip().lower() == "sitemap" and value.strip():
+    try:
+        declared.append(urljoin(response.final_url, value.strip()))
+    except ValueError:
+        unresolvable = True
+
+if response.truncated:
+    return SourceOutcome.BUDGET_EXHAUSTED, declared
+if declared:
+    return SourceOutcome.USED, declared
+if unresolvable:
+    return SourceOutcome.MALFORMED, declared
+return SourceOutcome.NO_SITEMAP_DECLARATION, declared
+```
+
+**Exception boundary:** `except ValueError` around the individual `urljoin` call — the same narrow
+boundary as the accepted `C-PXAPI-013` repair in `html_links.py`, and no broader. Not
+`except Exception`.
+
+**Why unrelated errors are not swallowed.** The guard wraps one expression whose only measured
+failure mode is `ValueError` (§12.1), so a defect of ours that is not a URL cannot reach it.
+Anything else raised anywhere in `_robots` — including from this call on some future interpreter —
+still leaves the method, reaches the module-level `_guarded`, and is reported as
+`RUNTIME_ERROR` with zero declarations, which is the pre-repair behaviour. The repair can only
+make the failure surface *narrower*, never quieter. Test G pins this: `urljoin` is patched to
+raise `RuntimeError` for one declaration value alone (so the robots fetch itself still resolves),
+and `ROBOTS_DECLARATION` must still be `RUNTIME_ERROR`. Mutation **M2** proves G can fail.
+
+**`MALFORMED` is an existing `SourceOutcome`, not a new one.** It already carries "this source was
+served but could not be read", it already sits in `_NON_ADMITTING_PRECEDENCE`, and it is already
+structurally pinned to zero admitted. No contract, vocabulary or `SourceOutcome` changed.
+
+**Truncation precedence is unchanged**: `response.truncated` is still tested first, so a cut
+robots file is still `BUDGET_EXHAUSTED` with whatever declarations were recovered.
+
+**Off-origin is unchanged**: a syntactically valid off-origin declaration resolves normally and is
+handed to the existing same-origin/refused-sitemap logic, which still reports it as
+`REFUSED_SITEMAP = TARGET_POLICY_REFUSED` without resolving its host.
+
+### 12.4 GREEN evidence
+
+Same harness, same scenarios, after the repair:
+
+| Scenario | `ROBOTS_DECLARATION` | valid declarations retained | malformed omitted | malformed fetched? |
+| --- | --- | --- | --- | --- |
+| control | `USED` | `['/leistungen']` | n/a | n/a |
+| **A** | `USED` | `['/leistungen']` | yes | no — `/`, `/robots.txt`, `/karte.xml` |
+| **B** | `USED` | `['/eins', '/zwei']` | yes | no — `/`, `/robots.txt`, `/one.xml`, `/two.xml` |
+| **C** | `USED` | `['/kontakt']` | yes | no — `/`, `/robots.txt`, `/karte.xml` |
+| **D** | `MALFORMED` | none (none were valid) | yes | no — `/`, `/robots.txt`, `/sitemap.xml` |
+| **E** | `NO_SITEMAP_DECLARATION` | n/a | n/a | unchanged |
+| **F** | `USED` | off-origin resolved and refused downstream | yes | no — `evil.test` never resolved |
+
+"Never fetched" is asserted directly, not inferred: a recording fetcher captures every URL the
+discovery run requested, and the assertion is the **exact fetch list**, plus
+`not any("[" in url for url in fetched)` and `not any("[" in o.observed_form for o in
+report.observations)` — so the malformed value is proved absent from both the network and the
+persisted inventory.
+
+In D the conventional `/sitemap.xml` is still tried. That is the pre-existing fallback for any
+robots file that hands the sitemap stage an empty list; it is not new behaviour and `SITEMAP`
+reports its own state (`ABSENT` here).
+
+`9 passed, 62 deselected` — the 6 RED tests now pass and the 2 locks stayed green.
+
+### 12.5 Counter-mutation
+
+Five mutations, each applied to a pristine copy, each verified to have landed, each run into its
+**own** output file, each followed by a restore verified byte-for-byte with `cmp` before the next.
+A canary ran before the first mutation and after the last: both must be green.
+
+| # | Mutation | Expected to be caught by | rc | Test that failed |
+| --- | --- | --- | --- | --- |
+| canary-pre | none | — | **0** | `8 passed` |
+| M1 | remove the guard entirely (pre-repair resolution) | A, B, C, never-fetched, D, F | **1** | all 6 |
+| M2 | widen `except ValueError` → `except Exception` | G | **1** | `…does_not_turn_our_own_defect_into_malformed_input` |
+| M3 | guard, but never record it (`unresolvable = False`) | D | **1** | `…only_malformed_sitemaps_is_malformed…` |
+| M4 | drop the `MALFORMED` branch | D | **1** | `…only_malformed_sitemaps_is_malformed…` |
+| M5 | return `MALFORMED` unconditionally | E | **1** | `…no_sitemap_field_is_still_a_missing_declaration` |
+| canary-post | none (restored) | — | **0** | `8 passed` |
+
+`VERDICT=COUNTERMUTATION_PASSED`. Every mutation was detected by the *specific* test written to
+catch it, not merely by "something went red": M1 hits isolation, M2 hits guard narrowness, M3 and
+M4 hit the two independent authorities behind the malformed-only outcome, M5 hits the negative
+control. M3 and M4 matter because the `MALFORMED` outcome is behind **two** conditions — recording
+the fact and acting on it — and a single mutation of either must not survive.
+
+### 12.6 Gate results on the NF-5 candidate
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| lock | `uv lock --check` | `Resolved 29 packages` — no relock |
+| lint | `uv run ruff check .` | `All checks passed!` (rc 0, run unpiped) |
+| format | `uv run ruff format --check .` | `102 files already formatted` (rc 0) |
+| full suite 3.13 | `uv run --python 3.13 pytest -q` | **2875 passed, 1 skipped** (116.38 s) |
+| full suite 3.14 | `uv run --python 3.14 pytest -q` | **2875 passed, 1 skipped** (118.88 s), exit 0 |
+| C-PXAPI-013 unit | `pytest tests/adapters/test_html_links.py` | 27 passed |
+| C-PXAPI-013 e2e | `pytest …test_site_discovery_adapter.py -k "unresolvable_href or unusable_base_href or decoder_cannot_read"` | 4 passed |
+| C-PXAPI-014 | `pytest tests/domain/test_site_identity.py` | 178 passed |
+| discovery surfaces | adapter + bounds + hostile-input + domain | 109 passed |
+
+Interpreter identity was asserted inside each run (`assert sys.version_info[:2] == …`), not taken
+from the flag, because `uv run` re-syncs the default environment.
+
+**The one skip is `tests/smoke/test_real_boundary_smoke.py` — opt-in, requires
+`PXAPI_REAL_BOUNDARY_SMOKE_URL`.** It was deliberately not run: the brief forbids substituting a
+public smoke for deterministic proof, and `AD-006` / `AC8` remains open.
+
+### 12.7 Files changed by the NF-5 repair
+
+`git diff --numstat 46669a9…` (the reviewed head):
+
+| Path | Layer | Status | What changed |
+| --- | --- | --- | --- |
+| `src/pxapi/adapters/web/site_discovery.py` | adapter | modified | +28 −2: per-declaration `ValueError` isolation in `_robots`; malformed-only → `MALFORMED`; `_robots` docstring gains the tolerance rule |
+| `tests/adapters/test_site_discovery_adapter.py` | tests | modified | +152 −0: scenarios A–G, the never-fetched/never-persisted floor, and the guard-narrowness lock |
+
+Two files. No other behavioural file was touched.

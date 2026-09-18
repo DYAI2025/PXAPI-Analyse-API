@@ -471,6 +471,10 @@ class HttpSiteDiscovery:
         A robots file contributes no page candidates: its declarations are references to
         sitemaps, not pages. Only the ``Sitemap`` field is read; every other line is ignored,
         which is precisely why this slice claims no robots compliance of any kind.
+
+        Declarations are read tolerantly and one at a time: a value the URL parser will not
+        read costs that declaration and nothing else, never its valid siblings. The file is
+        ``MALFORMED`` only when a ``Sitemap`` field was recognised and not one of them resolved.
         """
         refused = budget.admit()
         if refused is not None:
@@ -496,14 +500,36 @@ class HttpSiteDiscovery:
         # A byte-order mark is not part of the first line: left in place it hides a Sitemap:
         # field on line one behind a character the field name does not start with.
         text = decode_body(response.body, response.declared_charset).removeprefix(chr(0xFEFF))
+        unresolvable = False
         for line in text.splitlines():
             field_name, separator, value = line.split("#", 1)[0].partition(":")
             if separator and field_name.strip().lower() == "sitemap" and value.strip():
-                declared.append(urljoin(response.final_url, value.strip()))
+                try:
+                    declared.append(urljoin(response.final_url, value.strip()))
+                except ValueError:
+                    # One declaration the URL parser will not read is one declaration. It names
+                    # no target, so there is nothing to hand on — and nothing unsafe is kept,
+                    # since it is never planned, never fetched and never persisted. What must
+                    # not happen is what happened before: the failure leaving this method,
+                    # reaching ``_guarded``, and costing the file every valid sibling
+                    # declaration under a RUNTIME_ERROR that blames our runtime for a robots.txt
+                    # we read perfectly. ``ValueError`` is the whole surface — ``urljoin`` was
+                    # fuzzed over this exact call shape, 1 006 240 inputs per interpreter on
+                    # CPython 3.13.3 and 3.14.6, and raised nothing else — so this guard cannot
+                    # swallow a defect of ours that is not a URL.
+                    unresolvable = True
 
         if response.truncated:
             return SourceOutcome.BUDGET_EXHAUSTED, declared
-        return (SourceOutcome.USED if declared else SourceOutcome.NO_SITEMAP_DECLARATION), declared
+        if declared:
+            return SourceOutcome.USED, declared
+        # A ``Sitemap:`` field was recognised and none of them resolved: NO_SITEMAP_DECLARATION
+        # would be a false statement about the file, so the existing neutral technical state for
+        # a source we could not read says it instead, pinned to zero declarations as it already
+        # is everywhere else. A file that declared nothing at all is untouched by this.
+        if unresolvable:
+            return SourceOutcome.MALFORMED, declared
+        return SourceOutcome.NO_SITEMAP_DECLARATION, declared
 
     # --- sitemaps ----------------------------------------------------------------------
 

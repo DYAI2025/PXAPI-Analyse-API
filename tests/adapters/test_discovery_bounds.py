@@ -24,6 +24,7 @@ from pxapi.adapters.web.site_discovery import HttpSiteDiscovery
 from pxapi.config.discovery_limits import DiscoveryLimits
 from pxapi.config.fetch_limits import FetchLimits
 from pxapi.domain import site_identity
+from pxapi.domain.site_discovery import admitted_observations, assemble_candidates
 from pxapi.domain.site_identity import UrlRefusal, canonical_url_key, refuse
 from pxapi.ports.page_fetch import FetchFailureKind, PageFetchFailure
 from tests.adapters.http_test_server import Route, loopback_policy
@@ -274,3 +275,105 @@ def test_one_sitemap_whose_read_raises_does_not_discard_its_siblings() -> None:
     )
     assert outcomes(report)["SITEMAP"] == "USED"
     assert forms(report, "SITEMAP") == [base + "/gefunden"]
+
+
+# --- C-PXAPI-016: what the declared bounds promise, measured --------------------------------
+#
+# The finding names two paths. These tests measure each against the bound's own wording in
+# src/pxapi/config/discovery_limits.py, because a bound can only be violated relative to what it
+# says. They are locks on behaviour that is already correct, not a repair.
+
+
+@pytest.fixture
+def documents_read(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every URL a sitemap read actually fetched — the unit ``max_sitemap_documents`` bounds."""
+    seen: list[str] = []
+    real = HttpSiteDiscovery._read_sitemap
+
+    def recording(self: Any, fetcher: Any, url: str) -> Any:
+        seen.append(url)
+        return real(self, fetcher, url)
+
+    monkeypatch.setattr(HttpSiteDiscovery, "_read_sitemap", recording)
+    return seen
+
+
+def test_off_origin_declarations_read_no_document_at_all(
+    documents_read: list[str], canonicalisations: list[int]
+) -> None:
+    """C-PXAPI-016 A. ``max_sitemap_documents`` bounds "sitemap documents one discovery may
+    read". An off-origin declaration is refused before the queue and is therefore never read,
+    so the declared bound is honoured by a wide margin: zero declared documents are read, and
+    the one conventional ``/sitemap.xml`` fallback is all that is fetched."""
+    lines = [f"Sitemap: https://elsewhere{i}.test/s.xml" for i in range(2000)]
+    report, base = discover(
+        lambda b: {"/": home(), "/robots.txt": robots(*lines)},
+        limits=DiscoveryLimits(max_sitemap_documents=5),
+    )
+    assert documents_read == [base + "/sitemap.xml"]
+    assert len(documents_read) <= 5
+    assert outcomes(report)["REFUSED_SITEMAP"] == "TARGET_POLICY_REFUSED"
+    assert forms(report, "SITEMAP") == []
+    # The work of refusing them is linear in the declarations, which the outer FetchLimits
+    # response-byte cap bounds: it is not free, and it is not unbounded either.
+    assert canonicalisations[0] <= 6 * len(lines), canonicalisations[0]
+
+
+def test_the_refusing_path_stays_inside_the_declared_discovery_deadline() -> None:
+    """The same path filled to the outer byte cap: ``FetchLimits.max_response_bytes`` is what
+    bounds how many declarations can exist at all, and the run finishes well inside the
+    ``DiscoveryLimits`` deadline with no candidate admitted from the source."""
+    limits = DiscoveryLimits(total_deadline_seconds=60.0)
+    fetch_limits = FetchLimits(max_response_bytes=256 * 1024)
+    line = "Sitemap:http://a.aa/"  # 20 chars + newline: the shortest usable off-origin form
+    lines = [line] * (fetch_limits.max_response_bytes // (len(line) + 1))
+    started = time.monotonic()
+    report, _ = discover(
+        lambda b: {"/": home(), "/robots.txt": robots(*lines)},
+        limits=limits,
+        fetch_limits=fetch_limits,
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed < limits.total_deadline_seconds, elapsed
+    assert forms(report, "SITEMAP") == []
+
+
+def test_many_labels_for_one_href_cost_one_written_target_and_one_candidate() -> None:
+    """C-PXAPI-016 B. ``max_page_links`` bounds "distinct written same-origin link targets
+    admitted", and that is exactly what it bounds here: 300 anchors to one target are one
+    target and — after the Domain folds observations onto identities — one candidate. The
+    transient observations that carry the distinct labels are a classification signal, never a
+    page, and no member of the inventory counts them."""
+    limits = DiscoveryLimits(max_page_links=5)
+    anchors = [("/eine-seite", f"label-{i}") for i in range(300)]
+    report, base = discover(lambda b: {"/": home(*anchors)}, limits=limits)
+
+    written = forms(report, "SAME_ORIGIN_PAGE_LINKS")
+    # The multiplication the finding names is real and is measured here rather than assumed:
+    # one target under 300 labels yields 300 observations, far past ``max_page_links``. Without
+    # this assertion the two below would hold vacuously on a run that emitted one observation.
+    assert len(written) == len(anchors) > limits.max_page_links
+
+    # What the bound actually promises, and what it actually delivers: distinct written targets.
+    assert set(written) == {base + "/eine-seite"}
+    assert len(set(written)) <= limits.max_page_links
+
+    # And the persisted population, which is what an inventory carries: one page, not 300.
+    candidates = assemble_candidates(
+        admitted_observations(report.observations), report.target_origin or ""
+    )
+    from_links = [c for c in candidates if "SAME_ORIGIN_PAGE_LINKS" in c.provenance]
+    assert len(from_links) == 1 <= limits.max_page_links
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "USED"
+
+
+def test_the_distinct_target_bound_genuinely_bites() -> None:
+    """The control the test above needs: the same bound, under distinct targets, does stop the
+    read and says so — so the assertion above is a bound holding, not a bound never reached."""
+    limits = DiscoveryLimits(max_page_links=5)
+    report, _ = discover(
+        lambda b: {"/": home(*[(f"/p{i}", f"p{i}") for i in range(100)])}, limits=limits
+    )
+    written = forms(report, "SAME_ORIGIN_PAGE_LINKS")
+    assert len(set(written)) == 5
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "BUDGET_EXHAUSTED"

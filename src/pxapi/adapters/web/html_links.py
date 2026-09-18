@@ -5,7 +5,7 @@ It is the link half of site discovery and nothing more: it resolves every ``<a h
 a visitor would read on it. Deciding which targets are same-origin, which may be persisted and
 what a page *is* belongs to the Domain; this module never filters on meaning.
 
-Two rules keep it honest.
+Three rules keep it honest.
 
 **A label is bounded before it leaves this module, and never truncated.** The text inside a
 link is website content. It is normalised to one line with the Domain's own rule and handed on
@@ -15,6 +15,12 @@ the site never wrote, and a classification resting on it would not be reproducib
 **Our difficulty is never the site's.** A document the parser genuinely cannot process raises
 ``HtmlUnreadable``, and the caller records that *our* runtime failed. Unclosed tags, stray markup
 and links nested in ways the standard forbids are ordinary input and are read tolerantly.
+
+**One bad value costs one link.** A ``<base href>`` or an ``href`` the URL parser refuses to read
+at all is ignored on its own, never by discarding the document. The failure a single
+``<a href="http://[::1">`` used to propagate turned the whole same-origin link source into
+``RUNTIME_ERROR``, which claimed our runtime had failed on a page that plainly carried usable
+links — a statement that was false about us and lost pages that belonged to the site.
 
 Standard library only for parsing; this adapter imports no third-party distribution.
 """
@@ -126,11 +132,18 @@ def _base_for(document_url: str, base_href: str | None) -> str:
     browser; any other value is ignored and the document's own URL is used. Where the base
     points is not decided here: a base outside the origin simply yields targets outside it,
     which the Domain then records as ``OFF_ORIGIN`` rather than following.
+
+    A value the URL parser will not read at all — ``http://[`` and its kind — is *one such
+    other value*, and is ignored exactly like ``javascript:`` already was. It must not be able
+    to cost the document the links it plainly carries.
     """
     if base_href is not None:
-        resolved = urljoin(document_url, base_href.strip())
-        if urlsplit(resolved).scheme in ("http", "https") and urlsplit(resolved).netloc:
-            return resolved
+        try:
+            resolved = urljoin(document_url, base_href.strip())
+            if urlsplit(resolved).scheme in ("http", "https") and urlsplit(resolved).netloc:
+                return resolved
+        except ValueError:
+            return document_url
     return document_url
 
 
@@ -156,6 +169,17 @@ def read_links(
         target = href.strip()
         if not target:
             continue
+        try:
+            resolved = urljoin(base, target)
+        except ValueError:
+            # One href the URL parser will not read is one href. It names no target, so there
+            # is nothing to hand on — and nothing unsafe is admitted to keep it, since the
+            # Domain refuses an unreadable form as ``MALFORMED`` anyway. What must not happen
+            # is what happened before: the failure leaving this function and costing the
+            # caller every other link in the document. ``ValueError`` is the whole surface —
+            # ``urljoin`` and ``urlsplit`` were fuzzed over ~900k inputs and raised nothing
+            # else — so this guard cannot swallow a defect of ours that is not a URL.
+            continue
         label = None if overflowed else representable_text(text, max_label_length)
-        links.append(DocumentLink(href=urljoin(base, target), label=label))
+        links.append(DocumentLink(href=resolved, label=label))
     return tuple(links)

@@ -819,7 +819,11 @@ def test_a_status_derived_seed_outcome_makes_the_inventory_unemittable(derived: 
 @pytest.mark.parametrize("derived", ["ABSENT", "PROVIDER_FAILURE"])
 def test_withholding_the_seed_observation_with_it_is_refused_too(derived: str) -> None:
     """The other route out — drop the seed observation so nothing is contributed — trades one
-    refusal for the other: ``seed_candidate_present`` requires the seed candidate outright."""
+    refusal for two. ``site-inventory.v1`` puts ``minItems: 1`` on ``candidates`` and says in
+    its own description that the one required candidate *is* the canonical target seed, and
+    ``inventory_producer_violations`` refuses the same document as ``seed_candidate_present``.
+    Both authorities have to be suspended before a seedless inventory could be emitted, which
+    is why the route is closed rather than merely guarded."""
     report = DiscoveryReport(ORIGIN, (), attempts(CANONICAL_SEED=derived))
     envelope = run(report)
     assert "site_inventory" not in envelope

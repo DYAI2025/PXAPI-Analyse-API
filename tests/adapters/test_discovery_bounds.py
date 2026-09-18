@@ -349,14 +349,21 @@ def test_many_labels_for_one_href_cost_one_written_target_and_one_candidate() ->
     report, base = discover(lambda b: {"/": home(*anchors)}, limits=limits)
 
     written = forms(report, "SAME_ORIGIN_PAGE_LINKS")
+    # The multiplication the finding names is real and is measured here rather than assumed:
+    # one target under 300 labels yields 300 observations, far past ``max_page_links``. Without
+    # this assertion the two below would hold vacuously on a run that emitted one observation.
+    assert len(written) == len(anchors) > limits.max_page_links
+
+    # What the bound actually promises, and what it actually delivers: distinct written targets.
     assert set(written) == {base + "/eine-seite"}
     assert len(set(written)) <= limits.max_page_links
+
+    # And the persisted population, which is what an inventory carries: one page, not 300.
     candidates = assemble_candidates(
         admitted_observations(report.observations), report.target_origin or ""
     )
     from_links = [c for c in candidates if "SAME_ORIGIN_PAGE_LINKS" in c.provenance]
-    assert len(from_links) == 1
-    assert len(from_links) <= limits.max_page_links
+    assert len(from_links) == 1 <= limits.max_page_links
     assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "USED"
 
 

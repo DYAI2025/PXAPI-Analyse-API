@@ -152,3 +152,23 @@ def test_a_document_wide_decode_failure_is_still_our_failure(
     monkeypatch.setattr(html_links, "decode_body", broken)
     with pytest.raises(HtmlUnreadable):
         links('<a href="/k">K</a>')
+
+
+def test_the_link_guard_is_narrow_and_does_not_swallow_a_defect_of_ours(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-link guard catches ``ValueError`` and deliberately nothing wider.
+
+    ``urljoin`` and ``urlsplit`` raise ``ValueError`` and nothing else — fuzzed over ~900k
+    inputs — so that type is the whole of "this href is not a URL". Any other exception from
+    this line is a defect of *ours*, and must keep travelling until ``_guarded`` records it as
+    RUNTIME_ERROR. Swallowed as a dropped link instead, it would read as a website that simply
+    linked nowhere. Widening the guard to ``except Exception`` turns this test red.
+    """
+
+    def exploding(base: str, target: str) -> str:
+        raise RuntimeError("a defect that is not a URL problem")
+
+    monkeypatch.setattr(html_links, "urljoin", exploding)
+    with pytest.raises(RuntimeError):
+        links('<a href="/k">K</a>')

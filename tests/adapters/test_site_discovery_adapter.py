@@ -707,3 +707,64 @@ def test_a_bootstrap_the_server_answers_too_slowly_is_a_timeout_not_unreachable(
         ).discover(server.url("/"))
     assert report.target_origin is None
     assert report.bootstrap_failure is BootstrapFailure.TIMEOUT
+
+
+# --- C-PXAPI-013: a malformed link is one link, never the whole source -----------------------
+
+
+def test_one_unresolvable_href_does_not_cost_the_page_its_other_links() -> None:
+    """The defect this closes: ``read_links`` resolved its targets *outside* its own failure
+    isolation, so a single ``<a href="http://[::1">`` raised out of the reader, past the
+    ``HtmlUnreadable`` handler, into ``_guarded`` — and the whole SAME_ORIGIN_PAGE_LINKS source
+    became RUNTIME_ERROR with nothing admitted, discarding links the document plainly carried."""
+    report, base = discover(
+        lambda b: {
+            "/": home(("/leistungen", "Leistungen"), ("http://[::1", "kaputt"), ("/kontakt", "K"))
+        }
+    )
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "USED"
+    assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == [base + "/leistungen", base + "/kontakt"]
+
+
+def test_an_unusable_base_href_does_not_make_the_documents_links_disappear() -> None:
+    report, base = discover(
+        lambda b: {
+            "/": Route(
+                body=b'<html><base href="https://[not-an-address]/"><body>'
+                b'<a href="/leistungen">L</a><a href="/kontakt">K</a></body></html>',
+                headers=HTML,
+            )
+        }
+    )
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "USED"
+    assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == [base + "/leistungen", base + "/kontakt"]
+
+
+def test_an_unresolvable_href_is_never_admitted_merely_to_preserve_its_siblings() -> None:
+    """Isolation preserves siblings; it never widens what may be persisted.
+
+    A document whose *only* anchor names no readable target therefore admits nothing, and says
+    so with ``EMPTY`` rather than with the ``RUNTIME_ERROR`` it used to report. Both are
+    non-admitting outcomes pinned to zero candidates, so the inventory is unchanged; what
+    changes is that the run no longer claims our own runtime failed on a page it read fine.
+    Which of the two zero-admitting states fits this narrow case is not what C-PXAPI-013 names,
+    and is left exactly as the existing ``USED``/``EMPTY`` rule decides it.
+    """
+    report, _ = discover(lambda b: {"/": home(("http://[::1", "kaputt"))})
+    assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == []
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "EMPTY"
+
+
+def test_a_document_our_decoder_cannot_read_is_still_our_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Document-wide failure is untouched by the per-link isolation: it stays RUNTIME_ERROR."""
+    from pxapi.adapters.web import html_links
+
+    def broken(body: bytes, charset: str | None) -> str:
+        raise ValueError("decoder broke")
+
+    monkeypatch.setattr(html_links, "decode_body", broken)
+    report, _ = discover(lambda b: {"/": home(("/leistungen", "L"))})
+    assert outcomes(report)["SAME_ORIGIN_PAGE_LINKS"] == "RUNTIME_ERROR"
+    assert forms(report, "SAME_ORIGIN_PAGE_LINKS") == []

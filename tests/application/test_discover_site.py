@@ -789,3 +789,54 @@ def test_the_boundary_predicate_answers_only_about_credentials() -> None:
     # Total on anything at all: a value it cannot read is not a credential it can see.
     for unreadable in (None, 123, b"https://user:secret@example.com/", object()):
         assert use_case._carries_credentials(unreadable) is False
+
+
+# --- C-PXAPI-015: why CANONICAL_SEED cannot carry a status-derived outcome -------------------
+#
+# The finding asks for CANONICAL_SEED's outcome to be derived from the seed response's status
+# code. These tests measure what the *contract* does with such a document, so the verdict on the
+# finding rests on executable evidence rather than on reading. They are locks, not a repair:
+# they were green before this branch and must stay green.
+
+
+@pytest.mark.parametrize("derived", ["ABSENT", "PROVIDER_FAILURE"])
+def test_a_status_derived_seed_outcome_makes_the_inventory_unemittable(derived: str) -> None:
+    """``_status_outcome`` maps every non-2xx status to exactly one of these two, and both are
+    outside the contract's admitting set. The seed candidate is mandatory and always names
+    CANONICAL_SEED in its provenance, so such a document reports a non-zero ``candidate_count``
+    under a non-admitting outcome — which ``site-inventory.v1`` forbids in its own schema and
+    ``inventory_producer_violations`` refuses as ``admitting_outcome_for_contributed_source``."""
+    report = DiscoveryReport(
+        ORIGIN,
+        (DiscoveryObservation(ORIGIN, "CANONICAL_SEED"),),
+        attempts(CANONICAL_SEED=derived, SAME_ORIGIN_PAGE_LINKS="ABSENT"),
+    )
+    envelope = run(report)
+    assert "site_inventory" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_INVENTORY_NOT_EMITTABLE"}
+
+
+@pytest.mark.parametrize("derived", ["ABSENT", "PROVIDER_FAILURE"])
+def test_withholding_the_seed_observation_with_it_is_refused_too(derived: str) -> None:
+    """The other route out — drop the seed observation so nothing is contributed — trades one
+    refusal for the other: ``seed_candidate_present`` requires the seed candidate outright."""
+    report = DiscoveryReport(ORIGIN, (), attempts(CANONICAL_SEED=derived))
+    envelope = run(report)
+    assert "site_inventory" not in envelope
+    assert envelope["analysis_run_state"]["failure"] == {"code": "SITE_INVENTORY_NOT_EMITTABLE"}
+
+
+@pytest.mark.parametrize("outcome", ["USED", "BUDGET_EXHAUSTED", "TIMEOUT"])
+def test_only_an_admitting_outcome_lets_the_mandatory_seed_candidate_exist(outcome: str) -> None:
+    """The complement, measured: the contract leaves exactly three outcomes open to a source
+    that contributes a candidate, and ``_status_outcome`` can produce none of them. Repairing
+    C-PXAPI-015 as written therefore needs a contract change, which is not authorised here."""
+    report = DiscoveryReport(
+        ORIGIN,
+        (DiscoveryObservation(ORIGIN, "CANONICAL_SEED"),),
+        attempts(CANONICAL_SEED=outcome),
+    )
+    envelope = run(report)
+    assert envelope["site_inventory"]["sources"] == [
+        {"source_id": "CANONICAL_SEED", "outcome": outcome, "candidate_count": 1}
+    ]

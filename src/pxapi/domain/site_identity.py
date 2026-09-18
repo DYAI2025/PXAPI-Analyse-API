@@ -30,9 +30,11 @@ not a defect of the website.
 **A form the two URL standards read differently has no identity.** RFC 3986 treats a backslash
 as data and WHATWG treats it as a path separator for http and https, so a backslash after the
 root is a path on this origin to one reader and a different host to the other, and a browser
-is the second reader. A form carrying a raw backslash, or any Unicode space a policy might
-silently strip, is refused outright rather than keyed under one reading and fetched under the
-other.
+is the second reader. A form whose *addressing* part carries a raw backslash, or any Unicode
+space a policy might silently strip, is refused outright rather than keyed under one reading and
+fetched under the other. The fragment is not the addressing part: it is discarded before any of
+this runs, and a space or a backslash a site wrote into an anchor decides nothing about where
+that anchor points.
 
 The canonicalisation method is named and versioned here because ``site-inventory.v1`` fixes the
 identity's lexical shape and deliberately not how it was derived: a consumer reads
@@ -85,8 +87,9 @@ MAX_ORIGIN_LENGTH: Final = 262
 _PUBLIC_URL: Final[re.Pattern[str]] = re.compile(PUBLIC_URL_PATTERN)
 _PUBLIC_ORIGIN: Final[re.Pattern[str]] = re.compile(PUBLIC_ORIGIN_PATTERN)
 
-#: Characters no part of a written form may carry at all: the C0 controls and space, DEL, the C1
-#: controls, the Unicode line and paragraph separators, and the backslash; every other Unicode
+#: Characters no *addressing* part of a written form may carry at all — everything before the
+#: first ``#``, since the fragment is discarded unexamined: the C0 controls and space, DEL, the
+#: C1 controls, the Unicode line and paragraph separators, and the backslash; every other Unicode
 #: space is refused beside them, by ``str.isspace``. A form holding one is not repaired by
 #: escaping it but refused, because a producer that silently rewrote the bytes it observed would
 #: record an ``observed_form`` nobody served, and because the target policy strips surrounding
@@ -402,11 +405,21 @@ def _canonicalise(value: str) -> tuple[str | None, UrlRefusal | None]:
     if len(value) > MAX_URL_LENGTH:
         # No form longer than the contract's bound can ever be persisted, so none is worth the
         # work of canonicalising: refusing it first keeps the cost of any value small and linear.
+        # Measured on the *written* form, fragment included, because that is what rule 12 says
+        # and what a producer would have to persist.
         return None, UrlRefusal.TOO_LONG
-    if any(char in _FORBIDDEN_ANYWHERE or char.isspace() for char in value):
+
+    # Rule 6, applied before rule 1 rather than after it: the fragment is dropped *without being
+    # examined*, so it is split off here and no later rule ever sees it. Scanning the whole
+    # written form first contradicted that rule and cost pages — `/leistungen#unsere leistungen`
+    # addresses `/leistungen`, and a space a site wrote into an anchor is not part of any
+    # identity. Everything the URL actually addresses is in `addressed`, and every rule below is
+    # as strict on it as it ever was.
+    addressed = value.partition("#")[0]
+    if any(char in _FORBIDDEN_ANYWHERE or char.isspace() for char in addressed):
         return None, UrlRefusal.FORBIDDEN_CHARACTER
     try:
-        parts = urlsplit(value)
+        parts = urlsplit(addressed)
     except ValueError:
         return None, UrlRefusal.MALFORMED
     scheme = parts.scheme.lower()
@@ -420,7 +433,8 @@ def _canonicalise(value: str) -> tuple[str | None, UrlRefusal | None]:
 
     # RFC 3986 section 6.2.2 fixes the order: percent-encoding is normalised *before* dot
     # segments are removed, or `/a/%2E%2E/b` would keep its escaped dot segment through removal
-    # and only then decode into a traversal. The fragment is never examined: it is dropped.
+    # and only then decode into a traversal. The fragment is gone before this point and no rule
+    # here has ever seen it, which is exactly what rule 6 promises.
     escaped_path = _normalised_escapes(parts.path)
     escaped_query = _normalised_escapes(parts.query)
     if escaped_path is None or escaped_query is None:
@@ -454,14 +468,18 @@ def canonical_url_key(value: str) -> str | None:
     The rules, in the order they apply, are the whole of version
     ``URL_CANONICAL_BASELINE 1.0.0``:
 
-    1. a form carrying a control character, DEL, a C1 control, a Unicode separator or space, or
-       a raw backslash, which RFC 3986 and WHATWG read differently, is refused;
+    0. the fragment is split off and discarded before any rule below runs, so that rule 6 is
+       literally true: no rule here examines it, and a form differing from another only by its
+       fragment is the same identity whatever that fragment holds;
+    1. a form whose *addressing* part — everything before the first ``#`` — carries a control
+       character, DEL, a C1 control, a Unicode separator or space, or a raw backslash, which
+       RFC 3986 and WHATWG read differently, is refused;
     2. the scheme is lower-cased and must be ``http`` or ``https``;
     3. a userinfo component is refused outright, never stripped;
     4. the host is lower-cased; a percent sign, a second unbracketed colon or a bracketed value
        that is not one IPv6 literal is refused, and an IPv6 literal takes its compressed form;
     5. the port must be ASCII digits in 1..65535, and a port equal to the default is dropped;
-    6. the fragment is dropped without being examined;
+    6. the fragment is dropped without being examined, which rule 0 has already done;
     7. percent escapes are upper-cased and an escaped unreserved character is decoded;
     8. dot segments are removed per RFC 3986, after rule 7, as section 6.2.2 requires;
     9. an empty path becomes the root ``/``; a trailing slash below the root is kept;

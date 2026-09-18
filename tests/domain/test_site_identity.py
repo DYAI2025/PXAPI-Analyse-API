@@ -225,3 +225,106 @@ def test_a_non_page_resource_is_named_by_its_suffix_and_an_unknown_suffix_is_a_p
 ) -> None:
     """Conservative by design: an unrecognised suffix must never silently drop a page."""
     assert si.is_page_resource(key) is page
+
+
+# --- C-PXAPI-014: rule 6 drops the fragment WITHOUT examining it -----------------------------
+
+PAGE = "https://example.com/leistungen"
+
+#: A fragment carrying something no *addressing* component may carry. Rule 6 of
+#: ``URL_CANONICAL_BASELINE 1.0.0`` says the fragment is dropped without being examined, so none
+#: of these changes the page's identity: ``/leistungen#unsere leistungen`` and ``/leistungen``
+#: are the same page, and a scan that ran over the raw string refused the first while accepting
+#: the second.
+FRAGMENT_NOT_EXAMINED: list[tuple[str, str]] = [
+    ("ascii space", PAGE + "#unsere leistungen"),
+    ("no-break space", PAGE + "#unsere\u00a0leistungen"),
+    ("em space", PAGE + "#unsere\u2003leistungen"),
+    ("backslash", PAGE + "#a\\b"),
+    ("tab", PAGE + "#a\tb"),
+    ("C0 control", PAGE + "#a\x01b"),
+    ("DEL", PAGE + "#a\x7fb"),
+    ("C1 control", PAGE + "#a\x85b"),
+    ("line separator", PAGE + "#a\u2028b"),
+    ("malformed percent escape", PAGE + "#a%zz"),
+    ("ordinary fragment", PAGE + "#kontakt"),
+    ("empty fragment", PAGE + "#"),
+    ("fragment holding a second #", PAGE + "#a#b c"),
+]
+
+
+@pytest.mark.parametrize(
+    ("what", "written"), FRAGMENT_NOT_EXAMINED, ids=[c[0] for c in FRAGMENT_NOT_EXAMINED]
+)
+def test_a_fragment_is_dropped_without_being_examined(what: str, written: str) -> None:
+    assert si.canonical_url_key(written) == PAGE
+    assert si.refuse(written) is None
+
+
+@pytest.mark.parametrize(
+    ("what", "written"), FRAGMENT_NOT_EXAMINED, ids=[c[0] for c in FRAGMENT_NOT_EXAMINED]
+)
+def test_a_key_from_a_fragmented_form_is_still_idempotent_and_contract_shaped(
+    what: str, written: str
+) -> None:
+    """Totality, determinism, idempotence and the contract's own shape all survive rule 6."""
+    key = si.canonical_url_key(written)
+    assert key is not None
+    assert si.canonical_url_key(key) == key
+    assert si.canonical_url_key(written) == si.canonical_url_key(written)
+    PUBLIC_URL.validate(key)
+
+
+#: The same characters, in an *addressing* component. Every one of these must stay refused: the
+#: repair moves where the scan starts, and may not narrow what it refuses.
+FORBIDDEN_WHERE_IT_ADDRESSES: list[tuple[str, str, UrlRefusal]] = [
+    ("space in path", "https://example.com/unsere leistungen", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("space in query", "https://example.com/x?a=b c", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("space in host", "https://exa mple.com/x", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("backslash in path", "https://example.com/a\\b", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("backslash in host", "https://example.com\\evil.test/x", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("tab in path", "https://example.com/a\tb", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("newline in path", "https://example.com/a\nb", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("CR in path", "https://example.com/a\rb", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("NUL in path", "https://example.com/a\x00b", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("DEL in path", "https://example.com/a\x7fb", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("C1 in path", "https://example.com/a\x85b", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("U+2028 in path", "https://example.com/a\u2028b", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("NBSP in path", "https://example.com/a\u00a0b", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("space before a fragment", "https://example.com/a b#frag", UrlRefusal.FORBIDDEN_CHARACTER),
+    (
+        "backslash before a fragment",
+        "https://example.com/a\\b#frag",
+        UrlRefusal.FORBIDDEN_CHARACTER,
+    ),
+    ("tab before a fragment", "https://example.com/a\tb#frag", UrlRefusal.FORBIDDEN_CHARACTER),
+    ("credentials", "https://user:pw@example.com/x#frag", UrlRefusal.CREDENTIALS_PRESENT),
+    ("malformed authority", "https://exa[mple.com/x#frag", UrlRefusal.MALFORMED),
+    ("malformed escape in path", "https://example.com/a%zz#frag", UrlRefusal.MALFORMED),
+    ("malformed escape in query", "https://example.com/x?a=%zz#frag", UrlRefusal.MALFORMED),
+    ("not http(s)", "ftp://example.com/x#frag", UrlRefusal.NOT_ABSOLUTE_HTTP),
+]
+
+
+@pytest.mark.parametrize(
+    ("what", "written", "refusal"),
+    FORBIDDEN_WHERE_IT_ADDRESSES,
+    ids=[c[0] for c in FORBIDDEN_WHERE_IT_ADDRESSES],
+)
+def test_the_same_character_where_it_addresses_is_still_refused(
+    what: str, written: str, refusal: UrlRefusal
+) -> None:
+    assert si.canonical_url_key(written) is None
+    assert si.refuse(written) is refusal
+
+
+def test_a_written_form_over_the_bound_is_still_refused_before_any_other_rule() -> None:
+    """Rule 12 is measured on the *written form*, fragment included, and the repair does not
+    move it: a form longer than the bound is refused before the fragment is even split off."""
+    assert si.refuse("https://example.com/" + "a" * si.MAX_URL_LENGTH) is UrlRefusal.TOO_LONG
+    assert si.refuse(PAGE + "#" + "a" * si.MAX_URL_LENGTH) is UrlRefusal.TOO_LONG
+
+
+def test_an_origin_survives_a_fragment_the_rules_no_longer_examine() -> None:
+    assert si.canonical_origin(PAGE + "#unsere leistungen") == "https://example.com/"
+    assert si.is_same_origin(si.canonical_url_key(PAGE + "#a\\b") or "", "https://example.com/")

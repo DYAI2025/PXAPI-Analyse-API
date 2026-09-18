@@ -79,3 +79,76 @@ def test_a_document_we_cannot_process_is_our_failure(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(html_links, "decode_body", broken)
     with pytest.raises(HtmlUnreadable):
         links('<a href="/k">K</a>')
+
+
+# --- C-PXAPI-013: one malformed value never discards its valid siblings ----------------------
+
+#: Values that make ``urlsplit``/``urljoin`` raise rather than return a URL. Fuzzing the two
+#: functions over ~900k inputs produced ``ValueError`` and nothing else, which is why the
+#: isolation below catches that type and not a bare ``Exception``: a wider guard would swallow
+#: a defect of ours that has nothing to do with a link.
+UNRESOLVABLE = (
+    "http://[::1",
+    "https://[not-an-address]/x",
+    "https://exa[mple.com/x",
+    "http://[",
+)
+
+
+@pytest.mark.parametrize("bad", UNRESOLVABLE)
+def test_a_malformed_href_never_discards_its_valid_siblings(bad: str) -> None:
+    """One link the URL parser cannot resolve is one link, not the whole document.
+
+    Before the repair the ``urljoin`` that resolves each target sat outside ``read_links``'
+    failure isolation, so a single such value propagated a ``ValueError`` out of the reader and
+    the caller lost every other link on the page with it.
+    """
+    resolved = [
+        link.href for link in links(f'<a href="/a">A</a><a href="{bad}">B</a><a href="/c">C</a>')
+    ]
+    assert resolved == ["https://example.com/a", "https://example.com/c"]
+
+
+@pytest.mark.parametrize("bad", UNRESOLVABLE)
+def test_an_unusable_base_href_falls_back_to_the_document_it_cannot_replace(bad: str) -> None:
+    """A base the parser cannot read is ignored exactly like a non-web base already was."""
+    resolved = [
+        link.href for link in links(f'<base href="{bad}"><a href="/a">A</a><a href="/c">C</a>')
+    ]
+    assert resolved == ["https://example.com/a", "https://example.com/c"]
+
+
+@pytest.mark.parametrize("bad", UNRESOLVABLE)
+def test_an_unusable_document_url_loses_its_links_and_not_our_runtime(bad: str) -> None:
+    """Defence in depth: the product establishes its origin from this URL before reading links,
+    so an unresolvable one cannot reach here — and if it did, it would be an empty read rather
+    than an exception escaping the reader."""
+    assert read_links(b'<a href="/a">A</a>', bad, "utf-8", 120) == ()
+
+
+def test_a_malformed_href_is_dropped_rather_than_admitted_unresolved() -> None:
+    """No unsafe target is admitted merely to preserve its siblings: it is simply not a link."""
+    assert [link.href for link in links('<a href="http://[::1">B</a>')] == []
+
+
+def test_isolating_a_malformed_link_leaves_its_label_bounding_untouched() -> None:
+    (a, c) = links(
+        f'<a href="/a">  Kontakt\n aufnehmen </a><a href="http://[">x</a>'
+        f'<a href="/c">{"Kontakt " * 40}</a>'
+    )
+    assert a.label == "Kontakt aufnehmen"
+    assert c.label is None
+
+
+def test_a_document_wide_decode_failure_is_still_our_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The isolation above narrows nothing: a document that cannot be processed at all is
+    still ``HtmlUnreadable``, which the caller records as our RUNTIME_ERROR."""
+
+    def broken(body: bytes, charset: str | None) -> str:
+        raise ValueError("decoder broke")
+
+    monkeypatch.setattr(html_links, "decode_body", broken)
+    with pytest.raises(HtmlUnreadable):
+        links('<a href="/k">K</a>')

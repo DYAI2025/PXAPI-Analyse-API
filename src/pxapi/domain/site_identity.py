@@ -411,10 +411,17 @@ def _canonicalise(value: str) -> tuple[str | None, UrlRefusal | None]:
 
     # Rule 6, applied before rule 1 rather than after it: the fragment is dropped *without being
     # examined*, so it is split off here and no later rule ever sees it. Scanning the whole
-    # written form first contradicted that rule and cost pages — `/leistungen#unsere leistungen`
-    # addresses `/leistungen`, and a space a site wrote into an anchor is not part of any
-    # identity. Everything the URL actually addresses is in `addressed`, and every rule below is
-    # as strict on it as it ever was.
+    # written form first contradicted that rule: `/leistungen#unsere leistungen` addresses
+    # `/leistungen`, and what a site wrote into an anchor is not part of any identity.
+    # Everything the URL actually addresses is in `addressed`, and every rule below is as strict
+    # on it as it ever was.
+    #
+    # What this recovers, precisely: a form is admitted only when it *also* passes
+    # `is_persistable_form`, which applies the contract's `public_url` shape to the written form
+    # verbatim. So a fragment carrying a backslash or a Unicode space outside the contract's
+    # excluded set — `#a\b`, `#unsere\u00a0leistungen` — becomes an admissible page again, while
+    # one carrying a raw ASCII space or tab keys correctly here and is still refused there. The
+    # second case needs a contract decision, not a rule change, and none is taken here.
     addressed = value.partition("#")[0]
     if any(char in _FORBIDDEN_ANYWHERE or char.isspace() for char in addressed):
         return None, UrlRefusal.FORBIDDEN_CHARACTER

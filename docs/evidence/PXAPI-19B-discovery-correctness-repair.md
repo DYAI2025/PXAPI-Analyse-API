@@ -8,10 +8,12 @@ slice and nothing here authorises it.**
 exception), comment `16045` (implementation repair required); Confluence `55181314` (current DRS
 semantics), `54362115` (current acquisition / site-intelligence architecture).
 **Implementation base:** `aa75d6b52fe060b76a7cf900617ad5f990901183`, verified before any change.
-**Candidate:** `fix/pxapi-19-discovery-correctness`, three commits on top of the base:
+**Candidate:** `fix/pxapi-19-discovery-correctness`, four commits on top of the base:
 `9f19db1b7a8263e355ee9913e4f85a53d10e66b3` (the repair and its tests),
 `179107b2a9bdc68a0ec4d26175ae03acdec65082` (three guards the countermutation pass found
-asleep) and the commit carrying this document, which is the candidate head.
+asleep), `94939ade509d5b104688d63ee005a153e73cb9b3` (this document) and the commit carrying
+the code-review answer of §10, which is the candidate head. A commit cannot record its own
+identity, so the exact head SHA is stated on PR #18 and by `git rev-parse HEAD`.
 
 This document records what was verified, by which command, with which result. **It is not an
 acceptance decision.** `IC`, `R2G` and `R4M` on this candidate remain Orchestrator authority and
@@ -531,7 +533,9 @@ temporary measurements, each restored and verified with `git diff --quiet` in th
 
 ## 8. New findings
 
-Recorded, **not fixed**, and left for Orchestrator triage.
+Recorded, **not fixed**, and left for Orchestrator triage. Listed in discovery order;
+**NF-5 is the most severe and is the one to read first.** NF-5 and NF-6 were raised by the
+read-only code review (§11) and re-derived here rather than accepted as reported.
 
 ### NF-1 — `CANONICAL_SEED` cannot express a non-2xx seed at all (severity: medium; needs a decision, not a patch)
 
@@ -562,6 +566,58 @@ again; with `is_same_origin`'s internal re-canonicalisation the measured cost is
 as shown in §4. **Not changed**: touching `site_discovery.py` for a finding this document rules
 NON_MATERIAL would blur the materiality verdict, and the brief asks for minimal change.
 
+### NF-5 — the same malformed-value defect is live in `_robots` (severity: HIGH; out of this theme's scope)
+
+`src/pxapi/adapters/web/site_discovery.py:502` resolves every `Sitemap:` declaration with an
+unguarded `urljoin(response.final_url, value.strip())`. It is the *same* defect C-PXAPI-013
+repairs in `html_links.py`, in a sibling reader of the same theme: one malformed value raises
+`ValueError` out of `_robots`, is caught only by `_guarded`, and costs the whole source.
+
+Re-derived on this branch with the repository's own test helpers — not taken from the review:
+
+| `robots.txt` content | `ROBOTS_DECLARATION` | `SITEMAP` | sitemap forms |
+| --- | --- | --- | --- |
+| control: one good declaration | `USED` | `USED` | `['…/gefunden']` |
+| malformed **before** a good declaration | `RUNTIME_ERROR` | `ABSENT` | `[]` |
+| malformed **after** a good declaration | `RUNTIME_ERROR` | `ABSENT` | `[]` |
+| malformed only | `RUNTIME_ERROR` | `ABSENT` | `[]` |
+
+The declared sitemap and the page it lists are both lost, and the run claims *our* runtime failed
+on a `robots.txt` it read perfectly — the same false `RUNTIME_ERROR` this branch closes for
+document links.
+
+**Why it was not fixed here.** It is a different source (`ROBOTS_DECLARATION`, not
+`SAME_ORIGIN_PAGE_LINKS`) in a different file, and `site_discovery.py` is named in the brief under
+C-PXAPI-015 and C-PXAPI-016, for both of which this slice deliberately changed nothing and
+certified the file byte-identical to the base. The brief is explicit: "If you independently
+reproduce a separate material defect: record it under NEW FINDING and leave it unchanged. Stop for
+Product Owner review rather than silently expanding scope." Every C-PXAPI-013 required behaviour is
+met without touching it.
+
+**This is a genuine miss in how the repair was carried out**, not only in the finding's wording:
+the defect class was fixed at the entry file without sweeping the sibling readers in the same
+module for the same pattern. A one-line `grep -rn 'urljoin(' src/` would have surfaced it before
+the first commit. The sweep has now been run — `page_fetcher.py:168` and
+`analyze_homepage.py:478` are the two other unguarded call sites and are outside this theme
+entirely; they are named here so the follow-up has its full list.
+
+**Recommended follow-up:** one authorised change applying the same per-value `except ValueError`
+to `_robots`, with the RED/GREEN pair the table above already defines.
+
+### NF-6 — `EMPTY` for an all-unresolvable-links document is a claim about the website (severity: low)
+
+`_links` returns `USED if links else EMPTY`, and `links` is now read *after* the per-href drop. A
+document whose anchors are all unresolvable therefore reports `EMPTY`, which that function's own
+comment defines as "the contract's word for a source that declared nothing at all" — and the
+document did declare links. Before the repair the same case was `RUNTIME_ERROR`, a false claim
+about *us*; the repair trades it for a false claim about the *site*, which is the direction this
+codebase cares about most.
+
+Both states are non-admitting and pinned to zero candidates, so no inventory differs. Making both
+claims true means counting the dropped links and reporting `USED`-with-zero, which changes
+`read_links`' return shape — beyond what C-PXAPI-013 names. Recorded in §3 and pinned by
+`test_an_unresolvable_href_is_never_admitted_merely_to_preserve_its_siblings`. **Not changed.**
+
 ### NF-4 — `docs/context/project-state.md` still names `fe8d838…` as "current main" (severity: informational; already known)
 
 Pre-existing wording drift, named as non-blocking in the task brief. `fe8d838…` remains the
@@ -584,9 +640,38 @@ change supports.
 **This is a judgement, not a measurement.** If the Orchestrator reads rule 6's correction as a
 method change, the bump belongs in this PR and is a one-line edit.
 
+The read-only review sharpened the argument against the position taken here, and it is
+recorded rather than answered: the rule list still calls itself "the whole of version
+`URL_CANONICAL_BASELINE 1.0.0`" while now containing a rule 0 and a narrowed rule 1, so one
+version string names two behaviours. A consumer diffing two inventories of one site under the
+documented "comparable only when the version agrees" guarantee would see candidates appear
+(the `#a\b` forms) and could not tell a method change from a change in the site. That is a
+real cost of not bumping, and it is the Orchestrator's call, not this slice's.
+
 ---
 
-## 10. Evidence ceiling
+## 10. Code review
+
+One read-only review of the exact diff `aa75d6b…..94939ad`, plus the repository's Sourcery app on
+PR #18. Neither was permitted to merge or to widen scope.
+
+| Source | Result |
+| --- | --- |
+| Sourcery (`gh pr checks 18`) | **pass**, zero inline comments; "Needs a human reviewer" on blast radius only, no action item |
+| read-only review, effort `high` | 4 findings, all re-derived locally before being acted on |
+
+| Review finding | Re-derived? | Disposition |
+| --- | --- | --- |
+| 1 — the same unguarded `urljoin` in `_robots` (HIGH) | **yes**, reproduced with the repo's own helpers | **NF-5**, out of scope, not fixed |
+| 2 — the new comment's motivating example is not actually recovered (MEDIUM) | **yes**, `is_admissible` is still `False` for it | **fixed** — the comment now states precisely which fragment classes are recovered and which still need a contract decision |
+| 3 — `EMPTY` is a claim about the website (LOW) | already measured in §3 | **NF-6**, not changed |
+| 4 — `CANONICALISATION_VERSION` names two behaviours (LOW) | already open in §9 | recorded in §9, Orchestrator's call |
+
+Only finding 2 produced a change, and it is confined to a comment inside a file this branch
+already modifies. Findings 1 and 3 are behaviour changes outside what C-PXAPI-013…016 authorise and
+were left unresolved on purpose.
+
+## 11. Evidence ceiling
 
 What this document does **not** establish:
 
@@ -608,4 +693,9 @@ What this document does **not** establish:
 7. **Mutation coverage is per-guard, not exhaustive.** Thirteen mutations were run; they cover
    every guard this branch adds and the two contract authorities behind the C-PXAPI-015 verdict.
    They are not a mutation score over the module.
-8. **No Jira or Confluence write occurred.** No merge occurred. No deployment occurred.
+8. **The malformed-value repair is not module-wide.** It closes the defect in `html_links.py`,
+   which is what C-PXAPI-013 names. The identical pattern is still live in `_robots`
+   (NF-5, re-derived and HIGH) and unguarded at `page_fetcher.py:168` and
+   `analyze_homepage.py:478`. Reading this slice as "malformed URL values are now isolated"
+   would be wrong; it isolates them in one reader.
+9. **No Jira or Confluence write occurred.** No merge occurred. No deployment occurred.

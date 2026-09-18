@@ -447,9 +447,9 @@ defect.
 
 > **Scope of this subsection: head `46669a9…`, the head the Orchestrator reviewed.** The figures
 > below are that measurement and are kept as recorded. The NF-5 repair of §12 added 8 tests after
-> it, so the current head collects **2876** and runs **2875 passed, 1 skipped** on both
-> interpreters — **§12.6 carries the gate results for the current head.** The lock, lint and
-> format rows below are unchanged on it.
+> it, and §12.8 added a ninth, so the current head collects **2877** and runs **2876 passed,
+> 1 skipped** on both interpreters — **§12.6 carries the gate results for the current head.** The
+> lock, lint and format rows below are unchanged on it.
 
 | Gate | Command | Result | rc |
 | --- | --- | --- | --- |
@@ -715,10 +715,10 @@ What this document does **not** establish:
    with the same single type. A future interpreter raising a different type from those functions
    would surface as an escaping exception, which `_guarded` records as `RUNTIME_ERROR` — the
    pre-repair behaviour, never something quieter.
-7. **Mutation coverage is per-guard, not exhaustive.** Eighteen mutations were run — thirteen for
-   C-PXAPI-013/014/015/016, five more for NF-5 in §12.5. They cover every guard this branch adds
-   and the two contract authorities behind the C-PXAPI-015 verdict. They are not a mutation score
-   over the module.
+7. **Mutation coverage is per-guard, not exhaustive.** Nineteen mutations were run — thirteen for
+   C-PXAPI-013/014/015/016, five for NF-5 in §12.5, and M6 for the truncation ordering in §12.8.
+   They cover every guard this branch adds and the two contract authorities behind the
+   C-PXAPI-015 verdict. They are not a mutation score over the module.
 8. **The malformed-value repair is still not module-wide.** It closes the defect in
    `html_links.py` (C-PXAPI-013) and in `site_discovery._robots` (NF-5, §12). The same unguarded
    `urljoin` pattern remains at `page_fetcher.py:168` and `analyze_homepage.py:478`, which this
@@ -735,9 +735,9 @@ What this document does **not** establish:
     authorised and `NO_SITEMAP_DECLARATION` would be false. If an authority decides that
     "declared but unresolvable" deserves its own state, that is a contract change and is not
     made here.
-12. **The NF-5 tests are scenario coverage, not a fuzz of `_robots`.** Eight tests cover the
-    orderings A–G plus the never-fetched/never-persisted floor, and five mutations prove each can
-    fail. No property-based test over arbitrary robots files was written.
+12. **The NF-5 tests are scenario coverage, not a fuzz of `_robots`.** Nine tests cover the
+    orderings A to G, the never-fetched/never-persisted floor and the truncation ordering, and six
+    mutations prove each can fail. No property-based test over arbitrary robots files was written.
 
 ---
 
@@ -859,7 +859,12 @@ and `ROBOTS_DECLARATION` must still be `RUNTIME_ERROR`. Mutation **M2** proves G
 served but could not be read", it already sits in `_NON_ADMITTING_PRECEDENCE`, and it is already
 structurally pinned to zero admitted. No contract, vocabulary or `SourceOutcome` changed.
 
-**Truncation precedence is unchanged**: `response.truncated` is still tested first, so a cut
+**Truncation precedence is unchanged, and the ordering is now load-bearing.** A read-only review
+of head `b19539d…` found that this claim was **asserted but not tested**: the whole 2 875-test
+suite stayed green when the `MALFORMED` branch was moved ahead of the truncation check, because
+the pre-existing truncation test (`test_a_robots_file_cut_by_our_byte_bound_is_a_bounded_read`)
+uses a declaration that *resolves*, so `unresolvable` is `False` in it and both orderings agree.
+Re-derived and closed here — see §12.8. `response.truncated` is still tested first, so a cut
 robots file is still `BUDGET_EXHAUSTED` with whatever declarations were recovered.
 
 **Off-origin is unchanged**: a syntactically valid off-origin declaration resolves normally and is
@@ -894,7 +899,8 @@ reports its own state (`ABSENT` here).
 
 ### 12.5 Counter-mutation
 
-Five mutations, each applied to a pristine copy, each verified to have landed, each run into its
+Five mutations at the time of writing — a sixth, M6, was added in §12.8 after the read-only
+review. Each is applied to a pristine copy, verified to have landed, and run into its
 **own** output file, each followed by a restore verified byte-for-byte with `cmp` before the next.
 A canary ran before the first mutation and after the last: both must be green.
 
@@ -921,15 +927,20 @@ the fact and acting on it — and a single mutation of either must not survive.
 | lock | `uv lock --check` | `Resolved 29 packages` — no relock |
 | lint | `uv run ruff check .` | `All checks passed!` (rc 0, run unpiped) |
 | format | `uv run ruff format --check .` | `102 files already formatted` (rc 0) |
-| full suite 3.13 | `uv run --python 3.13 pytest -q` | **2875 passed, 1 skipped** (116.38 s) |
-| full suite 3.14 | `uv run --python 3.14 pytest -q` | **2875 passed, 1 skipped** (118.88 s), exit 0 |
+| full suite 3.13 | `uv run --python 3.13 pytest -q` | **2876 passed, 1 skipped** (113.68 s) |
+| full suite 3.14 | `uv run --python 3.14 pytest -q` | **2876 passed, 1 skipped** (114.88 s), exit 0 |
 | C-PXAPI-013 unit | `pytest tests/adapters/test_html_links.py` | 27 passed |
 | C-PXAPI-013 e2e | `pytest …test_site_discovery_adapter.py -k "unresolvable_href or unusable_base_href or decoder_cannot_read"` | 4 passed |
 | C-PXAPI-014 | `pytest tests/domain/test_site_identity.py` | 178 passed |
 | discovery surfaces | adapter + bounds + hostile-input + domain | 109 passed |
 
 Interpreter identity was asserted inside each run (`assert sys.version_info[:2] == …`), not taken
-from the flag, because `uv run` re-syncs the default environment.
+from the flag, because `uv run` re-syncs the default environment. For the 3.14 figure above that
+assertion runs **inside pytest itself**, as a `pytest_configure` plugin printing
+`[canary] pytest running on 3.14.6`: an earlier 3.14 run was discarded because a concurrent
+`uv run --python 3.13` in the same working directory swapped `.venv` underneath it mid-flight. It
+reported the same pass count, and was thrown away rather than banked — a suite whose environment
+changed under it proves nothing, whatever number it prints.
 
 **The one skip is `tests/smoke/test_real_boundary_smoke.py` — opt-in, requires
 `PXAPI_REAL_BOUNDARY_SMOKE_URL`.** It was deliberately not run: the brief forbids substituting a
@@ -945,3 +956,68 @@ public smoke for deterministic proof, and `AD-006` / `AC8` remains open.
 | `tests/adapters/test_site_discovery_adapter.py` | tests | modified | +152 −0: scenarios A–G, the never-fetched/never-persisted floor, and the guard-narrowness lock |
 
 Two files. No other behavioural file was touched.
+
+### 12.8 Read-only review of head `b19539d…`, and the one gap it closed
+
+Four independent lenses (correctness, guard-narrowness, safety/bounds, test-quality), each
+adversarially verified from two angles by separate agents. 5 findings; 2 refuted by every
+verifier, 2 are the same INFO-grade observation reported twice, **1 was material and is repaired
+here.**
+
+| # | Lens | Severity | Finding | Disposition |
+| --- | --- | --- | --- | --- |
+| 1 | guard-narrowness | MEDIUM | `PXAPI-19B-site-discovery-runtime.md:179` states the pre-repair `ROBOTS_DECLARATION` rule | **Refuted, both verifiers.** The row already mispredicted this exact input at `46669a9…`: `Sitemap: http://[` yielded `RUNTIME_ERROR` while the row says `USED (at least one Sitemap:)` for a body that decodes perfectly. The drift predates this diff; the repair only moved which non-`USED` state is reached, from one that blames our runtime to one that is neutral. That file is also **explicitly out of mutation scope** for this repair. Recorded, not changed. |
+| 2 | correctness | INFO | `MALFORMED` is keyed on whether `urljoin` raises, not on whether the value names a readable target — `Sitemap: mailto:x@y.test` reports `USED` | **Refuted, both verifiers.** A verifier diffed the whole outcome matrix across both heads: they differ in **exactly one line**, `http://[::1` moving `RUNTIME_ERROR → MALFORMED`. `mailto:`, `javascript:`, `file:///` and a bad port report `USED` at *both* heads. That is what required semantics 3 and 6 ask for: 6 explicitly forbids collapsing a syntactically valid but unusable URL into `MALFORMED`. Boundary recorded, behaviour unchanged. |
+| 3, 4 | safety/bounds, test-quality | INFO / LOW | `assert not any("[" in o.observed_form …)` cannot fail for any mutation of `_robots` | **Accurate but not a gap.** Verified independently: all four `DiscoveryObservation` sites are the seed origin (351), seed links (437, 452) and sitemap *entries* (605) — a declaration is never one. The proposed mutation (keep the raw value in `declared`) was simulated read-only: the fetch list and the observation set come back **byte-identical**, because `plan()` rejects the unresolvable value anyway, so semantic 7 is not violated by it; it only mislabels the outcome, which scenario D pins. Semantic 7's binding proof is the exact fetch list — under M1 the test dies at that assertion. The redundant line documents an architectural invariant and matches the idiom already at line 220. **Not changed.** |
+| 5 | test-quality | MEDIUM | **Required semantic 5 was asserted, not tested** | **Material — repaired here.** |
+
+**Finding 5, re-derived locally.** Moving `if unresolvable: return MALFORMED` ahead of
+`if response.truncated: return BUDGET_EXHAUSTED` left the entire suite green. The pre-existing
+truncation test cannot discriminate the two orderings: its declaration resolves, so `unresolvable`
+is `False` and both orderings return `BUDGET_EXHAUSTED`. §12.3's "truncation precedence is
+unchanged" and §11 item 7's "the mutations cover every guard this branch adds" were therefore
+both **claims without a gate behind them** — a guard that has never failed is `not_run`, not
+`passed`.
+
+The wrong ordering is not cosmetic: a `robots.txt` that **our own byte bound** cut, whose readable
+prefix happens to declare only unresolvable values, would report `MALFORMED` — blaming the site
+for a prefix we chose to stop at. That is the neutrality inversion the source vocabulary exists to
+prevent, and it is the same class of error NF-5 itself repaired.
+
+**Repair:** one test, `test_a_truncated_robots_declaring_only_unresolvable_sitemaps_still_blames_our_bound`.
+No production code changed — `git diff --stat -- src/` is empty for this round; the shipped
+ordering was already correct. What was missing was the proof that it is.
+
+**Counter-mutation, now six:**
+
+| # | Mutation | rc | Caught by |
+| --- | --- | --- | --- |
+| canary-pre | none | **0** | `10 passed` |
+| M1 | remove the guard entirely | **1** | 7 tests |
+| M2 | widen to `except Exception` | **1** | the guard-narrowness lock |
+| M3 | guard but never record it | **1** | the malformed-only test |
+| M4 | drop the `MALFORMED` branch | **1** | the malformed-only test |
+| M5 | return `MALFORMED` unconditionally | **1** | the no-`Sitemap`-field control |
+| **M6** | **`MALFORMED` outranks truncation** (`if unresolvable and not declared:` inserted above the truncation check) | **1** | **the new truncation lock, and only it** |
+| canary-post | none (restored) | **0** | `10 passed` |
+
+M6 is deliberately narrow. A broader form — hoisting the branch above the `declared` check too —
+also kills A, B, C and F, which would let the kill be credited to tests that were already green
+before this round. Gated on `unresolvable and not declared`, it isolates the truncation ordering
+alone and kills exactly one test. The pre-existing byte-bound test stays green under it, which is
+the finding's own point, now measured.
+
+**What the review confirmed rather than found.** Three lenses ran code against both heads rather
+than reading the diff, and independently reproduced: the `ValueError`-only exception surface on a
+separate corpus (1 000 076 inputs, both interpreters); that `UnicodeError` is unreachable (the one
+`raise UnicodeError` in `urllib.parse` sits in the deprecated `_to_bytes()`, which `urljoin` and
+`urlsplit` never call); that `decode_body` is outside the guard, so a decoding defect of ours
+still reaches `RUNTIME_ERROR`; and every numeric claim in §5, §12.6 and §12.7. One lens also
+measured the cost of the now non-short-circuiting loop at the 2 MiB response bound: **116 508
+all-malformed declarations in 0.335 s**, so required semantic 8 holds under adversarial input and
+not only in the happy path.
+
+**Not independently verified:** the counter-mutation rows. A read-only review must not mutate the
+working tree, so M1–M6 remain the author's measurement, backed by this driver's own canaries
+(`canary-pre` and `canary-post` green, every restore `cmp`-verified byte-for-byte, and a
+deliberately wrong anchor aborting the run).

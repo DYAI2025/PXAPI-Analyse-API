@@ -920,3 +920,23 @@ def test_the_declaration_guard_does_not_turn_our_own_defect_into_malformed_input
         lambda b: {"/": home(), "/robots.txt": robots("Sitemap: /unser-defekt.xml")}
     )
     assert outcomes(report)["ROBOTS_DECLARATION"] == "RUNTIME_ERROR"
+
+
+def test_a_truncated_robots_declaring_only_unresolvable_sitemaps_still_blames_our_bound() -> None:
+    """Truncation outranks the malformed verdict, and that ordering is load-bearing.
+
+    Our own byte bound cut this file, so ``BUDGET_EXHAUSTED`` is the true statement about it —
+    the declarations beyond the cut were never read and cannot be judged. Reporting MALFORMED
+    here would blame the site for a prefix *we* chose to stop at, which is the neutrality
+    inversion the source vocabulary exists to prevent. The existing truncation test cannot
+    catch a regression of this ordering: its declaration resolves, so ``unresolvable`` is
+    False in it and both orderings agree. This one pins the case where they disagree.
+    """
+    report, _ = discover(
+        lambda b: {
+            "/": Route(body=b"<html></html>", headers=HTML),
+            "/robots.txt": robots(BAD_DECLARATION, "#" * 400),
+        },
+        fetch_limits=FetchLimits(max_response_bytes=120),
+    )
+    assert outcomes(report)["ROBOTS_DECLARATION"] == "BUDGET_EXHAUSTED"

@@ -296,11 +296,34 @@ def test_a_status_outside_the_bounds_is_refused_by_the_standard_library() -> Non
     assert _status_read(HTTP_STATUS_MAX + 1) == "BadStatusLine"
 
 
-def test_the_upper_bound_is_reachable_and_is_carried_verbatim() -> None:
+def _largest_status_returned(ceiling: int = 1000, floor: int = 100) -> int:
+    """The largest status ``http.client`` actually reports, found by probing downward.
+
+    Derived rather than read off the constant under test. A first version of the bound test
+    asserted ``_status_read(HTTP_STATUS_MAX) == HTTP_STATUS_MAX``, which is true for *any*
+    value the constant happens to hold: a countermutation narrowing the maximum to 599 left it
+    green. This function knows nothing about the constant, so the comparison below can fail.
+    """
+    for code in range(ceiling, floor - 1, -1):
+        if _status_read(code) == code:
+            return code
+    raise AssertionError("no status in range was returned at all")
+
+
+def test_the_status_maximum_is_the_largest_status_the_standard_library_returns() -> None:
     """A narrower maximum — 599, say — would make a real 6xx..9xx response contract-invalid."""
-    assert _status_read(HTTP_STATUS_MAX) == HTTP_STATUS_MAX
+    assert _largest_status_returned() == HTTP_STATUS_MAX
+
+
+def test_a_status_above_the_five_hundreds_is_carried_verbatim() -> None:
+    """The concrete case the 599 ceiling would have broken."""
     assert _status_read(600) == 600
     assert _status_read(HTTP_STATUS_MIN + 1) == HTTP_STATUS_MIN + 1
+
+
+def test_the_downward_probe_would_report_a_lower_ceiling() -> None:
+    """Canary: the search must be able to answer something other than 999."""
+    assert _largest_status_returned(ceiling=600) == 600
 
 
 def test_the_lower_bound_is_the_one_status_the_standard_library_treats_specially() -> None:

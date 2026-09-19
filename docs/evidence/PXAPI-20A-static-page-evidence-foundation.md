@@ -139,8 +139,9 @@ Four deliberate differences from the homepage profile:
 
 ## 7. Files changed
 
-30 files: 3 modified governance documents, 2 modified documentation files, 5 new/modified contract
-files, 2 new source modules, 3 new test modules, 15 new fixture files, 2 modified test modules.
+33 files: 3 modified governance documents (`docs/context/`), 2 modified documentation files
+(`README.md`, `contracts/README.md`), 1 new evidence document, 5 new/modified contract files, 2 new
+source modules, 3 new test modules, 15 new fixture files, 2 modified test modules.
 
 ```text
 A contracts/v1/examples/page-acquisition-record.measurements-withheld.example.json
@@ -339,14 +340,21 @@ from inside each run and is recorded above.
 
 ## 16. Diff and reviewability — and where this candidate does **not** meet its own gate
 
+Measured at `f1ec0154f77161253dab1397830042c81593a43d`, the commit that introduced this document.
+The correction that wrote these figures into it touches `docs/evidence` alone, so the counted
+measure — which excludes that directory by the convention's own definition — is unchanged by it; the
+full-diff figure rises by the size of the correction itself.
+
 | Measure | Value |
 | --- | --- |
-| changed files | **30** |
-| `git diff --stat` | 30 files changed, **3167** insertions, **27** deletions |
-| counted diff (`--unified=0`, excluding `docs/evidence`) | **209,019 bytes** |
-| full diff, as Sourcery counts it | **234,559 bytes** |
+| changed files | **33** |
+| `git diff --shortstat` | 33 files changed, **3690** insertions, **30** deletions |
+| counted diff (`--unified=0`, excluding `docs/evidence`) | **216,352 bytes** |
+| full diff, as Sourcery counts it | **271,378 bytes** |
+| `docs/evidence` alone (counted separately, not included above) | 28,559 bytes |
 
-Per area (counted): `docs/context` 51,112 · `contracts` 23,805 · `src` 43,756 · `tests` 90,346.
+Per area (counted): `docs/context` 52,661 · `tests` 90,346 · `src` 43,756 · `contracts` 28,716 ·
+`README.md` 873.
 
 Per commit (counted):
 
@@ -357,10 +365,11 @@ Per commit (counted):
 | `5c5f1d6` | 1,864 | the status-maximum pin, de-tautologised |
 | `b90aab7` | 65,330 | contract registration |
 | `2e80e50` | 48,730 | the static-page observer |
+| `f1ec015` | 36,170 | this evidence document and the two READMEs |
 
 **This is a finding, stated plainly: 20.A did not come in materially smaller than the monolithic
 plan it replaced.** The single-PR option was projected at ≈190–250 kB counted, and this candidate
-lands at 209 kB — inside that band rather than below it. It is the smallest slice since PXK-20.B1
+lands at 216 kB — inside that band rather than below it. It is the smallest slice since PXK-20.B1
 against the same calibration (PXAPI-19.B 340,448 · PXAPI-19.A 274,275 · PXK-67 225,587 ·
 PXK-20.B1 77,520), and it is above the repository's 140,000-byte reviewability convention and above
 Sourcery's 150,000-character limit, so no bot review will run (`C-PXAPI-001` neighbourhood; `main`
@@ -374,9 +383,11 @@ stated above.
 If the Product Owner prefers smaller candidates, the commits are already split along reviewable
 seams and a resplit needs no rework:
 
-- **A** governance reconcile — 51,112 B, documentation only, no production file;
-- **B** domain + contract — 110,172 B, no runtime, nothing calls it;
-- **C** the observer — 48,730 B, nothing calls it either.
+- **A** governance reconcile — `3ae2316`, 51,112 B, documentation only, no production file;
+- **B** domain + contract — `3ae2316..b90aab7`, 109,409 B, no runtime, nothing calls it;
+- **C** the observer — `b90aab7..2e80e50`, 48,730 B, nothing calls it either;
+- the evidence document and the READMEs — `f1ec015`, 36,170 B — travel with whichever candidate
+  carries the code they describe, or split along the same seams.
 
 No further abstraction was added after this measurement.
 

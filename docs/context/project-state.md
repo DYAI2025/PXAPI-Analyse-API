@@ -1,11 +1,11 @@
 # PXAPI Project State
 
 **Snapshot date:** 2026-09-19  
-**Execution mode:** PXAPI-19 final evidence and documentation closeout — documentation only. `WIP=1` is this closeout theme; no mutating implementation theme is active, and `PXAPI-20` is not authorized.  
+**Execution mode:** `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1. `WIP=1` is this implementation theme and it is the only one; the PXAPI-19 closeout theme is finished. PXAPI-20 is delivered as two sequential PR candidates under one Jira item, `20.A` then `20.B` (Jira `PXAPI-20` comment `16259`, `D-20-K`). The current candidate is `20.A — Static Page Evidence Foundation`; neither its merge nor its green gates make `PXAPI-20` Done.  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
 **19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`  
 **19.B integrated implementation baseline (historical; no longer `main`):** `fe8d838023c8f9967151cad9aa1981e76dcf7d75`  
-**Current implementation baseline:** `bfe06cc07ea0dfde31fedb8e7115940da24fb9fd` — the merge of PR #18 (discovery-correctness repair), and `main` when this snapshot was written. The closeout PR that carries this file changes documentation only: once it merges, `main` advances to that merge while the implementation baseline stays `bfe06cc`.
+**Current implementation baseline:** `19a9a855d603384c216bbf9ab92e4e7cb0334bfb` — the merge of closeout PR #19, and `main` when this snapshot was written. It advances documentation only over the previous baseline `bfe06cc07ea0dfde31fedb8e7115940da24fb9fd`: `git diff --quiet bfe06cc 19a9a855 -- src tests contracts/v1 pyproject.toml uv.lock .github` exits **0**, and the six files that do differ are `contracts/README.md`, the three `docs/context/` files and the two PXAPI-19 closeout evidence artifacts. The runtime at `19a9a855` is therefore byte-for-byte the runtime PR #18 merged. `PXAPI-20.A` is implemented from this exact base.
 
 ## Purpose
 
@@ -33,15 +33,15 @@ This file is a compact rehydration snapshot for delivery gates. It does not repl
 
 ## Current code truth
 
-At the current implementation baseline `bfe06cc07ea0dfde31fedb8e7115940da24fb9fd`, the PXAPI-19.B site-discovery runtime **is present**, including the PR #18 discovery-correctness repair. `SiteDiscoveryPort`, `HttpSiteDiscovery`, the `DiscoverSite` use case, the deterministic `CENSUS_FIRST_DETERMINISTIC` planner, producer-side semantic enforcement and `python -m pxapi.adapters.inbound.discover_cli` are all on `main`, authorized by the twelve `PXAPI-19.B` entries in `BEHAVIOR_ALLOWED` (`tests/test_package_scaffold.py`).
+At the current implementation baseline `19a9a855d603384c216bbf9ab92e4e7cb0334bfb`, the PXAPI-19.B site-discovery runtime **is present**, including the PR #18 discovery-correctness repair. `SiteDiscoveryPort`, `HttpSiteDiscovery`, the `DiscoverSite` use case, the deterministic `CENSUS_FIRST_DETERMINISTIC` planner, producer-side semantic enforcement and `python -m pxapi.adapters.inbound.discover_cli` are all on `main`, authorized by the twelve `PXAPI-19.B` entries in `BEHAVIOR_ALLOWED` (`tests/test_package_scaffold.py`).
 
-Acquisition is therefore no longer homepage-only at the discovery layer: one run establishes a canonical public origin, reads `/robots.txt` for `Sitemap:` declarations only, reads sitemaps and bounded same-origin seed links, canonicalizes and deduplicates them into a `site-inventory.v1`, and plans a `sampling-manifest.v1` in `CENSUS` mode. **No discovered page is fetched** — page acquisition over the manifest is PXAPI-20 and is not implemented.
+Acquisition is therefore no longer homepage-only at the discovery layer: one run establishes a canonical public origin, reads `/robots.txt` for `Sitemap:` declarations only, reads sitemaps and bounded same-origin seed links, canonicalizes and deduplicates them into a `site-inventory.v1`, and plans a `sampling-manifest.v1` in `CENSUS` mode. **No discovered page is fetched** — page acquisition over the manifest is PXAPI-20 and is not implemented. `PXAPI-20.A` adds the reusable evidence foundation for it and deliberately no multi-page runtime; the manifest-driven acquisition runtime is `20.B`.
 
 **The defects found after the 19.B merge are dispositioned.** A post-merge review had found four defect classes inside the authorized boundary (AD-007, `C-PXAPI-013` … `C-PXAPI-016`). PR #18 repaired the two that were implementation defects — malformed-link isolation, together with the same defect class in `robots.txt` declaration reading (NF-5), and fragment canonicalization — and Jira `PXAPI-19` comment `16081` ruled the canonical-seed finding superseded as an implementation defect and the named-limit finding non-material. Residues that were recorded but do not block PXAPI-19 are listed under *Non-blocking follow-up candidates* below. The discovery layer still makes **no** completeness claim about a real site beyond what one inventory records: the accepted Real-Boundary evidence proves one controlled public-origin boundary (AD-006).
 
 PXAPI-19.A had added the provider-neutral contract/foundation layer for that step, including registered `site-inventory.v1` and `sampling-manifest.v1` schemas, shared acquisition definitions, valid examples, targeted invalid fixtures, deterministic digest/semantic guards and contract evidence. 19.A intentionally introduced no runtime; 19.B is what made those contracts executable.
 
-Still **not** present at `bfe06cc`: browser/Crawl4AI execution, `RenderedPagePort`, multi-page static acquisition, `page-acquisition-record.v1`, scoring/customer output changes, queueing, CRM integration and deployment behavior. No customer-value claim follows from the 19.B merge, from its repair, or from this closeout.
+Still **not** present at `19a9a855`: browser/Crawl4AI execution, `RenderedPagePort`, multi-page static acquisition, `page-acquisition-record.v1`, scoring/customer output changes, queueing, CRM integration and deployment behavior. No customer-value claim follows from the 19.B merge, from its repair, or from the closeout. What `PXAPI-20.A` adds to that list is recorded by the 20.A candidate itself, not here in advance.
 
 ## PXAPI-19.A closeout
 
@@ -92,17 +92,35 @@ Overall Jira item `PXAPI-19` stayed incomplete and `In Arbeit` after 19.A. Its t
 
 ## PXAPI-19 ticket-level closeout
 
-**Jira state at snapshot:** `In Arbeit` (read 2026-09-19). Jira Done is a Product Owner action in Jira and is **not** claimed by this repository.
+**Jira state at snapshot:** `Erledigt` (read live 2026-09-19). The closeout labels `closeout-only`, `repair-required` and `delivery-ready-blocked` are no longer on the issue (read live 2026-09-19; the removal is recorded in Jira `PXAPI-20` comment `16258`).
 
 **Evidence state.** The final AC1–AC9 evidence matrix, the AC8 evidence class and ceiling, and the contradiction dispositions are in `docs/evidence/PXAPI-19-final-closeout.md`; the machine-readable AC8 receipt is `docs/evidence/PXAPI-19-AC8-real-boundary-receipt.json`. AC8 is accepted **with its explicit evidence ceiling** (AD-006, `D-PXAPI19-PO-011`).
 
-**Gates.** The historical PR #16 `R4M` stays `UNKNOWN`, permanently. PR #18's gates apply to `95c061a…` only. Ticket-level PXAPI-19 IC / R2G / R4M are Orchestrator and Product Owner authority and are not declared by this file. The closeout PR that carries this file changes documentation only.
+**Gates.** The historical PR #16 `R4M` stays `UNKNOWN`, permanently. PR #18's gates apply to `95c061a…` only. Ticket-level PXAPI-19 IC / R2G / R4M are Orchestrator and Product Owner authority and are not declared by this file.
 
-**PXAPI-20 stays `BLOCKED / NOT AUTHORIZED` until all three of these hold, in order** (authority: Product Owner closeout disposition, 2026-09-19, not yet recorded in Jira):
+**Closeout record.** Jira `PXAPI-19` comment `16257` (2026-09-19) is the Product Owner's final ticket closeout: final integration SHA `19a9a855d603384c216bbf9ab92e4e7cb0334bfb`, closeout PR #19, exact reviewed head `bd2c95b666c21fb207975243b34fb864659839dc`, post-merge `main` CI `python-compat` run `35414652333` **success** on that exact merge SHA with the Python 3.13 and 3.14 jobs both `success`. It accepts AC1–AC9 as mapped in the two evidence artifacts, keeps the AC8 evidence ceiling, and states that the historical PR #16 `R4M = UNKNOWN` is permanent and not retroactively changed.
 
-1. the PXAPI-19 closeout PR is merged;
-2. post-merge `main` CI succeeds on that exact merge SHA;
-3. the PXAPI-19 closeout is recorded in Jira and read back.
+**The three PXAPI-20 unlock conditions are met.** They were recorded here on 2026-09-19 as `BLOCKED / NOT AUTHORIZED` until, in order: (1) the PXAPI-19 closeout PR is merged; (2) post-merge `main` CI succeeds on that exact merge SHA; (3) the PXAPI-19 closeout is recorded in Jira and read back. Each is now evidenced: (1) PR #19 merged as `19a9a855…`; (2) run `35414652333` on head `19a9a855…`, `success`; (3) comment `16257`, read back in Jira `PXAPI-20` comment `16258` ("PXAPI-19: **Erledigt**, readback-verified"). The prior blocked state is preserved above as the condition set it discharged, not deleted.
+
+## PXAPI-20 authorization and delivery shape
+
+**Jira state:** `In Arbeit`, priority `Highest` (read live 2026-09-19). **WIP = PXAPI-20 only.**
+
+**Authority chain, all read live on 2026-09-19:**
+
+- Jira `PXAPI-20` comment `16258` — `PRE_IMPLEMENTATION` reconcile: PXAPI-19 `Erledigt` and readback-verified, canonical `main` `19a9a855d603384c216bbf9ab92e4e7cb0334bfb`, exact-merge-SHA CI run `35414652333` success on both interpreters, architecture authority Confluence `54362115` `ACCEPTED`, DRS authority Confluence `55181314` `CURRENT`. It required the first coding-agent action to be `PLAN_REQUIRED_STOP` with an architecture/change-scope declaration against that exact base.
+- Jira `PXAPI-20` comment `16259` — Product Owner plan review: **APPROVED WITH BOUNDED AMENDMENTS**, and **Delivery Ready = GREEN** for PXAPI-20 under the decisions `D-20-A` … `D-20-P`. That comment supersedes the `Delivery Ready = BLOCKED` state of comment `16042`. Delivery readiness is a project decision and **not** a DRS runtime gate.
+
+**DRS at this snapshot** (comment `16259`, unchanged by it): `definition_state = DRS_DEFINITION_READY`, `IC = UNKNOWN`, `R2G = UNKNOWN`, `R4M = UNKNOWN`. Nothing green is inherited from PXAPI-19.
+
+**Delivery shape (`D-20-K`).** One Jira item, one WIP theme, two sequential PR candidates:
+
+- **`20.A` — Static Page Evidence Foundation.** A first documentation commit reconciling this file, the decision ledger and the contradiction ledger (`D-20-N`, discharging condition 3 of comment `16042` inside the PXAPI-20 branch rather than in another docs-only PR); `page-acquisition-record.v1` with examples and targeted invalid fixtures; its domain semantics and invariants; an isolated generic static-page observer with deterministic tests. **No production multi-page CLI or runtime.**
+- **`20.B` — Multi-Page Runtime & Real-Boundary.** Rebound to the post-20.A `main`: manifest → safe page fetch → acquisition record → measurements/evidence orchestration, composition and CLI, integration and error-path tests, the multi-page Real-Boundary smoke, final traceability evidence.
+
+Each candidate carries its own bounded `IC` / `R2G` / `R4M`. **Neither the 20.A merge nor its green gates make `PXAPI-20` Done**, and no second Jira ticket is created.
+
+**Hard amendments that bound 20.A** (comment `16259`): `AnalyzeHomepage` is not refactored, subclassed, extracted in place or behaviourally modified, and `H1`–`H5` are not repaired in this slice (`D-20-E`, see `C-PXAPI-018`); the static-page path is a separate generic observation path; `observation_mode` is `STATIC_HTTP` only (`D-20-C`); page linkage uses `measurement_refs` and neither `measurement-record.v1` nor `website-evidence.v1` is versioned to carry page identity (`D-20-B`); site-caused and technical outcomes stay neutral while PXAPI's own contract/invariant defects stay visible run failures (`D-20-D`); `raw_artifact_ref` exists as optional opaque provenance and is never emitted (`D-20-H`); the HTML parser is not altered and `H7` is an operational precondition rather than a blocker (`D-20-L`, see `C-PXAPI-019`); existing `SafePageFetcher` safety coverage is not duplicated to raise test volume (`D-20-O`); after 20.B merges with green gates, feature development **stops** for the first real customer/prospect pilot (`D-20-P`).
 
 ## Completed prerequisite
 
@@ -119,9 +137,9 @@ This completion proves the source-bound parity/gap decision artifact, not implem
 
 ## Current prioritized delivery sequence
 
-1. **`PXAPI-19` final evidence and documentation closeout** — the current and only `WIP=1` theme. A documentation-only PR; it opens no implementation scope. After it merges: post-merge `main` CI on the merge SHA, then the Jira closeout and its readback, which are Product Owner actions. The discovery-correctness repair that preceded it is done (PR #18).
-2. `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1, only after the three unlock conditions under *PXAPI-19 ticket-level closeout*. Merging 19.B did not release it; deciding AD-005 did not release it; the PR #18 repair did not release it; and this closeout PR alone does not release it. Jira `PXAPI-19` comments `16044`, `16045`, `16081` and `16083` each state that it stays blocked; comment `16082`, the PR #18 `R4M` gate, does not address it.
-3. Re-measure evidence gain before paying browser/async complexity.
+1. **`PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1** — the current and only `WIP=1` theme, `20.A` then `20.B` (see *PXAPI-20 authorization and delivery shape*). `PXAPI-19` closed on 2026-09-19 (comment `16257`) and its three unlock conditions are discharged; the historical statements that PXAPI-20 stayed blocked — Jira `PXAPI-19` comments `16044`, `16045`, `16081`, `16083` — remain accurate about the moment each was written and are not rewritten.
+2. **The first real customer/prospect pilot** — mandated by `D-20-P` immediately after 20.B merges with exact-merge-SHA `main` CI green and the bounded multi-page Real-Boundary gate passed. Browser/Crawl4AI, async queueing, automated PDF, scoring redesign and cross-page diagnosis do **not** start before that pilot unless a newly discovered blocker makes the pilot impossible.
+3. Re-measure evidence gain before paying browser/async complexity — the pilot is that measurement.
 4. Depending on observed bottleneck, continue with either cross-page diagnosis (`PXAPI-23`) or async/browser path (`PXAPI-15..18`, then `PXAPI-21`, `PXAPI-22`).
 5. Strategic lever / impact verification contracts (`PXAPI-24`) later.
 
@@ -158,7 +176,7 @@ The repository context documents exist and are maintained as rehydration aids. T
 
 Jira's raw issue-link representation for `PXAPI-19` currently exposes `PXAPI-20` and `PXAPI-21` as `inwardIssue` values under the `Blocks` link type (`is blocked by`), while the accepted product sequence and downstream Jira descriptions require full `PXAPI-19` before `PXAPI-20`. Other Jira graph rendering may present the relationship differently.
 
-Status: `CONFLICT / OPEN / NON-BLOCKING FOR PXAPI-19 CLOSEOUT`. Do not mutate, reverse or delete these links until the current link semantics and a safe reversible operation are independently verified. Do not infer PXAPI-20 authorization from the link representation.
+Status: `CONFLICT / OPEN / NON-BLOCKING`. It did not block the PXAPI-19 closeout and it does not block PXAPI-20: the authorization comes from Jira `PXAPI-20` comments `16258` and `16259`, never from a link representation. Do not mutate, reverse or delete these links until the current link semantics and a safe reversible operation are independently verified, and do not infer PXAPI-20 authorization from the link representation.
 
 ### AD-004 — sampling threshold remains missing
 
@@ -178,11 +196,11 @@ What was measured: the merge commit `fe8d838` states that PR #16 was merged "aft
 
 **What this is not.** It is not a new implementation defect, and it is not evidence against any PXAPI-19 acceptance criterion. It does bar any claim that the original 19.B merge process was fully DRS-conformant, and that bar is permanent.
 
-**What it no longer is.** A current closeout blocker. AD-005 does not gate PXAPI-19's ticket-level closeout any more, and deciding it authorises nothing: `PXAPI-20` stays blocked, and AD-006 is untouched and still open. See `C-PXAPI-008`. **2026-09-19 note:** AD-006 has since been resolved on its own authority (below), and PR #18 carried its own exact-head `R4M` (AD-009). Neither touches this finding: the historical PR #16 `R4M` stays `UNKNOWN`.
+**What it no longer is.** A current closeout blocker. AD-005 does not gate PXAPI-19's ticket-level closeout any more, and deciding it authorised nothing: when the decision was written `PXAPI-20` stayed blocked, and AD-006 was untouched and still open. See `C-PXAPI-008`. **2026-09-19 note:** AD-006 has since been resolved on its own authority (below), PR #18 carried its own exact-head `R4M` (AD-009), PXAPI-19 was closed by Jira comment `16257`, and PXAPI-20 was authorised by comments `16258` and `16259`. None of those touches this finding, and this finding contributed to none of them: the historical PR #16 `R4M` stays `UNKNOWN`.
 
 ### AD-006 — AC8 real-boundary evidence class
 
-**Status: `RESOLVED — FRESH REAL-BOUNDARY REPRODUCTION ACCEPTED`.** Authority: Product Owner closeout disposition, 2026-09-19 (`D-PXAPI19-PO-011`; not yet recorded in Jira). See `C-PXAPI-009`.
+**Status: `RESOLVED — FRESH REAL-BOUNDARY REPRODUCTION ACCEPTED`.** Authority: Product Owner closeout disposition, 2026-09-19 (`D-PXAPI19-PO-011`), now recorded in Jira `PXAPI-19` comment `16257`, which accepts AC8 **only** with its explicit evidence ceiling. See `C-PXAPI-009`.
 
 The Product Owner accepts, for ticket closeout, a **fresh** reproduction from an attached clean `main` checkout at `bfe06cc07ea0dfde31fedb8e7115940da24fb9fd` against `https://www.rfc-editor.org/`, on Python 3.13.3 and 3.14.6. The opt-in smoke passed on both. Each run established the canonical origin and produced a contract-valid `SiteInventory` and `SamplingManifest`: 506 eligible candidates, `CENSUS`, 506 selections, `selection_complete = true`, and `SITEMAP = BUDGET_EXHAUSTED` at the declared 500-entry discovery bound, which stayed a technical source outcome and produced no website finding, score or severity. Receipt: `docs/evidence/PXAPI-19-AC8-real-boundary-receipt.json`.
 
@@ -224,19 +242,21 @@ The Product Owner accepts, for ticket closeout, a **fresh** reproduction from an
 
 ## Non-blocking follow-up candidates
 
-Surfaced by the final AC8 verification and recorded at the Product Owner's direction as **non-blocking** for PXAPI-19. None is repaired here, and each needs its own authorised ticket before any change.
+`F-1` … `F-3` were surfaced by the final AC8 verification and recorded at the Product Owner's direction as **non-blocking** for PXAPI-19. `F-4` and `F-5` were measured during PXAPI-20 planning against this exact base and are non-blocking for PXAPI-20 by `D-20-E` and `D-20-L`. None is repaired here, and each needs its own authorised ticket before any change.
 
 - **F-1 — terminal `entered_at`.** Terminal `analysis_run_state` documents carry the run's start instant as `entered_at`, while the contract describes it as when the run entered its current state. See `C-PXAPI-017`.
 - **F-2 — local trust-store dependency.** The python.org CPython 3.13.3 build on the evidence workstation has no usable compiled-in CA file; HTTPS works only through an inherited `SSL_CERT_FILE` (measured 2026-09-19: 0 CA anchors without it, 193 with it). The fetcher uses `ssl.create_default_context()`, so a misconfigured environment surfaces as a provider failure rather than as a local configuration fault. Live-smoke evidence should record `SSL_CERT_FILE`.
 - **F-3 — neutrality helper is key-name based.** `verdict_keys_in` (`tests/application/test_discover_site.py`), which the Real-Boundary smoke also uses, compares **key names** against `VERDICT_KEYS`; it does not inspect values. A value-level anti-verdict test is a future hardening candidate.
+- **F-4 — the homepage producer is not hardened against a site-declared canonical (`H1`–`H5`).** Site-controlled HTML can drive `AnalyzeHomepage` into emitting a contract-invalid `CANONICAL_URL` measurement, or into raising out of `run()`. Not repaired in PXAPI-20 (`D-20-E`: the homepage path stays byte-identical). See `C-PXAPI-018`, which records each measured input.
+- **F-5 — page parse time is unbounded on some supported CPython builds (`H7`).** `read_html` calls `HTMLParser.close()`, whose cost is quadratic in the number of unclosed tags on CPython 3.13.3. Not repaired in PXAPI-20 (`D-20-L`: the parser is protected; real-boundary and pilot runs use a measured-fast build and record it). See `C-PXAPI-019`.
 
-Of the repair document's other findings, NF-4 (this file naming `fe8d838` as current `main`) is resolved by this reconcile, and NF-3 is informational and not a defect. Residues recorded elsewhere and unchanged by this closeout, none of them a PXAPI-19 acceptance blocker: NF-1 (no vocabulary for "origin established, seed document answered 4xx/5xx" — a contract question), NF-2 (raw ASCII-space fragment makes an observed form non-persistable — a contract boundary), NF-6 (`EMPTY` for an all-unresolvable-links document), the `CANONICALISATION_VERSION` judgement (all in `docs/evidence/PXAPI-19B-discovery-correctness-repair.md`); the untriaged unguarded `urljoin` at `src/pxapi/application/analyze_homepage.py:478` (the repair document also names `page_fetcher.py:168`, which is in fact already guarded by `except ValueError` at `bfe06cc`); `C-PXAPI-012` (credential echo on the homepage path); and `C-PXAPI-005` / AD-004 (sampling threshold `MISSING`).
+Of the repair document's other findings, NF-4 (this file naming `fe8d838` as current `main`) was resolved by the PXAPI-19 closeout reconcile, and NF-3 is informational and not a defect. Residues recorded elsewhere and unchanged by the PXAPI-19 closeout and by this PXAPI-20 reconcile, none of them a PXAPI-19 acceptance blocker: NF-1 (no vocabulary for "origin established, seed document answered 4xx/5xx" — a contract question), NF-2 (raw ASCII-space fragment makes an observed form non-persistable — a contract boundary), NF-6 (`EMPTY` for an all-unresolvable-links document), the `CANONICALISATION_VERSION` judgement (all in `docs/evidence/PXAPI-19B-discovery-correctness-repair.md`); the untriaged unguarded `urljoin` at `src/pxapi/application/analyze_homepage.py:478` (the repair document also names `page_fetcher.py:168`, which is in fact already guarded by `except ValueError` at `bfe06cc`); `C-PXAPI-012` (credential echo on the homepage path); and `C-PXAPI-005` / AD-004 (sampling threshold `MISSING`).
 
 ## Current Jira focus
 
 - `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
-- `PXAPI-19` — **In Arbeit** (read 2026-09-19). 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged and repaired by PR #18 (merge `bfe06cc`, gates `GREEN` at exact head `95c061a` per comments `16081` and `16082`); the historical PR #16 `R4M` is `UNKNOWN`, permanently (AD-005); AC8 is accepted with its evidence ceiling (AD-006). Open: this closeout PR, its post-merge CI, and the Jira closeout and readback. The issue's labels still included `repair-required` and `delivery-ready-blocked` when read on 2026-09-19; relabelling is a Jira action and is not performed by this repository change.
-- `PXAPI-20` — `NEXT / BLOCKED / NOT AUTHORIZED` until the three unlock conditions under *PXAPI-19 ticket-level closeout* hold.
+- `PXAPI-19` — **Erledigt** (read live 2026-09-19), closed by comment `16257`. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged and repaired by PR #18 (merge `bfe06cc`, gates `GREEN` at exact head `95c061a` per comments `16081` and `16082`); the historical PR #16 `R4M` is `UNKNOWN`, permanently (AD-005); AC8 is accepted with its evidence ceiling (AD-006). The `repair-required` and `delivery-ready-blocked` labels are gone.
+- `PXAPI-20` — **In Arbeit**, `Highest`, the only WIP theme. `Delivery Ready = GREEN` (comment `16259`); DRS `IC` / `R2G` / `R4M` all `UNKNOWN`. Candidate in flight: `20.A — Static Page Evidence Foundation`.
 
 No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.
 

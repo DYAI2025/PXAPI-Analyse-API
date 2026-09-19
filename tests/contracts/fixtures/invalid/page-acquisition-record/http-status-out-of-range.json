@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "run-01JQ8Z4K2M0000000000000001",
+  "acquisition_id": "acq-01JQ8Z4K2M0000000000000010",
+  "sampling_manifest_ref": "smf-01JQ8Z4K2M0000000000000002",
+  "sampling_manifest_output_digest": "sha256:2ce0498ba46d3185f1323976cee3397621b091c90369efb84fcb85142b0b32d6",
+  "url_key": "https://example.com/leistungen",
+  "observation_mode": "STATIC_HTTP",
+  "acquisition_method": "STATIC_HTTP_PAGE_FETCH",
+  "acquisition_method_version": "1.0.0",
+  "acquired_at": "2026-09-19T09:12:48Z",
+  "acquisition_outcome": "RESPONSE_RECEIVED",
+  "http_status": 1000,
+  "final_url_key": "https://example.com/leistungen/",
+  "redirect_count": 1,
+  "body_truncated": false,
+  "body_decoded": true,
+  "body_digest": "sha256:56b0635b6554869d3c425a6d520aacfc67c0573a6f550f89c47338ba6399f2e9",
+  "measurement_refs": [
+    "msr-01JQ8Z4K2M0000000000000021",
+    "msr-01JQ8Z4K2M0000000000000022"
+  ]
+}

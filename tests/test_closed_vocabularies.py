@@ -25,6 +25,11 @@ from typing import Any
 
 import pytest
 
+from pxapi.domain.page_acquisition import (
+    MEASUREMENTS_WITHHELD_SOURCE_URL,
+    OBSERVATION_MODE_STATIC_HTTP,
+    AcquisitionOutcome,
+)
 from pxapi.domain.run_state import TERMINAL_STATES, RunState
 from tests.contracts.support import CONTRACTS, load_json
 
@@ -168,6 +173,27 @@ INCOMPLETE_SELECTION_VALUE = False
 #: vocabulary would raise at import time instead of failing the test that exists to catch it.
 BUDGET_INCOMPLETENESS_CAUSE = "SELECTION_BUDGET_EXHAUSTED"
 
+#: How the page-acquisition producer observed a page, and what became of the attempt. Both are
+#: *derived* from the Domain, which owns them: the schema is the second statement of a fact the
+#: code holds, so the expectation must be too. The outcome order is load-bearing — a producer maps
+#: a fetch failure by value rather than through a table — and a list comparison pins it.
+PAGE_OBSERVATION_MODE: str = OBSERVATION_MODE_STATIC_HTTP
+ACQUISITION_OUTCOMES: list[str] = [outcome.value for outcome in AcquisitionOutcome]
+
+#: Why an acquisition record carries no measurements. Derived from the Domain constant for the
+#: same reason, and closed at one token: the only case this producer can encounter is a URL its
+#: own measurement carriers cannot hold.
+MEASUREMENTS_WITHHELD_REASONS: list[str] = [MEASUREMENTS_WITHHELD_SOURCE_URL]
+
+#: The two tokens the acquisition record's conditionals key on. Both are **literals**, exactly as
+#: ``VALUED_RESULT_STATE`` is and deliberately not selected out of the vocabularies above: a value
+#: taken from that list would be a member of it by construction, so the companion membership
+#: canary could never fail. ``RESPONSE_RECEIVED`` is the one outcome that admits the response
+#: members; ``true`` is the ``body_decoded`` branch that requires the body digest, and keying it on
+#: ``false`` would invert the rule into requiring a digest for a body we could not read.
+RESPONSE_OUTCOME = "RESPONSE_RECEIVED"
+DECODED_BODY_VALUE = True
+
 #: The one result state that carries a value about the website. Both carriers key a conditional
 #: on it — a measurement may hold a result, and evidence may hold a polarity, only here — so it
 #: is stated once and pinned at both sites through the pointer below.
@@ -191,6 +217,14 @@ _INCOMPLETENESS = "#/properties/incompleteness"
 INCOMPLETENESS_CAUSE_POINTER = f"{_INCOMPLETENESS}/properties/cause/enum"
 INCOMPLETE_SELECTION_POINTER = "#/allOf/0/if/properties/selection_complete/const"
 BUDGET_CAUSE_POINTER = "#/allOf/1/if/properties/incompleteness/properties/cause/const"
+
+#: Where the acquisition record's vocabularies and the two conditionals that key on them live.
+_ACQUISITION_RECORD = "page-acquisition-record.v1.json"
+OBSERVATION_MODE_POINTER = "#/properties/observation_mode/const"
+ACQUISITION_OUTCOME_POINTER = "#/properties/acquisition_outcome/enum"
+WITHHELD_REASON_POINTER = "#/properties/measurements_withheld_reason/enum"
+RESPONSE_OUTCOME_POINTER = "#/allOf/0/if/properties/acquisition_outcome/const"
+DECODED_BODY_POINTER = "#/allOf/1/if/properties/body_decoded/const"
 
 #: Every closed vocabulary this module pins, as ``(schema file, JSON pointer) -> exact value``.
 PINNED: dict[tuple[str, str], Any] = {
@@ -219,6 +253,11 @@ PINNED: dict[tuple[str, str], Any] = {
     ("sampling-manifest.v1.json", INCOMPLETENESS_CAUSE_POINTER): INCOMPLETENESS_CAUSES,
     ("sampling-manifest.v1.json", INCOMPLETE_SELECTION_POINTER): INCOMPLETE_SELECTION_VALUE,
     ("sampling-manifest.v1.json", BUDGET_CAUSE_POINTER): BUDGET_INCOMPLETENESS_CAUSE,
+    (_ACQUISITION_RECORD, OBSERVATION_MODE_POINTER): PAGE_OBSERVATION_MODE,
+    (_ACQUISITION_RECORD, ACQUISITION_OUTCOME_POINTER): ACQUISITION_OUTCOMES,
+    (_ACQUISITION_RECORD, WITHHELD_REASON_POINTER): MEASUREMENTS_WITHHELD_REASONS,
+    (_ACQUISITION_RECORD, RESPONSE_OUTCOME_POINTER): RESPONSE_OUTCOME,
+    (_ACQUISITION_RECORD, DECODED_BODY_POINTER): DECODED_BODY_VALUE,
     # The four value_type branches, derived from the vocabulary rather than listed: this pins
     # that there is exactly one branch per declared type, in the declared order, so a fifth
     # type cannot arrive without a branch and a branch cannot be dropped without a red test.
@@ -352,6 +391,44 @@ def test_the_budget_incompleteness_cause_belongs_to_the_incompleteness_vocabular
 def test_the_incomplete_selection_value_is_the_false_branch_of_a_boolean() -> None:
     """The conditional keys on ``false``; keying it on ``true`` would invert the whole rule."""
     assert INCOMPLETE_SELECTION_VALUE is False
+
+
+def test_the_response_outcome_belongs_to_the_acquisition_outcome_vocabulary() -> None:
+    """The token the response conditional keys on must be one the vocabulary actually declares."""
+    assert RESPONSE_OUTCOME in ACQUISITION_OUTCOMES
+
+
+def test_the_decoded_body_value_is_the_true_branch_of_a_boolean() -> None:
+    """Keying it on ``false`` would require a digest of a body we could not read."""
+    assert DECODED_BODY_VALUE is True
+
+
+def test_the_observation_mode_is_a_single_static_token_and_not_a_rendered_one() -> None:
+    """A rendered mode is a later contract version, never a value this vocabulary already holds."""
+    assert PAGE_OBSERVATION_MODE == "STATIC_HTTP"
+    assert "BROWSER" not in PAGE_OBSERVATION_MODE
+    assert "RENDER" not in PAGE_OBSERVATION_MODE
+
+
+def test_no_acquisition_outcome_or_withheld_reason_describes_the_website() -> None:
+    """Every token names the transport, our runtime or our own contracts — never the page."""
+    page_quality = ("BROKEN", "BAD", "POOR", "WEAK", "SLOW", "THIN", "QUALITY", "SEO")
+    tokens = ACQUISITION_OUTCOMES + MEASUREMENTS_WITHHELD_REASONS
+    offenders = [token for token in tokens if any(word in token for word in page_quality)]
+    assert offenders == []
+    assert any(word in "BROKEN_PAGE" for word in page_quality), "canary: the word list matches"
+
+
+def test_the_withheld_reason_names_a_representability_limit_of_our_own_contracts() -> None:
+    """The single token has to point at a URL our carriers cannot hold, not at a missing page."""
+    assert MEASUREMENTS_WITHHELD_REASONS == ["SOURCE_URL_NOT_REPRESENTABLE"]
+    assert all("SOURCE_URL" in token for token in MEASUREMENTS_WITHHELD_REASONS)
+
+
+def test_the_acquisition_outcomes_are_more_than_the_response_token() -> None:
+    """Canary: a one-token vocabulary would make the conditional's membership rule vacuous."""
+    assert len(ACQUISITION_OUTCOMES) > 1
+    assert ACQUISITION_OUTCOMES[0] == RESPONSE_OUTCOME
 
 
 def test_the_valued_result_state_belongs_to_the_result_state_vocabulary() -> None:

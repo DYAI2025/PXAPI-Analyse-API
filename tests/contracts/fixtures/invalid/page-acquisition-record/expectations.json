@@ -1,0 +1,132 @@
+{
+  "contract": "page-acquisition-record",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "response-members-on-failure": {
+      "proves": "A record that received no response carries no response facts. A timeout that also reported an HTTP status and a final URL would be claiming an observation nobody made, and a consumer could not tell it from a real 503.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "not"
+        }
+      ]
+    },
+    "response-without-body-decoded": {
+      "proves": "A received response states whether this method version could decode its body. Without the member, an undecodable response and a genuinely empty one are indistinguishable, because both arrive as zero bytes.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "required"
+        }
+      ]
+    },
+    "decoded-body-without-digest": {
+      "proves": "A body we decoded is a body we can digest, and the digest is the only thing that makes two runs over the same frozen response comparable. Omitting it would silently remove the record's whole reproducibility claim.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "required"
+        }
+      ]
+    },
+    "digest-on-undecodable-body": {
+      "proves": "A body we could not decode cannot be digested: the value would be over bytes that are not the document, which is exactly the confusion body_decoded exists to prevent.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "not"
+        }
+      ]
+    },
+    "raw-artifact-ref-on-failure": {
+      "proves": "An attempt that received no response retained nothing, so it cannot point at a raw artifact. The member is future-facing provenance and is refused wherever there was no response to retain.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "not"
+        }
+      ]
+    },
+    "observation-mode-rendered": {
+      "proves": "This producer observes over static HTTP only. A rendered-browser observation is a new version of this contract, never a value this one already admits, so a consumer can never be handed a rendered claim no producer can make.",
+      "violations": [
+        {
+          "pointer": "/observation_mode",
+          "keyword": "const"
+        }
+      ]
+    },
+    "outcome-website-verdict": {
+      "proves": "The outcome vocabulary is closed precisely so that no token can describe the page. A value naming a defect of the site is refused by the contract before anything could act on it as a finding.",
+      "violations": [
+        {
+          "pointer": "/acquisition_outcome",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "http-status-out-of-range": {
+      "proves": "A status outside 100..999 is not a status line any HTTP client would have read, so a record carrying one did not come from a real response.",
+      "violations": [
+        {
+          "pointer": "/http_status",
+          "keyword": "maximum"
+        }
+      ]
+    },
+    "url-key-with-credentials": {
+      "proves": "A page identity can never carry a credential. The narrowed URL shape refuses the userinfo component outright, so a secret in a selected URL cannot become persisted canonical contract data.",
+      "violations": [
+        {
+          "pointer": "/url_key",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "measurement-refs-duplicated": {
+      "proves": "One measurement is named once. A repeated reference would make a reader counting the facts behind a page count one of them twice.",
+      "violations": [
+        {
+          "pointer": "/measurement_refs",
+          "keyword": "uniqueItems"
+        }
+      ]
+    },
+    "empty-refs-without-withheld-reason": {
+      "proves": "A page that produced no measurements says why. An unexplained empty list is exactly the gap a reader could attribute to the site rather than to our own contracts.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "required"
+        }
+      ]
+    },
+    "withheld-reason-with-refs": {
+      "proves": "A record cannot both carry measurements and state that they were withheld. The two members are one fact, so stating both would leave a reader deciding which half to believe.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "not"
+        }
+      ]
+    },
+    "inline-response-body": {
+      "proves": "The record holds no page content and no headers. Page content is measured, and a body or a header map inlined here would be a second, unvalidated source of facts beside the measurements — and untrusted bytes in persisted canonical data.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "business-verdict-properties": {
+      "proves": "The record is a transport record. A polarity, a score or a severity would turn a technical outcome into a judgement about the page, which is the one thing this whole contract set refuses to let an acquisition failure become.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "additionalProperties"
+        }
+      ]
+    }
+  }
+}

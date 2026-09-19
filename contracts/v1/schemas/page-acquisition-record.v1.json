@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:page-acquisition-record:1.0.0",
+  "title": "PXAPI page acquisition record v1",
+  "description": "One attempt to acquire one page a sampling manifest selected, and the technical outcome of that attempt. It exists so that page identity survives into the canonical evidence chain without either of the two carriers of that chain being versioned to hold it: a reader follows website-evidence.measurement_refs to a measurement record, finds the one acquisition record that names that measurement, and reads off the selected page, the exact manifest selection, the acquisition method and the run. That indirection is the whole design — a page id added to measurement-record.v1 or website-evidence.v1 would have changed what every existing consumer must read. It is a transport record and deliberately nothing else: every member states what the analysis process did, and not one of them says anything about the quality of the page. There is no finding, no score, no severity, no polarity and no business claim of any kind, and no member may be read as one — a 404 is a received response whose status is a measurement, never a verdict. It carries no page content either: the title, the meta description, the canonical link and the transport facts are measurements, which this record references rather than restates, and the only thing it holds about the body is a bounded digest of the decoded bytes. Acquisition completeness and sampling completeness stay separate truths: this record says what happened to one selected page, and whether the selection itself ran to its end is the manifest's own statement, reachable through the two members that bind it. What the record cannot state, because JSON Schema cannot: that the records of one run are exactly the manifest's selections in rank order, that one measurement belongs to one page, and that no raw artifact reference is ever emitted. Those are producer guarantees, stated at the members that carry them and enforced by pxapi.domain.page_acquisition; a document that satisfies this schema is not thereby free of them.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Required. Always 1.0.0 for this contract. Each contract is versioned in its own right; this value is not a version of the contract set as a whole."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this acquisition belongs to. It is the only link to the run's state document, and it carries no claim about that run's outcome."
+    },
+    "acquisition_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. This record's own stable identity, so that an execution receipt can reference one attempt rather than restating it. One identity belongs to one attempt; that no two records of a run share it is a producer guarantee this schema cannot express."
+    },
+    "sampling_manifest_ref": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The sampling_manifest_id of the manifest whose selection this attempt answers. It names which manifest; sampling_manifest_output_digest is what pins which version of it. An identity a manifest of the bound inventory never offered is refused before any fetch, which is an admission decision the acquisition runtime makes and not a shape this contract can check."
+    },
+    "sampling_manifest_output_digest": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
+      "description": "Required. The exact sampling-manifest output_digest this attempt was made against, so a record can never be read as an acquisition over a selection it did not answer. The output digest rather than the manifest's input digest, and rather than its id: it is stable across a re-emission of the same selection semantics under a new manifest identity at a new instant, which is exactly the binding a later reproduction needs."
+    },
+    "url_key": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key",
+      "description": "Required. The canonical identity of the selected page, verbatim as the bound manifest carried it. It is the Page Ref the whole chain resolves to, and it is an identity rather than a fetch instruction: what was actually fetched, and where the response came from, are the outcome members below. It can never carry a credential, because that is what the identity's shape refuses."
+    },
+    "observation_mode": {
+      "type": "string",
+      "const": "STATIC_HTTP",
+      "description": "Required. How the page was observed. It is a const and not a two-token enum, deliberately: this producer performs static HTTP acquisition only, and a rendered-browser observation is a new version of this contract rather than a value this one already admits. A vocabulary that listed a mode nobody implements would let a consumer branch on a claim no producer can make."
+    },
+    "acquisition_method": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+      "description": "Required. A stable machine-readable identifier for the method that performed the acquisition. The vocabulary is deliberately open, exactly as a collector's is: this contract fixes the token's lexical shape and never the set of methods, so a method a later slice introduces validates here without a schema change."
+    },
+    "acquisition_method_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/single_line_label",
+      "description": "Required. The version of the method that performed it. Two records are comparable only when the method and this version agree, so the version travels with every record rather than being assumed. Together with acquisition_method and observation_mode it is the whole per-record provenance: no third-party provider member exists, because a first-party static fetch involves no external acquisition provider, and the exact implementation SHA belongs in an execution receipt rather than duplicated into every record."
+    },
+    "acquired_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the attempt ended — the instant the measurements of this page were observed at, for a page that produced any. A record always states when, because an outcome with no instant cannot be compared with a later run."
+    },
+    "acquisition_outcome": {
+      "type": "string",
+      "enum": [
+        "RESPONSE_RECEIVED",
+        "BLOCKED_TARGET",
+        "DNS_FAILURE",
+        "CONNECTION_FAILURE",
+        "TIMEOUT",
+        "TOO_MANY_REDIRECTS",
+        "INVALID_REDIRECT",
+        "PROTOCOL_ERROR",
+        "RUNTIME_ERROR"
+      ],
+      "description": "Required. What became of the attempt. The vocabulary is closed because each token carries its own rule about what the record may then state, and because every token has to name the analysis process rather than the page: a response arrived, or the target was not a permitted destination, or the host did not resolve, or the connection failed, or a budget elapsed, or the redirect chain exceeded our bound, or a redirect was not one we would follow, or the peer spoke something we could not read as HTTP, or our own code raised. RESPONSE_RECEIVED says a response arrived and says nothing whatever about its status — a 404 and a 503 are received responses. None of the eight non-response tokens is a website defect, none of them may be rendered as one, and an open token would arrive with no such rule and could describe the page instead."
+    },
+    "http_status": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 999,
+      "description": "Conditional. Present if and only if the outcome is RESPONSE_RECEIVED, and refused otherwise. Both bounds are derived rather than chosen: a status line outside 100..999 is refused by the standard library's own parser, so no fetcher can report one, and a narrower ceiling would make a real 6xx..9xx response contract-invalid rather than merely unusual. It is a transport fact and never a verdict."
+    },
+    "final_url_key": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/url_key",
+      "description": "Conditional. Present if and only if the outcome is RESPONSE_RECEIVED, and refused otherwise. The canonical identity of the URL the response actually came from, which is redirect provenance and not a second Page Ref: two selected identities that redirect to one page produce two records carrying the same value here, and their measurements stay disjoint. It equals url_key when nothing redirected. The exact written final URL, unreduced, stays in the measurement that observed it."
+    },
+    "redirect_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Conditional. Present if and only if the outcome is RESPONSE_RECEIVED, and refused otherwise. How many redirects were followed to reach the response. Zero is a fact and not an absence, which is why the member is required rather than omitted when nothing redirected."
+    },
+    "body_truncated": {
+      "type": "boolean",
+      "description": "Conditional. Present if and only if the outcome is RESPONSE_RECEIVED, and refused otherwise. Whether reading the body stopped at our own byte bound rather than at the end of the response. It is load-bearing: an element missing from a truncated document may well be present in the part we never read, so a measurement over a truncated body may establish nothing where an untruncated one would have established absence. True is a statement about our bound, never about the page."
+    },
+    "body_decoded": {
+      "type": "boolean",
+      "description": "Conditional. Present if and only if the outcome is RESPONSE_RECEIVED, and refused otherwise. Whether this method version could decode the response's content encoding. False means we do not hold the document at all, which is a gap in our own capability and is deliberately distinguishable from a response whose body was genuinely empty — both arrive as zero bytes, and only this member tells the two apart. It decides whether a body digest may be carried."
+    },
+    "body_digest": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
+      "description": "Conditional. Present if and only if body_decoded is true, and refused otherwise — which also refuses it outright whenever no response arrived. The canonical digest of the decoded body bytes we actually read, up to our own bound: not the bytes as they arrived on the wire, which a content encoding may have changed, and nothing about the URL they came from. It is what lets two runs over the same frozen response be compared, and it is the only thing this record holds about the body."
+    },
+    "raw_artifact_ref": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Conditional. Permitted if and only if the outcome is RESPONSE_RECEIVED, and optional even then: an opaque reference to a retained raw artifact, and nothing more — no digest, no location, no media type, no size, no retention rule and no redaction metadata, which belong to the artifact contract a later slice owns and are deliberately not anticipated here. Absent means no raw artifact is being pointed at, which says nothing about whether one was retained. This producer retains none and never emits it; that it is absent from every record this service writes is a producer guarantee rather than a rule of this schema, because the member exists for a later slice that will retain one."
+    },
+    "measurement_refs": {
+      "type": "array",
+      "items": { "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id" },
+      "uniqueItems": true,
+      "description": "Required. The measurement_id values of every measurement made about this page. This is the linkage the whole contract exists for, read in the other direction: given a measurement, exactly one record of the run names it, and that record says which selected page it was about. Naming a measurement twice is refused outright, because a reader counting the facts behind a page would count one of them twice. That one measurement is named by exactly one record, and that every measurement of the run is named by some record, are producer guarantees this schema cannot express. The list may be empty only in the one case measurements_withheld_reason states."
+    },
+    "measurements_withheld_reason": {
+      "type": "string",
+      "enum": ["SOURCE_URL_NOT_REPRESENTABLE"],
+      "description": "Conditional. Present if and only if measurement_refs is empty, and refused otherwise. Why this page produced no measurements at all. The vocabulary is closed and currently holds one token, for the one case this producer can encounter: a selected identity, or the URL the response came from, whose written form this contract set's measurement carriers cannot hold, so publishing part of the page's facts would mean publishing an invalid document and publishing none of them without saying why would leave a gap a reader could attribute to the site. It is a statement about the representability of a URL in our own contracts, never about the page, and a page withheld for this reason is not thereby deficient. An empty list with no reason, and a reason beside a non-empty list, are both refused: the two members are one fact stated once."
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "acquisition_id",
+    "sampling_manifest_ref",
+    "sampling_manifest_output_digest",
+    "url_key",
+    "observation_mode",
+    "acquisition_method",
+    "acquisition_method_version",
+    "acquired_at",
+    "acquisition_outcome",
+    "measurement_refs"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": { "acquisition_outcome": { "const": "RESPONSE_RECEIVED" } },
+        "required": ["acquisition_outcome"]
+      },
+      "then": {
+        "required": [
+          "http_status",
+          "final_url_key",
+          "redirect_count",
+          "body_truncated",
+          "body_decoded"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["http_status"] },
+            { "required": ["final_url_key"] },
+            { "required": ["redirect_count"] },
+            { "required": ["body_truncated"] },
+            { "required": ["body_decoded"] },
+            { "required": ["body_digest"] },
+            { "required": ["raw_artifact_ref"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "body_decoded": { "const": true } },
+        "required": ["body_decoded"]
+      },
+      "then": { "required": ["body_digest"] },
+      "else": { "not": { "required": ["body_digest"] } }
+    },
+    {
+      "if": {
+        "properties": { "measurement_refs": { "maxItems": 0 } },
+        "required": ["measurement_refs"]
+      },
+      "then": { "required": ["measurements_withheld_reason"] },
+      "else": { "not": { "required": ["measurements_withheld_reason"] } }
+    }
+  ]
+}

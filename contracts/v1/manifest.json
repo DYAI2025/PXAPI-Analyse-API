@@ -155,6 +155,20 @@
         "examples/sampling-manifest.stratified-sample.example.json",
         "examples/sampling-manifest.bounded-selection.example.json"
       ]
+    },
+    {
+      "name": "page-acquisition-record",
+      "id": "urn:pxapi:schema:page-acquisition-record:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXAPI-20.A",
+      "schema": "schemas/page-acquisition-record.v1.json",
+      "examples": [
+        "examples/page-acquisition-record.response-received.example.json",
+        "examples/page-acquisition-record.timeout.example.json",
+        "examples/page-acquisition-record.measurements-withheld.example.json"
+      ]
     }
   ],
   "problem_codes": [

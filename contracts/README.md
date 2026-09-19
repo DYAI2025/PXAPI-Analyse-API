@@ -285,13 +285,35 @@ a third member would create a second, unowned notion of a document's identity.
 | --- | --- | --- |
 | `site-inventory.input_digest` | the admitted discovery observations, which this document does not carry | envelope ids, `generated_at`, both digest members |
 | `site-inventory.output_digest` | target origin, discovery method and version, classifier and version, source outcomes, normalised candidates | the same |
-| `sampling-manifest.input_digest` | `inventory_ref`, `inventory_output_digest`, `policy_id`, `policy_version`, declared `budgets` | the same |
-| `sampling-manifest.output_digest` | `mode`, `selection_complete`, `incompleteness` when present, the selections in rank order, the exclusion summary | the same |
+| `sampling-manifest.input_digest` | `inventory_ref`, `inventory_output_digest`, `policy_id`, `policy_version`, declared `budgets` | this manifest's own envelope ids, `generated_at`, both digest members — the upstream inventory's id **does** participate, as `inventory_ref` |
+| `sampling-manifest.output_digest` | `mode`, `selection_complete`, `incompleteness` when present, the selections in rank order, the exclusion summary | this manifest's own envelope ids, `generated_at`, both digest members |
 
 The canonical form is deterministic UTF-8 JSON with sorted keys, no insignificant whitespace and
 **no floating-point member anywhere** — a digest over a float is not portable between producers,
-so no member of either contract admits one. Re-emitting the same semantics under a new id at a
-new instant leaves both digests unchanged, which is what makes them comparable across runs.
+so no member of either contract admits one.
+
+**What stays stable across runs, and what deliberately does not.** A document's own envelope
+identity and time never participate in its own digests. So:
+
+- when only an inventory's envelope identity and time change — a new `inventory_id`, `run_id` or
+  `generated_at` over the same admitted observations and the same inventory semantics — **both
+  inventory digests** stay unchanged. `output_digest` follows the inventory's semantics, source
+  outcomes included; `input_digest` follows the admitted observations, including transient anchor
+  labels the document never carries;
+- `sampling-manifest.output_digest` stays unchanged for the same selection semantics, whatever
+  the manifest's own id, time or upstream inventory identity;
+- `sampling-manifest.input_digest` **may change** when a digest-relevant upstream input changes.
+  `inventory_ref` is one: it is the concrete upstream inventory's `inventory_id`, so a manifest
+  drawn from an inventory re-emitted under a new identity carries a new `input_digest` even when
+  that inventory's digests and the selection are identical.
+
+That last change is **provenance binding, not nondeterminism**: the manifest's input digest
+records *which* inventory the selection was decided from, while `inventory_output_digest` records
+*what* that inventory contained. Compare selections across runs by `output_digest`, and compare
+manifest `input_digest` values only between manifests bound to the same inventory.
+`tests/application/test_discover_site.py::test_a_new_identity_and_instant_change_no_digest_but_the_manifest_input_binding`
+pins exactly this behaviour. This wording was corrected under `C-PXAPI-010` in
+`docs/context/contradiction-ledger.md`; the digest rules themselves did not change.
 
 **Semantic ordering must not make an order-independent input order-dependent.** The two contracts
 therefore differ deliberately: the inventory's candidates, their `observed_forms` and their

@@ -120,6 +120,28 @@ Overall Jira item `PXAPI-19` stayed incomplete and `In Arbeit` after 19.A. Its t
 
 Each candidate carries its own bounded `IC` / `R2G` / `R4M`. **Neither the 20.A merge nor its green gates make `PXAPI-20` Done**, and no second Jira ticket is created.
 
+### PXAPI-20.A candidate
+
+**State:** candidate open, **not** on `main`. Base `19a9a855d603384c216bbf9ab92e4e7cb0334bfb`;
+five commits; evidence `docs/evidence/PXAPI-20A-static-page-evidence-foundation.md`. DRS
+`IC` / `R2G` / `R4M` for this candidate are Orchestrator and Product Owner authority and are **not**
+declared by this repository.
+
+What the candidate adds, and nothing else: the registered `page-acquisition-record.v1` contract
+with three examples and fourteen targeted invalid fixtures; `src/pxapi/domain/page_acquisition.py`
+(the acquisition vocabulary, the contract-URL predicate, the body digest and eleven producer
+invariants); `src/pxapi/application/observe_static_page.py` (an isolated generic static-page
+observer). Two `PXAPI-20.A` entries join `BEHAVIOR_ALLOWED`.
+
+What it deliberately does **not** add: no multi-page CLI or runtime, no orchestration over a
+manifest, no composition wiring — nothing calls the observer and no page is fetched; no HTTP
+endpoint; no browser, Crawl4AI, queue, worker, ArtifactStore, scoring or customer output; no
+`DiagnosticFinding` on any page path. `AnalyzeHomepage`, `derive_findings`, `discover_site`,
+`adapters/web/**`, `ports/**`, `config/**`, `adapters/contracts/**`, `adapters/composition.py`,
+`adapters/inbound/**`, the twelve existing schema files, `pyproject.toml`, `uv.lock`, `.github/`
+and `oracle/` are each a **0-byte** diff against the base, so the candidate adds no dependency,
+changes no CI, changes no existing contract and changes no homepage behaviour.
+
 **Hard amendments that bound 20.A** (comment `16259`): `AnalyzeHomepage` is not refactored, subclassed, extracted in place or behaviourally modified, and `H1`–`H5` are not repaired in this slice (`D-20-E`, see `C-PXAPI-018`); the static-page path is a separate generic observation path; `observation_mode` is `STATIC_HTTP` only (`D-20-C`); page linkage uses `measurement_refs` and neither `measurement-record.v1` nor `website-evidence.v1` is versioned to carry page identity (`D-20-B`); site-caused and technical outcomes stay neutral while PXAPI's own contract/invariant defects stay visible run failures (`D-20-D`); `raw_artifact_ref` exists as optional opaque provenance and is never emitted (`D-20-H`); the HTML parser is not altered and `H7` is an operational precondition rather than a blocker (`D-20-L`, see `C-PXAPI-019`); existing `SafePageFetcher` safety coverage is not duplicated to raise test volume (`D-20-O`); after 20.B merges with green gates, feature development **stops** for the first real customer/prospect pilot (`D-20-P`).
 
 ## Completed prerequisite

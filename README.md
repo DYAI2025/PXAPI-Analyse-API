@@ -18,8 +18,10 @@ PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 > authentication, authorisation, rate limiting or deployment**. It does not crawl: discovery
 > fetches the seed document, `/robots.txt` and sitemaps within a declared request bound, and
 > **fetches no discovered page**. Acquiring the selected pages is PXAPI-20 and is not
-> implemented here. `contracts/` remains the versioned vocabulary, as data rather than
-> behavior, and is still the single contract authority.
+> implemented here — PXAPI-20.A adds only its reusable foundation: the registered
+> `page-acquisition-record.v1` contract, its domain semantics and invariants, and an isolated
+> generic static-page observer that nothing calls yet. `contracts/` remains the versioned
+> vocabulary, as data rather than behavior, and is still the single contract authority.
 
 ## Analysing a page
 
@@ -263,6 +265,7 @@ entry that is stale, unearned, outside a layer or blanket fails on its own. The 
 | `ports/site_discovery.py`, `application/discover_site.py` | PXAPI-19.B |
 | `adapters/web/html_links.py`, `adapters/web/site_discovery.py` | PXAPI-19.B |
 | `adapters/inbound/discover_cli.py`, `config/discovery_limits.py` | PXAPI-19.B |
+| `domain/page_acquisition.py`, `application/observe_static_page.py` | PXAPI-20.A |
 
 ### The Analysis Run lifecycle
 

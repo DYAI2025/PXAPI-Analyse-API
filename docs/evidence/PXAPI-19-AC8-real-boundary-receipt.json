@@ -1,0 +1,172 @@
+{
+  "receipt": "PXAPI-19 AC8 Real-Boundary reproduction",
+  "receipt_format_version": 1,
+  "repository": "DYAI2025/PXAPI-Analyse-API",
+  "jira": "PXAPI-19",
+  "acceptance_criterion": "AC8",
+  "ledger_rows": ["C-PXAPI-009", "C-PXAPI-010", "C-PXAPI-011", "C-PXAPI-017", "D-PXAPI19-PO-011", "D-PXAPI19-PO-012"],
+  "acceptance": {
+    "status": "ACCEPTED_FOR_TICKET_CLOSEOUT_WITH_EVIDENCE_CEILING",
+    "authority": "Product Owner closeout disposition, 2026-09-19; not yet recorded in Jira at the time this receipt was written",
+    "relation_to_historical_record": "A new reproduction. It does not upgrade the 2026-09-11 record in docs/evidence/PXAPI-19B-site-discovery-runtime.md section D, which is preserved unedited."
+  },
+  "evidence_class": {
+    "run": "REAL_BOUNDARY_OBSERVED: two executions of the shipped composition against one public origin",
+    "this_receipt": "DERIVED_RECORD, from two kinds of source. (1) Contract, digest, inventory and manifest values were re-computed on 2026-09-19 from the two captured command-line envelopes with the repository's own validators and digest functions at the implementation SHA. (2) Command exit codes, pytest summaries, time windows and checkout state were read on 2026-09-19 from the run driver's per-run log files (rc files, pytest logs, junit XML, git state files); they are not derivable from an envelope. Neither the envelopes nor the logs are committed.",
+    "retention": "The envelopes, the per-run logs and the run driver were session-scratchpad artifacts on the evidence workstation. They are not in the repository and their retention is not guaranteed; envelope_sha256 and log_sha256 can be checked only against a retained copy.",
+    "test_assertion_vs_observation": "The committed smoke asserts selection-side invariants only. SITEMAP = BUDGET_EXHAUSTED below is an observation from the envelopes, not a test assertion (C-PXAPI-011)."
+  },
+  "implementation_sha": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+  "target_url": "https://www.rfc-editor.org/",
+  "declared_discovery_bound_reached": {
+    "member": "DiscoveryLimits.max_sitemap_entries",
+    "value": 500,
+    "source": "src/pxapi/config/discovery_limits.py at the implementation SHA"
+  },
+  "executions": [
+    {
+      "label": "A",
+      "python": "3.13.3",
+      "uv_python_request": "UV_PYTHON=3.13",
+      "checkout": {
+        "head_before": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+        "head_after": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+        "origin_main_before": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+        "status_porcelain_bytes_before": 0,
+        "status_porcelain_bytes_after": 0
+      },
+      "window_utc": {"start": "2026-09-18T21:51:48Z", "end": "2026-09-18T21:51:59Z"},
+      "commands_in_execution_order": [
+        {"command": "uv sync --locked", "rc": 0},
+        {"command": "env -u PXAPI_REAL_BOUNDARY_SMOKE_URL uv run --no-sync pytest -p no:cacheprovider -rA tests/smoke/test_real_boundary_smoke.py", "rc": 0, "summary": "1 skipped in 0.21s", "purpose": "canary: the smoke is opt-in"},
+        {"command": "PXAPI_REAL_BOUNDARY_SMOKE_URL=https://www.rfc-editor.org/ uv run --no-sync pytest -p no:cacheprovider -v -rA --junitxml=<out>/pytest.junit.xml tests/smoke/test_real_boundary_smoke.py", "rc": 0, "summary": "1 passed in 1.95s"},
+        {"command": "uv run --no-sync python -m pxapi.adapters.inbound.discover_cli https://www.rfc-editor.org/", "rc": 0, "stderr_bytes": 0}
+      ],
+      "envelope_sha256": "404c4fda587a88f1fe2ae41d0e8c1906b5a74b34c6974a6e6013bad90c814476",
+      "log_sha256": {
+        "pytest.log": "33a4cda072742a3cc6b41dea36a1761af72b3faf616a837f7b07dff0119d661a",
+        "pytest_noenv.log": "d2a519859c599798b7795060bcb237f8ade6f8b224204337e42a09e692670264",
+        "pytest.junit.xml": "827d1b441666b9e6b77c8329f8695b9f2d359d0d74137f39cd5f5ae1cf49cde6"
+      },
+      "analysis_run_state": {"state": "SUCCEEDED", "entered_at": "2026-09-18T21:51:55Z", "finished_at": "2026-09-18T21:51:57Z"},
+      "canonical_target_origin": "https://www.rfc-editor.org/",
+      "contract_violations": {"schema": 0, "schema_documents_checked": 6, "semantic": 0, "producer": 0, "semantic_and_producer_documents_checked": 2, "semantic_and_producer_scope": "site_inventory and sampling_manifest, the only contracts with such rules"},
+      "site_inventory": {
+        "inventory_id": "px-9fc2d5d7dd20474db261704411cb7387",
+        "candidates": 506,
+        "eligible": 506,
+        "sources": [
+          {"source_id": "CANONICAL_SEED", "outcome": "USED", "candidate_count": 1},
+          {"source_id": "ROBOTS_DECLARATION", "outcome": "USED", "candidate_count": 0},
+          {"source_id": "SAME_ORIGIN_PAGE_LINKS", "outcome": "USED", "candidate_count": 19},
+          {"source_id": "SITEMAP", "outcome": "BUDGET_EXHAUSTED", "candidate_count": 500}
+        ],
+        "input_digest": "sha256:52840ee53044941fbb69547b95ae30a3f5cab89d267636e9dec405ecf8b0dab0",
+        "output_digest": "sha256:1f1cc845b13e1504278555404a53bcc8b357c16093e67b1663b8aa74809b3822",
+        "output_digest_recomputed_matches": true
+      },
+      "sampling_manifest": {
+        "policy": "CENSUS_FIRST_DETERMINISTIC 1.0.0",
+        "mode": "CENSUS",
+        "selections": 506,
+        "selection_complete": true,
+        "budgets_present": false,
+        "incompleteness_present": false,
+        "exclusions": [],
+        "inventory_ref": "px-9fc2d5d7dd20474db261704411cb7387",
+        "inventory_ref_equals_inventory_id": true,
+        "inventory_output_digest_matches": true,
+        "input_digest": "sha256:62cb9bdfe1afbdcd0065986a1ed426c0c9d781be66f941d5a736338a3045a13c",
+        "output_digest": "sha256:4f3b9660170069cabe16d0c714f7131fe010c052bde32da480b726c1808a2cbe",
+        "digests_recomputed_match": true
+      },
+      "finding_score_or_severity_keys_in_envelope": 0
+    },
+    {
+      "label": "B",
+      "python": "3.14.6",
+      "uv_python_request": "UV_PYTHON=3.14",
+      "checkout": {
+        "head_before": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+        "head_after": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+        "origin_main_before": "bfe06cc07ea0dfde31fedb8e7115940da24fb9fd",
+        "status_porcelain_bytes_before": 0,
+        "status_porcelain_bytes_after": 0
+      },
+      "window_utc": {"start": "2026-09-18T21:53:00Z", "end": "2026-09-18T21:53:11Z"},
+      "commands_in_execution_order": [
+        {"command": "uv sync --locked", "rc": 0, "note": "recreated .venv on CPython 3.14.6 from the committed lockfile"},
+        {"command": "env -u PXAPI_REAL_BOUNDARY_SMOKE_URL uv run --no-sync pytest -p no:cacheprovider -rA tests/smoke/test_real_boundary_smoke.py", "rc": 0, "summary": "1 skipped in 0.23s", "purpose": "canary: the smoke is opt-in"},
+        {"command": "PXAPI_REAL_BOUNDARY_SMOKE_URL=https://www.rfc-editor.org/ uv run --no-sync pytest -p no:cacheprovider -v -rA --junitxml=<out>/pytest.junit.xml tests/smoke/test_real_boundary_smoke.py", "rc": 0, "summary": "1 passed in 1.97s"},
+        {"command": "uv run --no-sync python -m pxapi.adapters.inbound.discover_cli https://www.rfc-editor.org/", "rc": 0, "stderr_bytes": 0}
+      ],
+      "envelope_sha256": "1c288afaa5dc582c64f8d6b59cb9fde7bc9175b373833d15c4effeec931186ee",
+      "log_sha256": {
+        "pytest.log": "7ecbe9a4d3992922685c1046014b42c447ae3e9a623e76be20c49079eee0241b",
+        "pytest_noenv.log": "d144c00c69df0ba223e394d2b8e05c3f9bb652aa48186e6871174ac58223067d",
+        "pytest.junit.xml": "5360169e96bf9a1a31c771ebf2e55b491c0272123969c689930d629b5e84785a"
+      },
+      "analysis_run_state": {"state": "SUCCEEDED", "entered_at": "2026-09-18T21:53:05Z", "finished_at": "2026-09-18T21:53:07Z"},
+      "canonical_target_origin": "https://www.rfc-editor.org/",
+      "contract_violations": {"schema": 0, "schema_documents_checked": 6, "semantic": 0, "producer": 0, "semantic_and_producer_documents_checked": 2, "semantic_and_producer_scope": "site_inventory and sampling_manifest, the only contracts with such rules"},
+      "site_inventory": {
+        "inventory_id": "px-82c03c9b185049309475be484c8161a2",
+        "candidates": 506,
+        "eligible": 506,
+        "sources": [
+          {"source_id": "CANONICAL_SEED", "outcome": "USED", "candidate_count": 1},
+          {"source_id": "ROBOTS_DECLARATION", "outcome": "USED", "candidate_count": 0},
+          {"source_id": "SAME_ORIGIN_PAGE_LINKS", "outcome": "USED", "candidate_count": 19},
+          {"source_id": "SITEMAP", "outcome": "BUDGET_EXHAUSTED", "candidate_count": 500}
+        ],
+        "input_digest": "sha256:52840ee53044941fbb69547b95ae30a3f5cab89d267636e9dec405ecf8b0dab0",
+        "output_digest": "sha256:1f1cc845b13e1504278555404a53bcc8b357c16093e67b1663b8aa74809b3822",
+        "output_digest_recomputed_matches": true
+      },
+      "sampling_manifest": {
+        "policy": "CENSUS_FIRST_DETERMINISTIC 1.0.0",
+        "mode": "CENSUS",
+        "selections": 506,
+        "selection_complete": true,
+        "budgets_present": false,
+        "incompleteness_present": false,
+        "exclusions": [],
+        "inventory_ref": "px-82c03c9b185049309475be484c8161a2",
+        "inventory_ref_equals_inventory_id": true,
+        "inventory_output_digest_matches": true,
+        "input_digest": "sha256:909970cb8d1cd646cf1fd1c7ef6dd9e9776c84384717cbc13513ea62698c4db2",
+        "output_digest": "sha256:4f3b9660170069cabe16d0c714f7131fe010c052bde32da480b726c1808a2cbe",
+        "digests_recomputed_match": true
+      },
+      "finding_score_or_severity_keys_in_envelope": 0
+    }
+  ],
+  "cross_run": {
+    "inventory_input_digest_equal": true,
+    "inventory_output_digest_equal": true,
+    "candidate_url_keys_equal": true,
+    "manifest_selections_equal": true,
+    "manifest_output_digest_equal": true,
+    "manifest_input_digest_equal": false,
+    "manifest_input_members_that_differ": ["inventory_ref"],
+    "reading": "Provenance binding, not nondeterminism (C-PXAPI-010, D-PXAPI19-PO-012)."
+  },
+  "technical_neutrality": {
+    "non_used_sources": ["SITEMAP: BUDGET_EXHAUSTED"],
+    "reading": "A technical source outcome at a declared discovery bound. It produced no website finding, no score and no severity, and the selection over the resulting inventory is complete."
+  },
+  "evidence_ceiling": {
+    "proves": "One controlled public-origin Discovery -> SiteInventory -> SamplingManifest boundary, twice, on two interpreters, at the implementation SHA.",
+    "does_not_prove": [
+      "complete site coverage",
+      "arbitrary crawling",
+      "production scale",
+      "browser rendering",
+      "PXAPI-20 page acquisition",
+      "scoring quality",
+      "customer output",
+      "customer value"
+    ],
+    "environment_note": "Execution A ran on a python.org CPython 3.13.3 build whose compiled-in CA file is absent (measured 2026-09-19: 0 CA anchors without SSL_CERT_FILE). HTTPS can therefore only have worked through an inherited SSL_CERT_FILE, which the run did not record; this is an inference, not a recorded fact (follow-up candidate F-2)."
+  }
+}

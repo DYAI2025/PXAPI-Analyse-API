@@ -296,6 +296,7 @@ Every new behavioural obligation was red before the code that answers it existed
 | the contract, before registration | `test_every_schema_file_on_disk_is_registered` and `test_every_example_file_on_disk_is_registered` named all four new files |
 | the closed-vocabulary gate, after registration and before the pins | `test_every_closed_vocabulary_in_the_registry_is_pinned_or_delegated` named **exactly** the five pointers this candidate pins |
 | the observer module | `ModuleNotFoundError: No module named 'pxapi.application.observe_static_page'` on collection |
+| the observation-mode vocabulary, before the `F-20A-R4M-001` repair | nine assertions red, listed in §5.1; the `STATIC_HTTP` half stayed green throughout |
 
 Two tests were red on their **first** run against the finished code, and both were real defects in
 the test rather than in the code:
@@ -313,16 +314,22 @@ the test rather than in the code:
 ## 12. GREEN evidence, and the countermutation passes
 
 A rule nobody can break proves nothing, so every rule this candidate adds was broken deliberately
-and the break had to turn a **named** test red. **43 countermutations, 0 escaped.** Each pass
+and the break had to turn a **named** test red. **46 countermutations, 0 escaped.** Each pass
 asserted that the mutation really reached the file, that the named test returned rc **1**, that
 `git checkout --` restored the file **byte-identically**, and that the mutation's own marker was
 gone afterwards; each pass ran an unmutated canary before and after and demanded rc 0 from both.
 
 | Target | Mutations | Escaped |
 | --- | --- | --- |
-| `src/pxapi/domain/page_acquisition.py` | 14 | **0** |
-| `contracts/v1/schemas/page-acquisition-record.v1.json` | 13 | **0** |
+| `src/pxapi/domain/page_acquisition.py` | 15 | **0** |
+| `contracts/v1/schemas/page-acquisition-record.v1.json` | 15 | **0** |
 | `src/pxapi/application/observe_static_page.py` | 16 | **0** |
+
+The domain and schema passes were re-run in full after the `F-20A-R4M-001` repair, with three
+mutations added for the repaired rule: narrowing the observation mode back to a static-only const,
+dropping the rendered token, and adding a third token the architecture does not define. The
+observer's sixteen were not re-run and did not need to be: `observe_static_page.py` is
+byte-identical to the head they were measured on, which `git diff --quiet` confirms.
 
 Two driver defects were found by the drivers themselves and are recorded because either would have
 produced a false "all caught":
@@ -382,9 +389,9 @@ plus a canary proving the search can answer something other than 999.
 | `uv lock --check` | clean | clean |
 | `uv run ruff check .` | **All checks passed** | **All checks passed** |
 | `uv run ruff format --check .` | 107 files already formatted | 107 files already formatted |
-| `uv run pytest` | **3112 passed, 1 skipped, 2 warnings** | **3112 passed, 1 skipped, 2 warnings** |
+| `uv run pytest` | **3122 passed, 1 skipped, 2 warnings** | **3122 passed, 1 skipped, 2 warnings** |
 
-The base measured 2876 passed, so this candidate adds **236** tests. The one skip is the opt-in
+The base measured 2876 passed, so this candidate adds **246** tests. The one skip is the opt-in
 PXAPI-19 real-boundary smoke (`PXAPI_REAL_BOUNDARY_SMOKE_URL` unset); it is unchanged by this
 candidate and no multi-page smoke exists yet — that is `20.B`. The two warnings are the pre-existing
 `anyio`/`starlette` typing warnings emitted on the base as well.
@@ -395,20 +402,20 @@ from inside each run and is recorded above.
 
 ## 16. Diff and reviewability — and where this candidate does **not** meet its own gate
 
-Measured at `f1ec0154f77161253dab1397830042c81593a43d`, the commit that introduced this document.
-The correction that wrote these figures into it touches `docs/evidence` alone, so the counted
-measure — which excludes that directory by the convention's own definition — is unchanged by it; the
-full-diff figure rises by the size of the correction itself.
+Measured at `a822b01b7010e4ff0397bbcd373bb21f99543be4`, the `F-20A-R4M-001` repair commit. The
+correction that wrote these figures into this document touches `docs/evidence` alone, so the
+counted measure — which excludes that directory by the convention's own definition — is unchanged
+by it; the full-diff figure rises by the size of the correction itself.
 
 | Measure | Value |
 | --- | --- |
 | changed files | **33** |
-| `git diff --shortstat` | 33 files changed, **3690** insertions, **30** deletions |
-| counted diff (`--unified=0`, excluding `docs/evidence`) | **216,352 bytes** |
-| full diff, as Sourcery counts it | **271,378 bytes** |
-| `docs/evidence` alone (counted separately, not included above) | 28,559 bytes |
+| `git diff --shortstat` | 33 files changed, **3845** insertions, **30** deletions |
+| counted diff (`--unified=0`, excluding `docs/evidence`) | **223,711 bytes** |
+| full diff, as Sourcery counts it | **283,362 bytes** |
+| `docs/evidence` alone (counted separately, not included above) | 33,184 bytes |
 
-Per area (counted): `docs/context` 52,661 · `tests` 90,346 · `src` 43,756 · `contracts` 28,716 ·
+Per area (counted): `docs/context` 53,358 · `tests` 95,414 · `src` 44,029 · `contracts` 30,037 ·
 `README.md` 873.
 
 Per commit (counted):
@@ -421,15 +428,20 @@ Per commit (counted):
 | `b90aab7` | 65,330 | contract registration |
 | `2e80e50` | 48,730 | the static-page observer |
 | `f1ec015` | 36,170 | this evidence document and the two READMEs |
+| `d6b167f` | 1,916 | the measured-diff correction |
+| `a822b01` | 24,126 | the `F-20A-R4M-001` contract-authority repair |
 
 **This is a finding, stated plainly: 20.A did not come in materially smaller than the monolithic
 plan it replaced.** The single-PR option was projected at ≈190–250 kB counted, and this candidate
-lands at 216 kB — inside that band rather than below it. It is the smallest slice since PXK-20.B1
+lands at 224 kB — inside that band rather than below it. It is the smallest slice since PXK-20.B1
 against the same calibration (PXAPI-19.B 340,448 · PXAPI-19.A 274,275 · PXK-67 225,587 ·
 PXK-20.B1 77,520), and it is above the repository's 140,000-byte reviewability convention and above
 Sourcery's 150,000-character limit, so no bot review will run (`C-PXAPI-001` neighbourhood; `main`
 carries no branch protection). `D-20-M` names the Product Owner / Orchestrator as the independent
-`R4M` authority, which is the compensating control.
+`R4M` authority, which is the compensating control — and that review happened: Jira comment
+`16325` records it, together with a Product Owner **one-time size exception for 20.A**. No resplit
+is required, because the independently inspected production blast radius is two new source modules
+plus one additive contract entry; the exception does not carry over to 20.B.
 
 Nothing was hidden to reach the number: every fixture and every example is committed and listed,
 and `docs/evidence` is excluded only by the convention's own definition, with its full-diff cost
@@ -441,8 +453,12 @@ seams and a resplit needs no rework:
 - **A** governance reconcile — `3ae2316`, 51,112 B, documentation only, no production file;
 - **B** domain + contract — `3ae2316..b90aab7`, 109,409 B, no runtime, nothing calls it;
 - **C** the observer — `b90aab7..2e80e50`, 48,730 B, nothing calls it either;
-- the evidence document and the READMEs — `f1ec015`, 36,170 B — travel with whichever candidate
-  carries the code they describe, or split along the same seams.
+- the evidence document and the READMEs — `f1ec015` + `d6b167f`, 38,086 B — travel with whichever
+  candidate carries the code they describe, or split along the same seams;
+- the `F-20A-R4M-001` repair — `a822b01`, 24,126 B — belongs with **B**.
+
+The Product Owner has since waived the resplit for this candidate (comment `16325`); the seams stay
+recorded because a later candidate may want them.
 
 No further abstraction was added after this measurement.
 

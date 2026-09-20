@@ -539,10 +539,16 @@ Three root conditionals carry its whole shape, each stated in both directions:
 | `measurement_refs` is empty | `measurements_withheld_reason` | — |
 | `measurement_refs` is non-empty | — | `measurements_withheld_reason` |
 
-`observation_mode` is a **const**, not a two-token enum: this producer observes over static HTTP
-only, and a rendered-browser observation is a new version of this contract rather than a value
-this one already admits. A vocabulary listing a mode nobody implements would let a consumer branch
-on a claim no producer can make.
+`observation_mode` is closed at the two observation modes the accepted architecture defines —
+`STATIC_HTTP` and `RENDERED_BROWSER` — because each names a different way of obtaining a record of
+this same shape, with its own method and version provenance. **Contract capability is not producer
+capability.** The service currently ships a `STATIC_HTTP` producer and no rendered runtime of any
+kind, and that narrowing is a *producer invariant* enforced in `pxapi.domain.page_acquisition`
+rather than a rule of the schema: a `RENDERED_BROWSER` record is a well-formed document of this
+contract that this service will not emit, and a test proves both halves of that sentence. Keeping
+the two apart is what lets a rendered producer be added later without a new version of a contract
+that already represents it. A mode outside the two is refused outright, so a consumer never has to
+branch on a mode nobody has given a meaning.
 
 `http_status` is bounded `100..999`, and both bounds are *derived*: a status line outside that
 range is refused by `http.client` itself, so no fetcher can report one, and a narrower ceiling

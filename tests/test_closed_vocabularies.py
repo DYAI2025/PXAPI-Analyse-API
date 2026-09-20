@@ -173,11 +173,19 @@ INCOMPLETE_SELECTION_VALUE = False
 #: vocabulary would raise at import time instead of failing the test that exists to catch it.
 BUDGET_INCOMPLETENESS_CAUSE = "SELECTION_BUDGET_EXHAUSTED"
 
-#: How the page-acquisition producer observed a page, and what became of the attempt. Both are
-#: *derived* from the Domain, which owns them: the schema is the second statement of a fact the
-#: code holds, so the expectation must be too. The outcome order is load-bearing — a producer maps
-#: a fetch failure by value rather than through a table — and a list comparison pins it.
-PAGE_OBSERVATION_MODE: str = OBSERVATION_MODE_STATIC_HTTP
+#: The observation modes `page-acquisition-record.v1` can represent. The literal here *is* the
+#: pin, exactly as `STAGE_STATUSES` is: this vocabulary has no Domain source of truth, and
+#: deliberately so — the Domain holds what *this producer* observes with, and the second token has
+#: no producer at all. Confluence `54362115` §7 fixes the set for the contract
+#: (`observation_mode = STATIC_HTTP | RENDERED_BROWSER`) and D-PXAPI-ACQ-005 defines the two as
+#: separate observation modes of the same record. Deriving this from the Domain would collapse the
+#: distinction the repair exists to keep: contract capability is wider than producer capability.
+PAGE_OBSERVATION_MODES: list[str] = ["STATIC_HTTP", "RENDERED_BROWSER"]
+
+#: What became of an acquisition attempt. *Derived* from the Domain, which owns it: the schema is
+#: the second statement of a fact the code holds, so the expectation must be too. The order is
+#: load-bearing — a producer maps a fetch failure by value rather than through a table — and a list
+#: comparison pins it.
 ACQUISITION_OUTCOMES: list[str] = [outcome.value for outcome in AcquisitionOutcome]
 
 #: Why an acquisition record carries no measurements. Derived from the Domain constant for the
@@ -220,7 +228,7 @@ BUDGET_CAUSE_POINTER = "#/allOf/1/if/properties/incompleteness/properties/cause/
 
 #: Where the acquisition record's vocabularies and the two conditionals that key on them live.
 _ACQUISITION_RECORD = "page-acquisition-record.v1.json"
-OBSERVATION_MODE_POINTER = "#/properties/observation_mode/const"
+OBSERVATION_MODE_POINTER = "#/properties/observation_mode/enum"
 ACQUISITION_OUTCOME_POINTER = "#/properties/acquisition_outcome/enum"
 WITHHELD_REASON_POINTER = "#/properties/measurements_withheld_reason/enum"
 RESPONSE_OUTCOME_POINTER = "#/allOf/0/if/properties/acquisition_outcome/const"
@@ -253,7 +261,7 @@ PINNED: dict[tuple[str, str], Any] = {
     ("sampling-manifest.v1.json", INCOMPLETENESS_CAUSE_POINTER): INCOMPLETENESS_CAUSES,
     ("sampling-manifest.v1.json", INCOMPLETE_SELECTION_POINTER): INCOMPLETE_SELECTION_VALUE,
     ("sampling-manifest.v1.json", BUDGET_CAUSE_POINTER): BUDGET_INCOMPLETENESS_CAUSE,
-    (_ACQUISITION_RECORD, OBSERVATION_MODE_POINTER): PAGE_OBSERVATION_MODE,
+    (_ACQUISITION_RECORD, OBSERVATION_MODE_POINTER): PAGE_OBSERVATION_MODES,
     (_ACQUISITION_RECORD, ACQUISITION_OUTCOME_POINTER): ACQUISITION_OUTCOMES,
     (_ACQUISITION_RECORD, WITHHELD_REASON_POINTER): MEASUREMENTS_WITHHELD_REASONS,
     (_ACQUISITION_RECORD, RESPONSE_OUTCOME_POINTER): RESPONSE_OUTCOME,
@@ -403,17 +411,26 @@ def test_the_decoded_body_value_is_the_true_branch_of_a_boolean() -> None:
     assert DECODED_BODY_VALUE is True
 
 
-def test_the_observation_mode_is_a_single_static_token_and_not_a_rendered_one() -> None:
-    """A rendered mode is a later contract version, never a value this vocabulary already holds."""
-    assert PAGE_OBSERVATION_MODE == "STATIC_HTTP"
-    assert "BROWSER" not in PAGE_OBSERVATION_MODE
-    assert "RENDER" not in PAGE_OBSERVATION_MODE
+def test_the_observation_mode_vocabulary_is_the_two_the_architecture_defines() -> None:
+    """The contract represents both modes; the PXAPI-20 producer implements only the static one.
+
+    Widening this set would let a consumer branch on a mode nobody has defined; narrowing it back
+    to the static token alone would make the contract unable to represent the rendered acquisition
+    the accepted architecture already specifies, which is the drift `F-20A-R4M-001` repaired.
+    """
+    assert PAGE_OBSERVATION_MODES == ["STATIC_HTTP", "RENDERED_BROWSER"]
+
+
+def test_the_static_producer_s_own_mode_is_a_member_of_the_contract_vocabulary() -> None:
+    """The producer narrows the contract's vocabulary; a producer outside it could not be valid."""
+    assert OBSERVATION_MODE_STATIC_HTTP in PAGE_OBSERVATION_MODES
+    assert len(PAGE_OBSERVATION_MODES) > 1, "canary: the narrowing would be vacuous on one token"
 
 
 def test_no_acquisition_outcome_or_withheld_reason_describes_the_website() -> None:
     """Every token names the transport, our runtime or our own contracts — never the page."""
     page_quality = ("BROKEN", "BAD", "POOR", "WEAK", "SLOW", "THIN", "QUALITY", "SEO")
-    tokens = ACQUISITION_OUTCOMES + MEASUREMENTS_WITHHELD_REASONS
+    tokens = ACQUISITION_OUTCOMES + MEASUREMENTS_WITHHELD_REASONS + PAGE_OBSERVATION_MODES
     offenders = [token for token in tokens if any(word in token for word in page_quality)]
     assert offenders == []
     assert any(word in "BROKEN_PAGE" for word in page_quality), "canary: the word list matches"

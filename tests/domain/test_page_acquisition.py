@@ -201,7 +201,9 @@ def test_the_contract_registry_is_the_real_one() -> None:
 
 def test_the_clean_fixture_is_contract_valid() -> None:
     """A red invariant test must never be explained by an invalid fixture."""
-    _records, manifest, measurements, evidence = clean_set()
+    records, manifest, measurements, evidence = clean_set()
+    for document in records:
+        assert CONTRACTS.validate(PAGE_ACQUISITION_RECORD, document) == ()
     assert CONTRACTS.validate("sampling-manifest", manifest) == ()
     for document in measurements:
         assert CONTRACTS.validate("measurement-record", document) == ()
@@ -576,6 +578,34 @@ def test_the_record_order_is_the_selection_rank_order_and_not_merely_the_set() -
     reordered = [records[1], records[0]]
     found = acquisition_violations(reordered, manifest, measurements, evidence)
     assert rules_in(found) == {"one_record_per_selection"}
+
+
+def test_a_rendered_record_is_contract_valid_and_still_refused_by_this_producer() -> None:
+    """Schema-valid is not the same thing as valid output of this specific producer.
+
+    Confluence `54362115` §7 admits `STATIC_HTTP | RENDERED_BROWSER` for
+    `page-acquisition-record.v1`, so a rendered record is a well-formed document of that
+    contract. PXAPI-20 implements the static producer only (`D-20-C`), so this producer's own
+    invariant refuses to emit one — and that refusal is what makes the two truths separable.
+    """
+    records, manifest, measurements, evidence = clean_set()
+    records[0]["observation_mode"] = "RENDERED_BROWSER"
+
+    assert CONTRACTS.validate(PAGE_ACQUISITION_RECORD, records[0]) == (), (
+        "the contract must admit the authoritative rendered mode"
+    )
+    found = acquisition_violations(records, manifest, measurements, evidence)
+    assert rules_in(found) == {"record_declares_this_producer"}
+    assert (f"{RECORDS_POINTER}/0", "record_declares_this_producer") in keys_of(found)
+
+
+def test_this_producer_s_own_mode_is_one_the_contract_declares() -> None:
+    """The producer may narrow the contract's vocabulary; it may not leave it."""
+    declared = load_json(CONTRACTS.schema_path(PAGE_ACQUISITION_RECORD))["properties"][
+        "observation_mode"
+    ]["enum"]
+    assert OBSERVATION_MODE_STATIC_HTTP in declared
+    assert len(declared) > 1, "canary: a one-token vocabulary would make the narrowing vacuous"
 
 
 def test_a_withheld_page_is_accepted_when_it_states_its_reason() -> None:

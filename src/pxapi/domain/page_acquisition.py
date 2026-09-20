@@ -56,8 +56,11 @@ from pxapi.domain.acquisition_semantics import ProducerInvariantViolated, Semant
 #: The registered contract these rules are about.
 PAGE_ACQUISITION_RECORD: Final = "page-acquisition-record"
 
-#: How this producer observed the page. A const in the contract rather than an enum: a rendered
-#: observation is a later contract version, never a widened vocabulary in this one (D-20-C).
+#: How *this* producer observed the page. The contract's own vocabulary is wider — it carries the
+#: two observation modes the accepted architecture defines, static and rendered — and this constant
+#: is the one of them PXAPI-20 implements (D-20-C). The narrowing is enforced below, in
+#: ``record_declares_this_producer``, which is why a rendered record can be a well-formed document
+#: of that contract and still not be something this service may emit.
 OBSERVATION_MODE_STATIC_HTTP: Final = "STATIC_HTTP"
 
 #: Which method acquired it, and the version of that method. Together with the observation mode

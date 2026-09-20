@@ -47,12 +47,12 @@
         }
       ]
     },
-    "observation-mode-rendered": {
-      "proves": "This producer observes over static HTTP only. A rendered-browser observation is a new version of this contract, never a value this one already admits, so a consumer can never be handed a rendered claim no producer can make.",
+    "observation-mode-unknown": {
+      "proves": "The observation mode is closed at the two modes the architecture authority defines. A third token — a rendered runtime's own invented name for itself, say — is refused by the contract, so a consumer never has to branch on a mode nobody has given a meaning.",
       "violations": [
         {
           "pointer": "/observation_mode",
-          "keyword": "const"
+          "keyword": "enum"
         }
       ]
     },

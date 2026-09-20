@@ -93,7 +93,7 @@ url_key, manifest ref and output digest, method and version, run`.
 ## 5. The contract
 
 Twenty members, twelve always required, three root conditionals, root closed. The conditional
-rules, the `observation_mode` const, the derived `100..999` status bounds, the never-emitted
+rules, the `observation_mode` vocabulary, the derived `100..999` status bounds, the never-emitted
 `raw_artifact_ref` and the withhold rule are described in `contracts/README.md`, *The page
 acquisition record*, which this document does not restate.
 
@@ -110,9 +110,64 @@ an artifact needs no new contract version.
 
 Fourteen focused invalid fixtures, one mutation each, each with a structural `(pointer, keyword)`
 expectation: the response group in both directions, the digest pairing in both directions, the
-withheld pairing in both directions, a rendered observation mode, a `BROKEN_PAGE` outcome, a status
+withheld pairing in both directions, an unknown observation mode, a `BROKEN_PAGE` outcome, a status
 of 1000, a credential-bearing `url_key`, a duplicated measurement reference, an inlined body with
 headers, and a record carrying polarity, score and severity.
+
+### 5.1 `F-20A-R4M-001` — contract authority drift, repaired
+
+The first candidate declared `observation_mode` as `const: "STATIC_HTTP"` and said in prose that a
+rendered observation would need a later contract version. The independent `R4M` review (Jira
+`PXAPI-20` comment `16325`, 2026-09-20) found that this silently changed the accepted contract
+topology, and re-reading the authority confirms it. Confluence `54362115` — version 1, created
+2026-09-09, unchanged — states under §7 *TARGET new contracts*, for
+`page-acquisition-record.v1`:
+
+> `observation_mode = STATIC_HTTP | RENDERED_BROWSER`
+
+and `D-PXAPI-ACQ-005` defines the two as separate observation modes with their own method and tool
+provenance. §6 puts them on the *same* record: Pipeline C emits `PageAcquisitionRecord(STATIC_HTTP)`
+and Pipeline D emits `PageAcquisitionRecord(RENDERED_BROWSER)`.
+
+`D-20-C` (Jira comment `16259`) authorises the PXAPI-20 **producer** to support `STATIC_HTTP` and
+forbids implementing `RENDERED_BROWSER`. It has no authority over the shared contract's vocabulary,
+and the first candidate conflated the two.
+
+**Repaired by separating them, and by proving they are separate:**
+
+| Layer | After the repair |
+| --- | --- |
+| contract | `observation_mode` is an `enum` of exactly `STATIC_HTTP` and `RENDERED_BROWSER` — the authority's own set |
+| producer | `record_declares_this_producer` still requires `observation_mode == STATIC_HTTP`, unchanged |
+| proof | a record changed only to `RENDERED_BROWSER` validates against the registry **and** fires exactly that one producer rule |
+
+No rendered transport member, no `RenderedPagePort`, no browser or Crawl4AI dependency, no provider
+field and no new contract version were added: the minimum semantics the authority states are
+sufficient for both modes at this architectural level, and the repair is confined to the vocabulary
+and the wording around it.
+
+RED before the schema changed: nine assertions, namely
+`test_the_contract_admits_every_authoritative_observation_mode[RENDERED_BROWSER]`, five
+`test_the_contract_refuses_a_mode_outside_the_authoritative_vocabulary[…]` cases (they reported
+`const` where `enum` is now required), `test_the_contract_vocabulary_is_wider_than_what_this_producer_emits`,
+`test_a_rendered_record_is_contract_valid_and_still_refused_by_this_producer` and
+`test_this_producer_s_own_mode_is_one_the_contract_declares` (`KeyError: 'enum'`). The static half
+of the first test was green throughout, which is the point: nothing about the producer changed.
+
+The invalid fixture that proved a rendered mode was refused is replaced rather than deleted:
+`observation-mode-rendered` becomes `observation-mode-unknown`, carrying `HEADLESS_BROWSER` and
+expecting `('/observation_mode', 'enum')`, so the vocabulary still has a negative case. The
+closed-vocabulary pin moves from `#/properties/observation_mode/const` to `…/enum` and is a
+**literal** two-token list rather than a value derived from the Domain — deriving it would collapse
+the very distinction the repair exists to keep, because the Domain holds what *this producer*
+observes with and the second token has no producer at all.
+
+`D-PXAPI20-PO-004` in the decision ledger keeps its prior wording as preserved text and records the
+supersession. One neighbouring statement is deliberately **not** changed: `D-20-I` says a provider
+member may be added in a future contract version if rendered or third-party acquisition proves it
+necessary. That is about *provenance fields* and not about the mode vocabulary, it is the Product
+Owner's own decision, and it remains true — §7 lists "method/tool/provider/version provenance"
+while v1 carries method and version only, under that decision.
 
 ## 6. The static-page observer
 

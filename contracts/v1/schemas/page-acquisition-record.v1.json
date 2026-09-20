@@ -32,8 +32,8 @@
     },
     "observation_mode": {
       "type": "string",
-      "const": "STATIC_HTTP",
-      "description": "Required. How the page was observed. It is a const and not a two-token enum, deliberately: this producer performs static HTTP acquisition only, and a rendered-browser observation is a new version of this contract rather than a value this one already admits. A vocabulary that listed a mode nobody implements would let a consumer branch on a claim no producer can make."
+      "enum": ["STATIC_HTTP", "RENDERED_BROWSER"],
+      "description": "Required. How the page was observed. The vocabulary is closed at the two observation modes the accepted architecture defines, because each names a different way of obtaining a record of this same shape and carries its own method and version provenance: a static HTTP acquisition, and a rendered-browser one. It is closed rather than an open token because a consumer branches on this value, and a mode nobody has defined would arrive carrying no rule about what the rest of the record then means. What this member states is what the *contract* can represent, and deliberately not what any one producer implements: the service currently ships a STATIC_HTTP producer and no rendered runtime whatsoever, and that narrowing is a producer invariant enforced in code rather than a rule of this schema. A RENDERED_BROWSER record is therefore a well-formed document of this contract that this service will not emit — and the two facts are kept apart here precisely so that adding a rendered producer later needs no new version of a contract that already represents it."
     },
     "acquisition_method": {
       "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",

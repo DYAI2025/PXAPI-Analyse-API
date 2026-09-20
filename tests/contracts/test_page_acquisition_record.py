@@ -158,6 +158,7 @@ def test_the_withheld_example_carries_a_url_the_measurement_contract_cannot_hold
 
 
 def test_every_example_declares_this_producer_s_method_and_mode() -> None:
+    """The contract admits a rendered mode; no example of *this* producer may carry one."""
     for path in CONTRACTS.example_paths(CONTRACT):
         document = load_json(path)
         assert document["observation_mode"] == OBSERVATION_MODE_STATIC_HTTP, path.name
@@ -219,13 +220,45 @@ def test_a_raw_artifact_ref_is_permitted_on_a_received_response() -> None:
     assert valid(candidate), CONTRACTS.validate(CONTRACT, candidate)
 
 
-def test_the_observation_mode_admits_static_http_and_nothing_else() -> None:
-    response = example("response-received")
-    assert response["observation_mode"] == OBSERVATION_MODE_STATIC_HTTP
-    for other in ("RENDERED_BROWSER", "static_http", "STATIC_HTTPS", ""):
-        assert ("/observation_mode", "const") in keys_of(
-            with_member(response, "observation_mode", other)
-        )
+#: The observation-mode vocabulary the architecture authority fixes for this contract.
+#: Confluence `54362115` §7 states the minimum semantics of `page-acquisition-record.v1` as
+#: `observation_mode = STATIC_HTTP | RENDERED_BROWSER`, and D-PXAPI-ACQ-005 defines the two as
+#: separate observation modes of the *same* record: Pipeline C emits
+#: `PageAcquisitionRecord(STATIC_HTTP)` and Pipeline D emits `PageAcquisitionRecord(
+#: RENDERED_BROWSER)`. PXAPI-20 implements only the first — that is a *producer* decision
+#: (`D-20-C`), enforced by the producer invariant, and it is not this contract's vocabulary.
+AUTHORITATIVE_OBSERVATION_MODES = ("STATIC_HTTP", "RENDERED_BROWSER")
+
+#: Modes outside that vocabulary: a case difference, a near-miss, an empty value and tokens a
+#: rendered runtime might plausibly invent. None may validate.
+UNKNOWN_OBSERVATION_MODES = ("static_http", "STATIC_HTTPS", "", "BROWSER", "HEADLESS_BROWSER")
+
+
+@pytest.mark.parametrize("mode", AUTHORITATIVE_OBSERVATION_MODES)
+def test_the_contract_admits_every_authoritative_observation_mode(mode: str) -> None:
+    """The contract represents what the architecture says it represents, producer or no producer."""
+    candidate = with_member(example("response-received"), "observation_mode", mode)
+    assert valid(candidate), CONTRACTS.validate(CONTRACT, candidate)
+
+
+@pytest.mark.parametrize("mode", UNKNOWN_OBSERVATION_MODES, ids=lambda m: repr(m))
+def test_the_contract_refuses_a_mode_outside_the_authoritative_vocabulary(mode: str) -> None:
+    candidate = with_member(example("response-received"), "observation_mode", mode)
+    assert ("/observation_mode", "enum") in keys_of(candidate)
+
+
+def test_the_contract_vocabulary_is_wider_than_what_this_producer_emits() -> None:
+    """Schema-valid is not the same thing as valid output of the PXAPI-20 static producer.
+
+    The contract carries both authoritative modes; the static producer emits and accepts one.
+    ``tests/domain/test_page_acquisition.py`` proves the other half — a `RENDERED_BROWSER`
+    record is contract-valid and still refused by this producer's own invariant.
+    """
+    declared = schema()["properties"]["observation_mode"]["enum"]
+    assert declared == list(AUTHORITATIVE_OBSERVATION_MODES)
+    assert OBSERVATION_MODE_STATIC_HTTP in declared
+    assert set(declared) - {OBSERVATION_MODE_STATIC_HTTP} == {"RENDERED_BROWSER"}
+    assert example("response-received")["observation_mode"] == OBSERVATION_MODE_STATIC_HTTP
 
 
 # --- shapes: the narrowed acquisition definitions, never the wider common ones ----------------

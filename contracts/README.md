@@ -502,7 +502,84 @@ a producer canonicalises or deduplicates, that a sampling planner exists, that t
 threshold is known, that any page was fetched, or that any URL was reachable, safe or permitted.
 A valid `target_origin` proves a lexical shape and no DNS, SSRF, egress or reachability decision.
 Acquiring a selected page is PXAPI-20's decision and `page-acquisition-record.v1` is not part of
-this slice.
+this slice. That contract is now registered by PXAPI-20.A and is described in the next section;
+registering it acquires nothing, and no page is fetched by any code on this branch.
+
+## The page acquisition record
+
+`page-acquisition-record.v1` records one attempt to acquire one page a sampling manifest selected,
+and the technical outcome of that attempt. It exists to carry **page identity** into the canonical
+evidence chain without versioning either carrier of that chain:
+
+```text
+website-evidence.measurement_refs -> measurement_id
+                                  -> the ONE page-acquisition-record naming that measurement
+                                  -> url_key, sampling_manifest_ref + output digest, method, run
+```
+
+That indirection is the design rather than a workaround. A page id added to
+`measurement-record.v1` or `website-evidence.v1` would have changed what every existing consumer
+must read, so neither changes: a reader recovers the page by following `measurement_refs` in the
+other direction.
+
+It is a transport record and deliberately nothing else. There is no finding, no score, no
+severity, no polarity and no business claim of any kind — a 404 is a received response whose
+status is a measurement, never a verdict — and no page content: the title, the meta description,
+the canonical link and the transport facts are measurements the record *references*, and the only
+thing it holds about the body is a bounded digest of the decoded bytes.
+
+Three root conditionals carry its whole shape, each stated in both directions:
+
+| When | Required | Refused |
+| --- | --- | --- |
+| `acquisition_outcome` is `RESPONSE_RECEIVED` | `http_status`, `final_url_key`, `redirect_count`, `body_truncated`, `body_decoded` | — |
+| any other outcome | — | those five, plus `body_digest` and `raw_artifact_ref` |
+| `body_decoded` is `true` | `body_digest` | — |
+| `body_decoded` is `false`, or absent | — | `body_digest` |
+| `measurement_refs` is empty | `measurements_withheld_reason` | — |
+| `measurement_refs` is non-empty | — | `measurements_withheld_reason` |
+
+`observation_mode` is closed at the two observation modes the accepted architecture defines —
+`STATIC_HTTP` and `RENDERED_BROWSER` — because each names a different way of obtaining a record of
+this same shape, with its own method and version provenance. **Contract capability is not producer
+capability.** The service currently ships a `STATIC_HTTP` producer and no rendered runtime of any
+kind, and that narrowing is a *producer invariant* enforced in `pxapi.domain.page_acquisition`
+rather than a rule of the schema: a `RENDERED_BROWSER` record is a well-formed document of this
+contract that this service will not emit, and a test proves both halves of that sentence. Keeping
+the two apart is what lets a rendered producer be added later without a new version of a contract
+that already represents it. A mode outside the two is refused outright, so a consumer never has to
+branch on a mode nobody has given a meaning.
+
+`http_status` is bounded `100..999`, and both bounds are *derived*: a status line outside that
+range is refused by `http.client` itself, so no fetcher can report one, and a narrower ceiling
+would make a real 6xx..9xx response contract-invalid rather than merely unusual.
+
+`raw_artifact_ref` is optional opaque provenance, permitted only alongside a received response,
+and **never emitted** by this producer, which retains nothing. That it is absent from every record
+this service writes is a producer guarantee rather than a rule of the schema, so the later slice
+that does retain an artifact needs no new version. No registered example carries one.
+
+### Why a page can be withheld
+
+`measurements_withheld_reason` exists because `acquisition#/$defs/public_url` and
+`common#/$defs/url` do **not** contain each other. `public_url` splits the value into a
+253-character authority and a 1790-character remainder; `common url` bounds one undifferentiated
+run at 2040. A 2048-character `http` URL whose authority is 250 characters is therefore a valid
+`url_key` — a canonical page identity — that no `measurement-record.source_url` can carry. Such a
+page yields an acquisition record with an empty `measurement_refs` and the reason stated, per page:
+publishing only the facts whose source URL happens to fit would leave a half-measured page, and
+publishing none of them silently would leave a gap a reader could attribute to the site. The
+divergence itself is recorded as `C-PXAPI-020` and is not resolved by PXAPI-20.
+
+### What this contract does not prove
+
+A valid record proves a document shape. It does not prove that the page was selected by the
+manifest it names, that the measurements it references exist, that one measurement belongs to one
+page, that the records of a run are the manifest's selections in rank order, or that no raw
+artifact reference was emitted. Those are producer guarantees, enforced by
+`pxapi.domain.page_acquisition`, which fails closed and withholds the documents rather than
+publishing a set no consumer can read correctly. It also proves nothing about acquisition having
+run: PXAPI-20.A registers the contract and ships no multi-page runtime.
 
 ## The Problem contract and its producer rule
 

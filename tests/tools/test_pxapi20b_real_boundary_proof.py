@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -376,9 +376,10 @@ class ScriptedHost:
     """Answers every command the proof issues as a healthy host would, and records them.
 
     ``installed`` maps the minor a ``uv python find`` request pins (``"3.14"``) to the release
-    the interpreter it names reports; a request not in it is answered as uv does when nothing is
-    installed. The project venv reports the synced interpreter's release unless
-    ``project_version`` says otherwise.
+    the interpreter it names reports; the interpreter lives in ``<tmp>/python<minor>/bin``. Like
+    real ``uv python find --system``, a request is answered as uv does when nothing is installed
+    unless that directory is on the ``PATH`` the lookup was given. The project venv reports the
+    synced interpreter's release unless ``project_version`` says otherwise.
     """
 
     def __init__(
@@ -411,13 +412,25 @@ class ScriptedHost:
     def python(self, request: str) -> Path:
         return self.pythons[request][0]
 
+    def search_path(self) -> str:
+        """A ``PATH`` on which every installed interpreter is visible, as on a healthy host."""
+        return os.pathsep.join(
+            ["/usr/bin", *(str(path.parent) for path, _ in self.pythons.values())]
+        )
+
+    def _visible(self, request: str, env: Mapping[str, str]) -> bool:
+        if _minor(request) not in self.pythons:
+            return False
+        entries = env.get("PATH", "").split(os.pathsep)
+        return str(self.python(_minor(request)).parent) in entries
+
     def __call__(
         self, argv: Sequence[str], _cwd: Path, env: Mapping[str, str]
     ) -> subprocess.CompletedProcess[str]:
         argv = list(argv)
         self.calls.append(argv)
         self.envs.append(dict(env))
-        if argv[:3] == [str(self.uv), "python", "find"] and _minor(argv[-1]) not in self.pythons:
+        if argv[:3] == [str(self.uv), "python", "find"] and not self._visible(argv[-1], env):
             stderr = f"error: No interpreter found for Python {argv[-1]} in system path\n"
             return subprocess.CompletedProcess(argv, 2, stdout="", stderr=stderr)
         if argv[:3] == [str(self.uv), "python", "dir"] and (
@@ -478,29 +491,76 @@ def _checkout(tmp_path: Path, requires: str = ">=3.13,<3.15") -> Path:
     return root
 
 
-def _run(root: Path, host: ScriptedHost, facts: dict[str, Any]) -> None:
+WellKnown = Callable[[Sequence[int]], Sequence[Path]]
+
+
+def _no_well_known(_wanted: Sequence[int]) -> list[Path]:
+    """A host whose well-known directories add nothing: only the inherited ``PATH`` counts."""
+    return []
+
+
+def _run(
+    root: Path,
+    host: ScriptedHost,
+    facts: dict[str, Any],
+    *,
+    path: str | None = None,
+    well_known: WellKnown = _no_well_known,
+) -> None:
     proof.run_proof(
         root,
         root / proof.PROOF_DIR,
         facts,
         runner=host,
-        environ={"PATH": "/usr/bin", "HOME": SCRATCH_HOME, "VIRTUAL_ENV": "/elsewhere"},
+        environ={
+            "PATH": host.search_path() if path is None else path,
+            "HOME": SCRATCH_HOME,
+            "VIRTUAL_ENV": "/elsewhere",
+        },
         which=lambda _name: str(host.uv),
         executable=CONTROL,
         expected_sha=SHA,
+        system_directories=well_known,
     )
 
 
-def _failed(root: Path, host: ScriptedHost) -> tuple[proof.ProofFailure, dict[str, Any]]:
+def _failed(
+    root: Path,
+    host: ScriptedHost,
+    *,
+    path: str | None = None,
+    well_known: WellKnown = _no_well_known,
+) -> tuple[proof.ProofFailure, dict[str, Any]]:
     facts: dict[str, Any] = {}
     with pytest.raises(proof.ProofFailure) as failure:
-        _run(root, host, facts)
+        _run(root, host, facts, path=path, well_known=well_known)
     assert not any(call[1:3] == ["-m", proof.CLI_MODULE] for call in host.calls)
     return failure.value, facts
 
 
 def _finds(host: ScriptedHost) -> list[str]:
     return [call[-1] for call in host.calls if call[1:3] == ["python", "find"]]
+
+
+def _find_paths(host: ScriptedHost) -> list[str]:
+    """The ``PATH`` each ``uv python find`` was given, in lookup order."""
+    return [
+        env.get("PATH", "")
+        for call, env in zip(host.calls, host.envs, strict=True)
+        if call[1:3] == ["python", "find"]
+    ]
+
+
+def _inherited_only(path: str) -> dict[str, list[str]]:
+    """The search-path provenance when no well-known directory was considered."""
+    return {
+        "inherited": path.split(os.pathsep),
+        "well_known": [],
+        "added": [],
+        "absent": [],
+        "excluded": [],
+        "already_present": [],
+    }
 
 
 def _synced(host: ScriptedHost) -> list[list[str]]:
@@ -517,10 +577,11 @@ def test_a_passing_proof_receipt_preserves_every_recorded_fact(tmp_path: Path) -
         proof_dir,
         facts,
         runner=host,
-        environ={"PATH": "/usr/bin"},
+        environ={"PATH": host.search_path()},
         which=lambda _name: str(host.uv),
         executable=CONTROL,
         expected_sha=SHA,
+        system_directories=_no_well_known,
     )
     receipt = json.loads(json.dumps(proof.build_receipt(facts, None)))
 
@@ -539,7 +600,9 @@ def test_a_passing_proof_receipt_preserves_every_recorded_fact(tmp_path: Path) -
         {
             "requested": "3.14",
             "request": ">=3.13,<3.15,==3.14.*",
+            "search_path": _inherited_only(host.search_path()),
             "path": str(host.python("3.14")),
+            "discovered_via": f"inherited PATH entry {host.python('3.14').parent}",
             "version": "3.14.0",
             "outcome": "selected",
         }
@@ -600,12 +663,15 @@ def test_an_installed_3_13_is_the_automatic_fallback_when_3_14_is_missing(
         {
             "requested": "3.14",
             "request": ">=3.13,<3.15,==3.14.*",
+            "search_path": _inherited_only(host.search_path()),
             "outcome": "not installed",
         },
         {
             "requested": "3.13",
             "request": ">=3.13,<3.15,==3.13.*",
+            "search_path": _inherited_only(host.search_path()),
             "path": str(host.python("3.13")),
+            "discovered_via": f"inherited PATH entry {host.python('3.13').parent}",
             "version": "3.13.13",
             "outcome": "selected",
         },
@@ -791,7 +857,7 @@ def test_discovery_ignores_host_uv_configuration_and_python_pins(tmp_path: Path)
     (root / "uv.toml").write_text('python-preference = "only-managed"\n')
     host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
     environ = {
-        "PATH": "/usr/bin",
+        "PATH": host.search_path(),
         "UV_PYTHON": "3.12",
         "UV_PYTHON_PREFERENCE": "only-managed",
         "UV_MANAGED_PYTHON": "1",
@@ -811,6 +877,7 @@ def test_discovery_ignores_host_uv_configuration_and_python_pins(tmp_path: Path)
         which=lambda _name: str(host.uv),
         executable=CONTROL,
         expected_sha=SHA,
+        system_directories=_no_well_known,
     )
 
     probes = [
@@ -879,3 +946,364 @@ def test_a_project_runtime_on_another_patch_release_is_accepted(tmp_path: Path) 
     _run(root, host, facts)
     assert facts["project_runtime"]["version"] == "3.13.13"
     assert facts["problems"] == []
+
+
+# --- well-known system directories --------------------------------------------------------------
+
+HOMEBREW_3_13 = Path("/opt/homebrew/opt/python@3.13/bin")
+HOMEBREW_3_14 = Path("/opt/homebrew/opt/python@3.14/bin")
+EMPTY_PROVENANCE: dict[str, list[str]] = {
+    "inherited": [],
+    "well_known": [],
+    "added": [],
+    "absent": [],
+    "excluded": [],
+    "already_present": [],
+}
+
+
+def _lay_out(host: ScriptedHost) -> None:
+    """Create the installed interpreters' directories, so they can be well-known directories."""
+    for path, _info in host.pythons.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _simulated_well_known(tmp_path: Path) -> WellKnown:
+    """Well-known directories laid out like the scripted host's interpreters.
+
+    ``<tmp>/python<minor>/bin`` plays Homebrew's minor-specific ``opt/python@<minor>/bin`` and
+    ``<tmp>/usr/bin`` the generic system location; neither is on the sandbox ``PATH``.
+    """
+
+    def well_known(wanted: Sequence[int]) -> list[Path]:
+        minor = ".".join(str(part) for part in wanted)
+        return [tmp_path / f"python{minor}" / "bin", tmp_path / "usr" / "bin"]
+
+    return well_known
+
+
+def test_the_macos_well_known_directories_cover_homebrew_and_the_system_locations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", SCRATCH_HOME)
+    monkeypatch.setattr(Path, "home", _forbidden)
+    monkeypatch.setattr(os.path, "expanduser", _forbidden)
+
+    for_3_13 = proof.system_python_directories((3, 13), "darwin")
+    for_3_14 = proof.system_python_directories((3, 14), "darwin")
+
+    assert for_3_13[0] == HOMEBREW_3_13
+    assert for_3_14[0] == HOMEBREW_3_14
+    assert Path("/usr/local/opt/python@3.14/bin") in for_3_14
+    assert Path("/Library/Frameworks/Python.framework/Versions/3.14/bin") in for_3_14
+    assert for_3_13[-4:] == [
+        Path("/opt/homebrew/bin"),
+        Path("/usr/local/bin"),
+        Path("/opt/local/bin"),
+        Path("/usr/bin"),
+    ]
+    assert for_3_13 == proof.system_python_directories((3, 13), "darwin")
+    assert len(set(for_3_13)) == len(for_3_13)
+    for directory in [*for_3_13, *for_3_14]:
+        assert directory.is_absolute()
+        assert not str(directory).startswith((SCRATCH_HOME, "/Users", "~"))
+        assert not {".venv", ".python-version", ".local", ".agt-runner"} & set(directory.parts)
+
+
+def test_the_other_platforms_name_fixed_system_locations_only() -> None:
+    posix = [Path("/usr/local/bin"), Path("/usr/bin"), Path("/bin")]
+    assert proof.system_python_directories((3, 13), "linux") == posix
+    assert proof.system_python_directories((3, 14), "freebsd14") == posix
+    assert proof.system_python_directories((3, 14), "win32") == [
+        Path("C:\\Program Files\\Python314"),
+        Path("C:\\Python314"),
+    ]
+    assert proof.system_python_directories((3, 13)) == proof.system_python_directories(
+        (3, 13), sys.platform
+    )
+
+
+def test_the_proof_uses_the_platform_well_known_directories_by_default() -> None:
+    assert proof.run_proof.__kwdefaults__["system_directories"] is proof.system_python_directories
+    assert proof.select_python.__defaults__ == (proof.system_python_directories,)
+
+
+def test_the_lookup_path_appends_existing_well_known_directories_once_in_order(
+    tmp_path: Path,
+) -> None:
+    homebrew = tmp_path / "opt" / "homebrew" / "opt" / "python@3.14" / "bin"
+    usr_local = tmp_path / "usr" / "local" / "bin"
+    absent = tmp_path / "Library" / "Frameworks" / "Python.framework" / "Versions" / "3.14" / "bin"
+    usr_bin = tmp_path / "usr" / "bin"
+    for directory in (homebrew, usr_local, usr_bin):
+        directory.mkdir(parents=True)
+    inherited = [f"{usr_bin}{os.sep}", "/sandbox/bin"]
+
+    search_path, provenance = proof.find_search_path(
+        os.pathsep.join(inherited), [homebrew, usr_bin, absent, homebrew, usr_local], []
+    )
+
+    assert search_path == os.pathsep.join([*inherited, str(homebrew), str(usr_local)])
+    assert provenance == {
+        "inherited": inherited,
+        "well_known": [str(homebrew), str(usr_bin), str(absent), str(usr_local)],
+        "added": [str(homebrew), str(usr_local)],
+        "absent": [str(absent)],
+        "excluded": [],
+        "already_present": [str(usr_bin)],
+    }
+
+
+def test_the_lookup_path_excludes_managed_and_project_environment_directories(
+    tmp_path: Path,
+) -> None:
+    managed = tmp_path / "managed"
+    managed_bin = managed / "cpython-3.14.0-macos-aarch64-none" / "bin"
+    venv_bin = tmp_path / "scratch" / "venv" / "bin"
+    system = tmp_path / "usr" / "bin"
+    for directory in (managed_bin, venv_bin, system):
+        directory.mkdir(parents=True)
+    link = tmp_path / "opt" / "python@3.14"
+    link.parent.mkdir()
+    link.symlink_to(managed_bin.parent)
+    excluded = [Path(os.path.realpath(managed)), Path(os.path.realpath(venv_bin.parent))]
+
+    search_path, provenance = proof.find_search_path(
+        "/sandbox/bin", [managed_bin, venv_bin, link / "bin", system], excluded
+    )
+
+    assert search_path == os.pathsep.join(["/sandbox/bin", str(system)])
+    assert provenance["excluded"] == [str(managed_bin), str(venv_bin), str(link / "bin")]
+    assert provenance["added"] == [str(system)]
+    assert provenance["absent"] == []
+
+
+def test_an_absent_inherited_path_yields_only_the_well_known_directories(tmp_path: Path) -> None:
+    system = tmp_path / "usr" / "bin"
+    system.mkdir(parents=True)
+    missing = tmp_path / "missing"
+
+    search_path, provenance = proof.find_search_path(None, [system, missing], [])
+
+    assert search_path == str(system)
+    assert provenance["inherited"] == []
+    assert provenance["added"] == [str(system)]
+    assert provenance["absent"] == [str(missing)]
+    assert proof.find_search_path("", [], []) == ("", EMPTY_PROVENANCE)
+
+
+def test_discovery_is_attributed_to_the_entry_that_names_the_interpreter(tmp_path: Path) -> None:
+    cellar = tmp_path / "Cellar" / "python@3.13" / "3.13.13" / "bin"
+    cellar.mkdir(parents=True)
+    (cellar / "python3.13").write_text("")
+    opt = tmp_path / "opt" / "python@3.13"
+    opt.parent.mkdir()
+    opt.symlink_to(cellar.parent)
+    provenance = {"inherited": ["/usr/bin"], "added": [str(opt / "bin")]}
+
+    well_known = f"well-known directory {opt / 'bin'}"
+    assert proof.discovered_via(opt / "bin" / "python3.13", provenance) == well_known
+    # uv may print the resolved interpreter; the link in the added directory still names it.
+    assert proof.discovered_via(cellar / "python3.13", provenance) == well_known
+    assert (
+        proof.discovered_via(Path("/usr/bin/python3.13"), provenance)
+        == "inherited PATH entry /usr/bin"
+    )
+    assert (
+        proof.discovered_via(tmp_path / "elsewhere" / "python3.13", provenance)
+        == "not attributable to a search-path entry"
+    )
+
+
+def test_a_path_that_hides_every_interpreter_is_augmented_for_each_lookup_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.14": (3, 14, 0), "3.13": (3, 13, 13)})
+    _lay_out(host)
+    usr_bin = tmp_path / "usr" / "bin"
+    usr_bin.mkdir(parents=True)
+    monkeypatch.setenv("HOME", SCRATCH_HOME)
+    monkeypatch.setattr(Path, "home", _forbidden)
+    monkeypatch.setattr(os.path, "expanduser", _forbidden)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts, path="/sandbox/bin", well_known=_simulated_well_known(tmp_path))
+    receipt = json.loads(json.dumps(proof.build_receipt(facts, None)))
+
+    assert receipt["verdict"] == "PASSED"
+    homebrew_like = host.python("3.14").parent
+    assert _find_paths(host) == [
+        os.pathsep.join(["/sandbox/bin", str(homebrew_like), str(usr_bin)])
+    ]
+    assert receipt["python_candidates"] == [
+        {
+            "requested": "3.14",
+            "request": ">=3.13,<3.15,==3.14.*",
+            "search_path": {
+                "inherited": ["/sandbox/bin"],
+                "well_known": [str(homebrew_like), str(usr_bin)],
+                "added": [str(homebrew_like), str(usr_bin)],
+                "absent": [],
+                "excluded": [],
+                "already_present": [],
+            },
+            "path": str(host.python("3.14")),
+            "discovered_via": f"well-known directory {homebrew_like}",
+            "version": "3.14.0",
+            "outcome": "selected",
+        }
+    ]
+    assert receipt["selected_python"]["path"] == str(host.python("3.14"))
+    # The interpreter uv named was still probed, and the sync still ran locked against it.
+    assert [str(host.python("3.14")), "-c", proof.PROBE] in host.calls
+    (sync,) = _synced(host)
+    assert sync[2] == "--locked"
+    assert sync[sync.index("--python") + 1] == str(host.python("3.14"))
+    # Only the find lookups see the augmented PATH; every other command keeps the sandbox PATH.
+    for call, env in zip(host.calls, host.envs, strict=True):
+        if call[1:3] != ["python", "find"]:
+            assert env["PATH"] == "/sandbox/bin"
+    assert not any(SCRATCH_HOME in path for path in _find_paths(host))
+
+
+def test_a_hidden_3_13_is_found_when_the_3_14_well_known_directory_is_absent(
+    tmp_path: Path,
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
+    _lay_out(host)
+    usr_bin = tmp_path / "usr" / "bin"
+    usr_bin.mkdir(parents=True)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts, path="/sandbox/bin", well_known=_simulated_well_known(tmp_path))
+
+    first, second = facts["python_candidates"]
+    assert first["outcome"] == "not installed"
+    assert first["search_path"]["absent"] == [str(tmp_path / "python3.14" / "bin")]
+    assert first["search_path"]["added"] == [str(usr_bin)]
+    assert "path" not in first
+    homebrew_like = host.python("3.13").parent
+    assert second["outcome"] == "selected"
+    assert second["search_path"]["added"] == [str(homebrew_like), str(usr_bin)]
+    assert second["search_path"]["absent"] == []
+    assert second["discovered_via"] == f"well-known directory {homebrew_like}"
+    paths = _find_paths(host)
+    assert paths == [
+        os.pathsep.join(["/sandbox/bin", str(usr_bin)]),
+        os.pathsep.join(["/sandbox/bin", str(homebrew_like), str(usr_bin)]),
+    ]
+    assert facts["selected_python"] == {
+        "path": str(host.python("3.13")),
+        "version": "3.13.13",
+        "requires_python": ">=3.13,<3.15",
+    }
+    (sync,) = _synced(host)
+    assert sync[sync.index("--python") + 1] == str(host.python("3.13"))
+    assert facts["project_runtime"]["version"] == "3.13.13"
+    assert facts["problems"] == []
+
+
+def test_a_well_known_directory_already_on_the_path_is_not_appended_twice(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
+    _lay_out(host)
+    usr_bin = tmp_path / "usr" / "bin"
+    usr_bin.mkdir(parents=True)
+    homebrew_like = host.python("3.13").parent
+    path = os.pathsep.join(["/sandbox/bin", str(homebrew_like)])
+    facts: dict[str, Any] = {}
+    _run(root, host, facts, path=path, well_known=_simulated_well_known(tmp_path))
+
+    _first, second = facts["python_candidates"]
+    assert second["search_path"]["already_present"] == [str(homebrew_like)]
+    assert second["search_path"]["added"] == [str(usr_bin)]
+    assert second["discovered_via"] == f"inherited PATH entry {homebrew_like}"
+    assert _find_paths(host)[1] == os.pathsep.join([path, str(usr_bin)])
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+
+
+def test_a_well_known_directory_under_the_managed_root_is_not_added(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(
+        tmp_path,
+        {"3.14": (3, 14, 0), "3.13": (3, 13, 13)},
+        managed_dir=tmp_path / "python3.14",
+    )
+    _lay_out(host)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts, path="/sandbox/bin", well_known=_simulated_well_known(tmp_path))
+
+    first, second = facts["python_candidates"]
+    assert first["outcome"] == "not installed"
+    assert first["search_path"]["excluded"] == [str(host.python("3.14").parent)]
+    assert first["search_path"]["added"] == []
+    assert "path" not in first
+    assert not any(call[0] == str(host.python("3.14")) for call in host.calls)
+    assert second["outcome"] == "selected"
+    assert second["search_path"]["added"] == [str(host.python("3.13").parent)]
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+    assert _find_paths(host)[0] == "/sandbox/bin"
+
+
+def test_a_project_virtual_environment_is_never_added_as_a_well_known_directory(
+    tmp_path: Path,
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
+    _lay_out(host)
+    venv_bin = root / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    simulated = _simulated_well_known(tmp_path)
+
+    def well_known(wanted: Sequence[int]) -> list[Path]:
+        return [venv_bin, *simulated(wanted)]
+
+    facts: dict[str, Any] = {}
+    _run(root, host, facts, path="/sandbox/bin", well_known=well_known)
+
+    for entry in facts["python_candidates"]:
+        assert entry["search_path"]["well_known"][0] == str(venv_bin)
+        assert entry["search_path"]["excluded"] == [str(venv_bin)]
+    assert all(str(venv_bin) not in path.split(os.pathsep) for path in _find_paths(host))
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+
+
+def test_a_named_interpreter_found_through_a_well_known_directory_is_still_checked(
+    tmp_path: Path,
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.14": (3, 12, 9), "3.13": (3, 13, 13)})
+    _lay_out(host)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts, path="/sandbox/bin", well_known=_simulated_well_known(tmp_path))
+
+    first, second = facts["python_candidates"]
+    assert first["discovered_via"] == f"well-known directory {host.python('3.14').parent}"
+    assert first["outcome"] == "rejected: not Python 3.14"
+    assert second["outcome"] == "selected"
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+
+
+def test_no_interpreter_anywhere_fails_the_bootstrap_with_the_search_paths_recorded(
+    tmp_path: Path,
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {})
+    failure, facts = _failed(
+        root, host, path="/sandbox/bin", well_known=_simulated_well_known(tmp_path)
+    )
+
+    assert failure.stage == "bootstrap"
+    assert "no installed system Python (3.14, 3.13) satisfies" in failure.detail
+    for entry, minor in zip(facts["python_candidates"], ("3.14", "3.13"), strict=True):
+        assert entry["outcome"] == "not installed"
+        assert entry["search_path"]["inherited"] == ["/sandbox/bin"]
+        assert entry["search_path"]["absent"] == [
+            str(tmp_path / f"python{minor}" / "bin"),
+            str(tmp_path / "usr" / "bin"),
+        ]
+        assert entry["search_path"]["added"] == []
+    assert _find_paths(host) == ["/sandbox/bin", "/sandbox/bin"]
+    receipt = proof.build_receipt(facts, failure)
+    assert receipt["verdict"] == "FAILED"
+    assert receipt["python_candidates"] == facts["python_candidates"]

@@ -11,7 +11,11 @@ It uses the standard library only and changes nothing on the host. It
    ``<home>/.agt-runner/``, in ``<home>/.local/bin`` — read off the interpreter path, not ``HOME``;
 3. selects an already installed system Python — 3.14 preferred, else 3.13 — that satisfies the
    checkout's ``requires-python``, with downloads, uv-managed Pythons, ``.python-version`` and
-   project or user uv configuration all excluded from discovery;
+   project or user uv configuration all excluded from discovery; each ``uv python find`` sees the
+   inherited ``PATH`` followed by the existing well-known system and package-manager interpreter
+   directories for that minor (:data:`WELL_KNOWN_PYTHON_DIRS`), so a sandbox ``PATH`` that omits
+   e.g. Homebrew's ``/opt/homebrew/opt/python@3.13/bin`` still lets uv resolve the installed
+   interpreter — which is then probed and checked like any other candidate;
 4. builds a disposable project environment under ``TMPDIR`` with ``uv sync --locked`` against
    the checkout's own ``pyproject.toml`` and ``uv.lock``, and proves ``uv.lock`` is byte-identical
    afterwards;
@@ -77,6 +81,23 @@ DISCOVERY_DROPPED = frozenset(
         "UV_PYTHON_INSTALL_DIR",
     }
 )
+#: Well-known interpreter directories per platform, in lookup order, appended to the inherited
+#: ``PATH`` of one ``uv python find`` when they exist. ``{minor}`` is the requested ``X.Y`` and
+#: ``{compact}`` its ``XY`` form. Fixed system and package-manager locations only: nothing under
+#: the user's home, nothing uv-managed, no project environment, no pin or uv setting.
+WELL_KNOWN_PYTHON_DIRS: dict[str, tuple[str, ...]] = {
+    "darwin": (
+        "/opt/homebrew/opt/python@{minor}/bin",
+        "/usr/local/opt/python@{minor}/bin",
+        "/Library/Frameworks/Python.framework/Versions/{minor}/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/opt/local/bin",
+        "/usr/bin",
+    ),
+    "win32": ("C:\\Program Files\\Python{compact}", "C:\\Python{compact}"),
+    "posix": ("/usr/local/bin", "/usr/bin", "/bin"),
+}
 PROOF_DIR = Path(".proof-output") / "pxapi20b-real-boundary"
 CANONICAL_DIR = "canonical"
 PROOF_RECEIPT = "proof-receipt.json"
@@ -231,6 +252,80 @@ def uv_candidates(executable: str, resolve: Callable[[str], str] = os.path.realp
 def is_executable_file(path: Path) -> bool:
     """Whether ``path`` exists as a regular file this process may execute."""
     return path.is_file() and os.access(path, os.X_OK)
+
+
+def system_python_directories(
+    wanted: Sequence[int], platform_name: str = sys.platform
+) -> list[Path]:
+    """The :data:`WELL_KNOWN_PYTHON_DIRS` of ``platform_name`` for one preferred minor.
+
+    Deterministic and read off nothing but the two arguments: no ``HOME``, no environment, no
+    filesystem. Platforms without an entry get the generic POSIX locations.
+    """
+    minor = ".".join(str(part) for part in wanted)
+    compact = "".join(str(part) for part in wanted)
+    templates = WELL_KNOWN_PYTHON_DIRS.get(platform_name, WELL_KNOWN_PYTHON_DIRS["posix"])
+    return [Path(template.format(minor=minor, compact=compact)) for template in templates]
+
+
+def find_search_path(
+    path: str | None,
+    directories: Sequence[Path],
+    excluded: Sequence[Path],
+    is_dir: Callable[[Path], bool] = Path.is_dir,
+) -> tuple[str, dict[str, list[str]]]:
+    """``PATH`` for one ``uv python find`` and where each of its entries came from.
+
+    The inherited ``path`` entries come first, unchanged and in order. Then each of
+    ``directories`` (deduplicated, in order) is appended once when it is not already present,
+    exists as a directory and does not lie under any of the ``excluded`` real roots (uv's
+    managed root, the project environments). The provenance lists the inherited entries, every
+    well-known directory considered and which were added, absent, excluded or already present.
+    """
+    inherited = [entry for entry in (path or "").split(os.pathsep) if entry]
+    seen = {os.path.normpath(entry) for entry in inherited}
+    considered = list(dict.fromkeys(directories))
+    added: list[str] = []
+    absent: list[str] = []
+    dropped: list[str] = []
+    present: list[str] = []
+    for directory in considered:
+        text = str(directory)
+        if os.path.normpath(text) in seen:
+            present.append(text)
+        elif not is_dir(directory):
+            absent.append(text)
+        elif any(Path(os.path.realpath(directory)).is_relative_to(root) for root in excluded):
+            dropped.append(text)
+        else:
+            seen.add(os.path.normpath(text))
+            added.append(text)
+    provenance = {
+        "inherited": inherited,
+        "well_known": [str(directory) for directory in considered],
+        "added": added,
+        "absent": absent,
+        "excluded": dropped,
+        "already_present": present,
+    }
+    return os.pathsep.join([*inherited, *added]), provenance
+
+
+def discovered_via(python: Path, provenance: Mapping[str, Sequence[str]]) -> str:
+    """Which search-path entry made ``python`` discoverable, for the receipt.
+
+    An entry names ``python`` when it is its directory or holds a link resolving to it (Homebrew's
+    ``opt`` directories are links into the Cellar). Added well-known directories are attributed
+    before inherited ones.
+    """
+    real = os.path.realpath(python)
+    for kind, key in (("well-known directory", "added"), ("inherited PATH entry", "inherited")):
+        for directory in provenance.get(key, ()):
+            if os.path.normpath(python.parent) == os.path.normpath(directory):
+                return f"{kind} {directory}"
+            if os.path.realpath(Path(directory) / python.name) == real:
+                return f"{kind} {directory}"
+    return "not attributable to a search-path entry"
 
 
 def find_uv(
@@ -523,29 +618,44 @@ def select_python(
     env: Mapping[str, str],
     requires: str,
     candidates: list[dict[str, Any]],
+    system_directories: Callable[[Sequence[int]], Sequence[Path]] = system_python_directories,
 ) -> tuple[Path, dict[str, Any]]:
     """The first :data:`PREFERRED_PYTHONS` interpreter fit to build the project runtime.
 
     A candidate is what ``uv python find`` names for ``requires`` intersected with the preferred
     minor, run with :data:`SYSTEM_FIND` and without :data:`DISCOVERY_DROPPED`, so neither a
-    ``.python-version`` pin nor project or user uv configuration chooses it. It is accepted only
-    when it is not under uv's managed directory (``uv python dir`` with :data:`MANAGED_DIR`, also
-    without :data:`DISCOVERY_DROPPED`) and its probe reports the requested minor
-    version and a release satisfying ``requires``. Each candidate's outcome is appended to
-    ``candidates``; a missing or rejected one moves on to the next, and none left fails the
-    bootstrap. Nothing is installed, downloaded or looked up under ``HOME``.
+    ``.python-version`` pin nor project or user uv configuration chooses it. That one lookup's
+    ``PATH`` is the inherited ``PATH`` followed by the existing well-known system directories
+    ``system_directories`` names for the minor (:func:`find_search_path`), so a restricted
+    sandbox ``PATH`` does not hide an installed system interpreter from uv; no executable is
+    trusted outright. A candidate is accepted only when it is not under uv's managed directory
+    (``uv python dir`` with :data:`MANAGED_DIR`, also without :data:`DISCOVERY_DROPPED`) and its
+    probe reports the requested minor version and a release satisfying ``requires``. Each
+    candidate's outcome and search-path provenance is appended to ``candidates``; a missing or
+    rejected one moves on to the next, and none left fails the bootstrap. Nothing is installed,
+    downloaded or looked up under ``HOME``.
     """
     find_env = discovery_environment(env)
     managed = _checked(runner, "bootstrap", managed_dir_argv(uv), root, find_env).strip()
     managed_root = os.path.realpath(managed) if managed else None
+    excluded = [Path(managed_root)] if managed_root else []
+    project_environment = env.get("UV_PROJECT_ENVIRONMENT")
+    if project_environment:
+        excluded.append(Path(os.path.realpath(project_environment)))
+    excluded.append(Path(os.path.realpath(root / ".venv")))
     for wanted in PREFERRED_PYTHONS:
         version = ".".join(str(part) for part in wanted)
         request = python_request(requires, wanted)
         entry: dict[str, Any] = {"requested": version, "request": request}
         candidates.append(entry)
+        search_path, provenance = find_search_path(
+            find_env.get("PATH"), system_directories(wanted), excluded
+        )
+        entry["search_path"] = provenance
+        lookup_env = {**find_env, "PATH": search_path} if search_path else find_env
         find = find_argv(uv, request)
         try:
-            completed = runner(find, root, find_env)
+            completed = runner(find, root, lookup_env)
         except (OSError, subprocess.SubprocessError) as error:
             detail = f"{uv} could not run ({type(error).__name__})"
             raise ProofFailure("bootstrap", detail) from error
@@ -555,6 +665,7 @@ def select_python(
             continue
         python = Path(found)
         entry["path"] = str(python)
+        entry["discovered_via"] = discovered_via(python, provenance)
         if managed_root and Path(os.path.realpath(python)).is_relative_to(managed_root):
             entry["outcome"] = "rejected: uv-managed Python"
             continue
@@ -587,6 +698,7 @@ def run_proof(
     which: Callable[[str], str | None] = shutil.which,
     executable: str = sys.executable,
     expected_sha: str | None = None,
+    system_directories: Callable[[Sequence[int]], Sequence[Path]] = system_python_directories,
 ) -> None:
     """Execute the proof, recording every fact into ``facts``; raise ``ProofFailure`` on a miss."""
     facts["control_runtime"] = {"executable": executable, "version": platform.python_version()}
@@ -623,7 +735,9 @@ def run_proof(
         uv_env = uv_environment(environ, scratch)
         candidates: list[dict[str, Any]] = []
         facts["python_candidates"] = candidates
-        base_python, base = select_python(runner, uv, root, uv_env, requires, candidates)
+        base_python, base = select_python(
+            runner, uv, root, uv_env, requires, candidates, system_directories
+        )
         base_info = version_info(base)
         facts["selected_python"] = {
             "path": str(base_python),

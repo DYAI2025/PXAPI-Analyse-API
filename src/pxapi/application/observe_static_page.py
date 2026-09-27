@@ -39,6 +39,11 @@ source URL happens to fit and dropping the rest would leave a half-measured page
 none of them silently would leave a gap a reader could attribute to the site. So the observation
 comes back empty with the reason stated, and the acquisition record carries that reason.
 
+**An error document is not page content (PXAPI-20.B, D-20-F).** A non-2xx response is still a
+received response and its transport facts are measured, but its body is never parsed: the
+document facts and the meta-robots channel are ``NOT_ASSESSED`` with ``UNSUPPORTED``, so the
+title of a 404 template can never be read as the selected page's title.
+
 The layer holds no transport and no parser: it is handed a reader and an id factory, which is
 what lets one frozen input produce byte-identical documents on every run.
 """
@@ -86,6 +91,15 @@ NOT_ASSESSED_FOR: Final[dict[FetchFailureKind, str]] = {
     FetchFailureKind.INVALID_REDIRECT: "PROVIDER_FAILURE",
     FetchFailureKind.PROTOCOL_ERROR: "PROVIDER_FAILURE",
 }
+
+#: The statuses whose body this profile reads as the page's own content. Any other received
+#: response is still measured — its status, final URL and headers are transport facts — but its
+#: body is an error or interim document, and what it declares is not the page's content (D-20-F).
+SUCCESS_STATUSES: Final = range(200, 300)
+
+#: Why the document facts of a non-2xx response were not assessed: this profile does not read an
+#: error document as page content. A statement about the profile, never about the page.
+NON_SUCCESS_NOT_ASSESSED: Final = "UNSUPPORTED"
 
 #: The media types this profile reads as a document. Anything else is a subject the document
 #: metrics do not apply to, which is a fact about the measurement and not about the page.
@@ -146,6 +160,8 @@ class DocumentStatus(StrEnum):
     NO_RESPONSE = "NO_RESPONSE"
     #: Nothing was observed, because this page's own URLs are not representable in our contracts.
     WITHHELD = "WITHHELD"
+    #: A response arrived with a non-2xx status, so its body was not read as page content.
+    NON_SUCCESS_STATUS = "NON_SUCCESS_STATUS"
 
 
 @dataclass(frozen=True)
@@ -229,6 +245,22 @@ class StaticPageObserver:
         measurements, status = self._measured(run_id, url_key, result, observed_at)
         return self._observation(tuple(measurements), status)
 
+    def observe_runtime_error(self, run_id: str, url_key: str, observed_at: str) -> PageObservation:
+        """Observe one selected page whose acquisition raised inside our own code.
+
+        Nothing about the page was established, so every metric is ``NOT_ASSESSED`` with
+        ``RUNTIME_ERROR`` at the selected identity — a statement about this service, never about
+        the page. The withhold rule applies exactly as it does to any other outcome.
+        """
+        withheld = withheld_reason_for(url_key)
+        if withheld is not None:
+            return PageObservation((), (), DocumentStatus.WITHHELD, withheld)
+        measurements = tuple(
+            self._not_assessed(run_id, metric, url_key, observed_at, "RUNTIME_ERROR")
+            for metric in PAGE_METRICS
+        )
+        return self._observation(measurements, DocumentStatus.NO_RESPONSE)
+
     def _observation(
         self, measurements: tuple[dict[str, Any], ...], status: DocumentStatus
     ) -> PageObservation:
@@ -282,7 +314,18 @@ class StaticPageObserver:
             known(Metric.CONTENT_TYPE, "OBSERVED", "TEXT", "text_value", content_type)
 
         # --- document facts --------------------------------------------------------------
-        if media_type_of(response.content_type) not in HTML_MEDIA_TYPES:
+        meta_noindex: GenericNoindex | None
+        if response.status_code not in SUCCESS_STATUSES:
+            # D-20-F. A 404 or a 503 page may well carry a title and a description, and they
+            # describe the error, not the page that was selected. Reading them as that page's
+            # content would turn an error template into business evidence, so the document is
+            # not parsed at all and the status stays the one visible fact about it.
+            self._not_assessed_for_document(
+                measurements, run_id, source_for, observed_at, NON_SUCCESS_NOT_ASSESSED
+            )
+            meta_noindex = None
+            status = DocumentStatus.NON_SUCCESS_STATUS
+        elif media_type_of(response.content_type) not in HTML_MEDIA_TYPES:
             for metric in HTML_METRICS:
                 performed(metric, "OBSERVED", "NOT_APPLICABLE")
             meta_noindex = GenericNoindex.NOT_APPLICABLE
@@ -319,6 +362,14 @@ class StaticPageObserver:
                 x_robots_tag_generic_noindex(response.x_robots_tag),
             ),
         ):
+            if observation is None:
+                # The meta channel is document content, and a non-2xx document was not read.
+                measurements.append(
+                    self._not_assessed(
+                        run_id, metric, source_for(metric), observed_at, NON_SUCCESS_NOT_ASSESSED
+                    )
+                )
+                continue
             self._noindex(measurements, run_id, source_for, observed_at, metric, observation)
 
         return measurements, status
@@ -371,6 +422,20 @@ class StaticPageObserver:
         for metric in HTML_METRICS:
             measurements.append(
                 self._not_assessed(run_id, metric, source_for(metric), observed_at, "RUNTIME_ERROR")
+            )
+
+    def _not_assessed_for_document(
+        self,
+        measurements: list[dict[str, Any]],
+        run_id: str,
+        source_for: Callable[[Metric], str],
+        observed_at: str,
+        reason: str,
+    ) -> None:
+        """Record, for every metric that needs a document, that none was assessed and why."""
+        for metric in HTML_METRICS:
+            measurements.append(
+                self._not_assessed(run_id, metric, source_for(metric), observed_at, reason)
             )
 
     def _document_metrics(

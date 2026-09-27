@@ -5,9 +5,15 @@
 Orchestrator / Product Owner authority (`D-20-M`).
 
 **Exact base:** `e4066161f5d31bb10fccb9d36baac4197e61fc02` (PXAPI-20.A merged).
-**Branch:** `agent/pxapi20b-20260927-001`.
-**Candidate SHA:** `<GOVERNOR POST-PUSH EXACT-SHA READBACK>` — deliberately not embedded; a commit
-cannot truthfully contain its own SHA.
+**Branch:** `agent/pxapi20b-20260927-001` (first authoring branch; the later repair and
+reconcile runs named in §5 each worked on their own `agent/pxapi20b-…` branch).
+**Proven candidate SHA:** `28e29a0aff59cd41a4bc1cb96030075082d9f4ad` — the descriptor-only
+activation head (`run-pxapi20b-proof-activate-20260927-004`, whose one intentional file change was
+`.agent-proofs.json`). Every executed figure in §4 and §5 is bound to **that** SHA. The commit that
+carries this reconciled document is a documentation-only head on top of `28e29a0`; it cannot
+truthfully contain its own SHA, so the Delivery Runner re-runs the mandatory real-boundary proof at
+the exact documentation result SHA and publishes fresh artifacts externally. Nothing in this file
+claims a merge, a PR, `main` CI on a merge SHA, or `PXAPI-20` Done.
 
 **Authority:** Jira `PXAPI-20` comments `16258`, `16259` (`D-20-A` … `D-20-P`), `16325`, `16656`;
 Confluence `54362115` v1, `55181314` v1, `40239107` v2, `39846055` v4.
@@ -77,38 +83,72 @@ than inventing an identity or letting a site fail the run.
 
 ## 4. Gate results
 
-| Gate | Result |
-| --- | --- |
-| `uv run ruff check .` / `ruff format --check .` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
-| `uv run pytest` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+Measured by the Delivery Runner on the exact head `28e29a0aff59cd41a4bc1cb96030075082d9f4ad`
+(`run-pxapi20b-proof-activate-20260927-004`):
 
-The authoring session had no shell tool, so it could not execute Ruff, pytest or the CLI. These
-fields are left for the runner's locked-runtime verification rather than filled with invented
-numbers.
+| Gate | Result at `28e29a0` |
+| --- | --- |
+| `uv run ruff check .` / `ruff format --check .` | green |
+| `uv run pytest` | `3307 passed, 2 skipped` |
+| exact-head GitHub Actions `python-compat` | run `36349224176`, `success` |
+
+**History, preserved.** The first authoring session, and the two repair authoring sessions of
+§5.1 and §5.2, had no shell tool and recorded here that the gates were not run in the authoring
+session, rather than invented numbers. The exact-head GitHub Actions run `36319802878` on an earlier head was
+**red** on Python 3.13 and 3.14 because `ruff format --check` would have reformatted the proof
+harness (§5.1). Those earlier heads are not the head the numbers above describe; the table applies
+to `28e29a0` only.
 
 ## 5. Real-boundary run
 
-| Field | Value |
+**Executed and verified** as the mandatory project-native proof `pxapi20b-real-boundary`
+(`.agent-proofs.json`, entrypoint `tools/pxapi20b_real_boundary_proof.py`) in
+`run-pxapi20b-proof-activate-20260927-004`, status **`VERIFIED`**, reason
+`VERIFIED_ORACLE_CHANGED/INDEPENDENT_REVIEW` — the descriptor `.agent-proofs.json` was the run's
+intentional one-file oracle change, so the verdict rests on the independent artifact review rather
+than on an unchanged oracle. Exact proof / candidate SHA
+`28e29a0aff59cd41a4bc1cb96030075082d9f4ad`.
+
+| Field | Observed at `28e29a0` |
 | --- | --- |
 | target | `https://www.rfc-editor.org/` (PXAPI-19 authorised origin) |
-| invocation | `uv run --locked python -m pxapi.adapters.inbound.acquire_cli https://www.rfc-editor.org/ --max-selected-pages 3 --output-dir docs/evidence/PXAPI-20B-real-boundary` |
-| equivalent opt-in smoke | `PXAPI_REAL_BOUNDARY_ACQUISITION_URL=https://www.rfc-editor.org/ PXAPI_REAL_BOUNDARY_OUTPUT_DIR=docs/evidence/PXAPI-20B-real-boundary uv run --locked pytest tests/smoke/test_real_boundary_acquisition_smoke.py` |
-| interpreter | `<NOT EXECUTED — record sys.version of the run>` |
-| run id / state | `<NOT EXECUTED>` |
-| inventory id / output digest | `<NOT EXECUTED>` |
-| manifest id / input / output digest / `selection_complete` / `incompleteness` | `<NOT EXECUTED>` |
-| page-acquisition / measurement / evidence set digests | `<NOT EXECUTED — receipt.json document_digests>` |
+| invocation | the production module `pxapi.adapters.inbound.acquire_cli`, run by the harness as the disposable project-runtime Python, with explicit `--max-selected-pages 3` and a fresh canonical output directory (`.proof-output/pxapi20b-real-boundary/canonical/`, untracked) |
+| equivalent opt-in smoke | `PXAPI_REAL_BOUNDARY_ACQUISITION_URL=https://www.rfc-editor.org/ PXAPI_REAL_BOUNDARY_OUTPUT_DIR=<dir> uv run --locked pytest tests/smoke/test_real_boundary_acquisition_smoke.py` — the smoke was **not** the proof driver; the harness above was |
+| selected interpreter | installed system `/opt/homebrew/opt/python@3.14/bin/python3.14`, Python `3.14.6` (`D-20-L`: measured-fast 3.14.x); disposable project runtime also `3.14.6`; `requires-python >=3.13,<3.15` |
+| `uv.lock` before / after | `sha256:c2479e8f90207cef2deac99b438f97f1865d80d1363dd4bef8c2665bff4c6a48` both times — unchanged |
+| run id / state | `px-8674bf01befc4c849bd77de39621c3c6` / `SUCCEEDED` |
+| inventory id / candidates / output digest | `px-fd7bfcac8620486e9b1bd4da242ede8e` / 506 / `sha256:530a0d1ba432e8d16a07dfaf50d3c1333395125488a738ebb3256b67b5ac52a8` |
+| manifest id / inventory ref | `px-4b401785ea504ca58238d5b46c1ec58d` / `px-fd7bfcac8620486e9b1bd4da242ede8e` |
+| manifest input / output digest | `sha256:d4fb624edb6b9a9cf1c77426b9addb9987ce606e8f2551812de0376e39852dbe` / `sha256:c1c60a53ddbffcf0f675184a75fdd4064e5517002154d7ce2c1ca3f62a5f82ac` |
+| `selected_count` / `selection_complete` / `incompleteness` | 3 / `false` / `SELECTION_BUDGET_EXHAUSTED`, 503 candidates excluded by budget |
+| page acquisitions | count 3, digest `sha256:7da87ce469c15c9e196c57cd6878fbff8e7bbb55deb334ab8134068641348e7d` |
+| measurements | count 39, digest `sha256:2906b46825bea203c89db3438f1f102940438f4657011eacdceeb5f92289107b` |
+| website evidence | count 39, digest `sha256:65fd06ca37eca95df604105216b9ea89c854427a5e58a581dff35d588c2c02a2` |
+| producer | `STATIC_HTTP_PAGE_FETCH` `1.0.0`, `observation_mode = STATIC_HTTP` on every record |
 
-Per-page table (to be filled from `receipt.json` → `pages`):
+Per-page table (from `receipt.json` → `pages`):
 
-| Rank | Page Ref | Outcome | HTTP | Measurement refs | Evidence refs | Neutral / withheld reason |
-| --- | --- | --- | --- | --- | --- | --- |
-| `<NOT EXECUTED>` | | | | | | |
+| Rank | Page Ref | Acquisition | Outcome | HTTP | Measurement refs | Evidence refs | Neutral / withheld reason | Body digest |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `https://www.rfc-editor.org/` | `px-962d9cd34e5a4254b7c670e21c20344b` | `RESPONSE_RECEIVED` | 200 | 13 | 13 | none | `sha256:aa92be14fdf91e745194166ead157cbb0c785487c90e6662b2491bf99321f575` |
+| 2 | `https://www.rfc-editor.org/about/contact/` | `px-3a947b34a667465e9462634910bd5549` | `RESPONSE_RECEIVED` | 200 | 13 | 13 | none | `sha256:540fdac418ebce976c7d9abf2a05a7055e5963961e48d5825d5bf5c4a7470838` |
+| 3 | `https://www.rfc-editor.org/about/rfc-editor/` | `px-6a1c2e6044c242a9acc1d67a4474c8af` | `RESPONSE_RECEIVED` | 200 | 13 | 13 | none | `sha256:6908f405d2525eb5942a0d3f26a976002f7f00d6045adf3421d413102564daba` |
 
-**The real-boundary run was not executed in the authoring session** (no shell tool). No artifact
-under `docs/evidence/PXAPI-20B-real-boundary/` is claimed, and no figure above is invented. The
-invocation is exact and `--output-dir` produces every artifact plus `receipt.json`, whose
-`pages` rows are this table's columns.
+Linkage as read back by the harness and re-checked by the independent artifact review: every
+selected URL is present in the bound inventory; selections and acquisitions are unique and in rank
+order; every measurement has exactly one page-acquisition owner and every evidence record resolves
+to that same page; the producer is `STATIC_HTTP_PAGE_FETCH 1.0.0` / `STATIC_HTTP` only. The
+independent review recomputed all ten published SHA-256 values, the canonical counts and digests and
+the linkage, with no findings.
+
+No artifact under `docs/evidence/PXAPI-20B-real-boundary/` is committed, and the proof output
+directory is untracked: the artifacts of record are the Agent-team publications listed in §5.4 by
+SHA-256 filename.
+
+**History, preserved.** The first authoring session had no shell tool and did not execute this
+run; every field above was then marked as not executed, no artifact was claimed and no figure was
+invented. §5.1 and §5.2 record the two repairs written in that same state. §5.3 records the
+repair chain that followed before the proof first succeeded.
 
 ### 5.1 Proof harness repair (`run-pxapi20b-proof-harness-repair-20260927-001`)
 
@@ -140,13 +180,14 @@ separate and uv-locked. This repair changes only the harness, its tests and this
 
 | Gate | Result |
 | --- | --- |
-| `uv run ruff check .` / `ruff format --check .` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
-| `uv run pytest` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+| `uv run ruff check .` / `ruff format --check .` | not run in that authoring session (no shell tool); superseded by the exact-head measurement at `28e29a0` in §4 |
+| `uv run pytest` | not run in that authoring session (no shell tool); superseded by the exact-head measurement at `28e29a0` in §4 |
 
-The authoring session again had no shell tool: formatting was applied by hand to the formatter's
-rules, not by running it. **The declared real-boundary execution is still pending**: the coding
-agent neither executed nor claims any network proof, no `proof-receipt.json` exists, and every
-`<NOT EXECUTED>` field above stands. No proof descriptor is added by this repair.
+Written at the time, preserved as history: the authoring session again had no shell tool, so
+formatting was applied by hand to the formatter's rules, not by running it; the declared
+real-boundary execution was still pending, the coding agent neither executed nor claimed any
+network proof, no `proof-receipt.json` existed, and no proof descriptor was added by this repair.
+That pending state ended with the run recorded in §5 and §5.4.
 
 ### 5.2 Oracle interpreter and canonical cardinality repair (`run-pxapi20b-oracle-cardinality-repair-20260927-002`)
 
@@ -191,17 +232,71 @@ acquisition command line's canonical-output boundary, their tests and this recor
 
 | Gate | Result |
 | --- | --- |
-| `uv run ruff check .` / `ruff format --check .` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
-| `uv run pytest` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+| `uv run ruff check .` / `ruff format --check .` | not run in that authoring session (no shell tool); superseded by the exact-head measurement at `28e29a0` in §4 |
+| `uv run pytest` | not run in that authoring session (no shell tool); superseded by the exact-head measurement at `28e29a0` in §4 |
 
-The authoring session again had no shell tool, so neither the tests, Ruff nor the proof could be
-executed here. **The declared real-boundary execution is still pending**: no `proof-receipt.json`
-exists, every `<NOT EXECUTED>` field above stands, and no proof descriptor is added.
+Written at the time, preserved as history: the authoring session again had no shell tool, so
+neither the tests, Ruff nor the proof could be executed there; the declared real-boundary
+execution was still pending, no `proof-receipt.json` existed and no proof descriptor was added.
+The canonical-container-cardinality repair described above is the change closed at
+`c1bf4cd57d1045bf73c93cfb64b7a4a594dcbb42` (`C-PXAPI-022` in the contradiction ledger).
+
+### 5.3 Proof interpreter / configuration / `PATH` discovery chain, and descriptor activation
+
+After §5.2 the proof still did not complete on the Agent-team host: the harness could not reliably
+select an installed system Python under the proof sandbox. The chain of repairs, each a separate
+Delivery Runner run and commit on the candidate, was:
+
+| Commit | Run | What it changed |
+| --- | --- | --- |
+| `64d8f22` | `run-pxapi20b-system-python-discovery-repair-20260927-001` | system-Python discovery for the proof interpreter |
+| `f32d023` | same run, correction 1 | correction to that discovery |
+| `2946709` | `run-pxapi20b-uv-env-isolation-repair-20260927-001` | isolation of the harness's `uv` calls from host `UV_*` variables and from project or user uv configuration |
+| `479bc1d` (`479bc1db4902bc914dfe32e77cd772935b48f46d`) | `run-pxapi20b-proof-path-discovery-repair-20260927-001` | `PATH` discovery: each `uv python find` sees the inherited `PATH` followed by the existing well-known system and package-manager interpreter directories for the requested minor, so a sandbox `PATH` that omits e.g. `/opt/homebrew/opt/python@3.14/bin` still resolves the installed interpreter — which is then probed and checked like any other candidate |
+| `28e29a0` (`28e29a0aff59cd41a4bc1cb96030075082d9f4ad`) | `run-pxapi20b-proof-activate-20260927-004` | **descriptor-only activation**: `.agent-proofs.json` registers `pxapi20b-real-boundary` as a mandatory proof with its ten artifacts and integrity roots `src/pxapi`, `contracts/v1`, `pyproject.toml`, `uv.lock`; no other file changed |
+
+The chain is closed at `479bc1d` and operationally proven by `28e29a0`, whose proof selected
+`/opt/homebrew/opt/python@3.14/bin/python3.14` (`3.14.6`) with downloads, uv-managed Pythons,
+`.python-version` and uv configuration all excluded (`C-PXAPI-023`). The end state is the harness
+docstring of `tools/pxapi20b_real_boundary_proof.py` at `28e29a0`. Each repair was an
+implementation or oracle repair under `D-20-L`, `D-20-M` and `D-20-O`; **no product or architecture
+decision was made**, and the decision ledger is unchanged by this chain. The failed states before
+`28e29a0` are not laundered: no run before `run-pxapi20b-proof-activate-20260927-004` produced a
+verified proof, and the runs named above exist because the earlier heads did not.
+
+### 5.4 Published artifacts of `run-pxapi20b-proof-activate-20260927-004`
+
+Agent-team artifact publications, named by SHA-256 of their content, for exact SHA `28e29a0`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `proof-receipt.json` | `0048f451c2054837bef55e3f5cdc1aa6156994df151a9790c65f1c9e8f146dfa` |
+| `canonical/analysis-run-request.json` | `b0971da579ceca96fbfa7690d589d82b9709f6300ba3acda317745ab86180b14` |
+| `canonical/analysis-run-state.json` | `c006ed5b315711412919b52e14a70fd42b4521dba2c2c5855698ae320c4663b6` |
+| `canonical/stage-execution-records.json` | `6125a6c4c4dda076b714495df48ec2816211f4f50511aa03c3484b37e25d96a7` |
+| `canonical/site-inventory.json` | `fdd5b2b758c3323ee0f21d849ba36c46268a75a63804d68a6a445cadfa0627a4` |
+| `canonical/sampling-manifest.json` | `41e502d53344c833831fc84087f0effcf163972a47932b649d841186588cc473` |
+| `canonical/page-acquisition-records.json` | `7742efe0b82ad4493708db5ea66410578aad36c41b9ad2cd356f2f174daac5b9` |
+| `canonical/measurement-records.json` | `cd18ece23e3e8879a4f94e7e686c07e5c9516c381b4e786d27fd1ad064a4c540` |
+| `canonical/website-evidence.json` | `ac18c493ceacc3c2632da8e750025b232c7fe3aa48dc35c7230833d3fcd9d76d` |
+| `canonical/receipt.json` | `c8f081a5ee210937805a79308769c0f1e317e8ad26adc4d5831cff99ff606694` |
+
+These are the artifacts of record; this repository commits none of them. Because the head that
+contains this document is later than `28e29a0`, the Delivery Runner re-executes the same mandatory
+proof at that documentation result SHA and publishes a fresh set, which will carry new run,
+inventory, manifest and acquisition ids and new artifact digests. That later set is evidence about
+its own SHA and is recorded by its own run, not by editing this table.
 
 ## 6. Evidence ceiling
 
-Even once executed, this proves one bounded, explicitly budgeted selection of one controlled
-public origin acquired safely into valid, linked, page-scoped canonical documents. It does **not**
-prove complete site coverage (the manifest's `selection_complete` is the only coverage
-statement), browser rendering, scoring validity, PDF readiness, production scale, or customer
-value.
+Executed, this proves **one bounded point-in-time selection of one controlled public origin over
+`STATIC_HTTP`**, acquired safely into valid, linked, page-scoped canonical documents at exact SHA
+`28e29a0`. It does **not** prove complete site coverage — `selection_complete = false` with
+`SELECTION_BUDGET_EXHAUSTED` is the only coverage statement, and 503 of 506 candidates were not
+fetched — nor browser rendering, scoring validity, PDF readiness, production scale, customer value,
+or that a future refetch of the same origin is deterministic. The boundary observed **three
+successes**; the neutral mixed-failure behaviour (200 / 404 / `TIMEOUT` / `DNS_FAILURE` in one
+run, §3) remains **regression evidence from tests** and is not claimed as observed in this receipt.
+Independent Governor review recommends `IC` / `R2G` / `R4M` `GREEN` for `28e29a0`; that
+recommendation, the gates themselves, PR creation, merge and `PXAPI-20` closeout are Orchestrator /
+Product Owner authority (`D-20-M`) and none of them is declared by this document.

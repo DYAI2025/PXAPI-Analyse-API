@@ -17,11 +17,12 @@ PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 > persistence, queueing, browser execution, SERP or business-context capability, and **no
 > authentication, authorisation, rate limiting or deployment**. It does not crawl: discovery
 > fetches the seed document, `/robots.txt` and sitemaps within a declared request bound, and
-> **fetches no discovered page**. Acquiring the selected pages is PXAPI-20 and is not
-> implemented here — PXAPI-20.A adds only its reusable foundation: the registered
-> `page-acquisition-record.v1` contract, its domain semantics and invariants, and an isolated
-> generic static-page observer that nothing calls yet. `contracts/` remains the versioned
-> vocabulary, as data rather than behavior, and is still the single contract authority.
+> **fetches no discovered page**. Acquiring the selected pages is PXAPI-20: 20.A added the
+> `page-acquisition-record.v1` contract, its domain semantics and invariants, and a generic
+> static-page observer; 20.B adds the bounded multi-page runtime and its command line below,
+> which fetch exactly the pages an explicitly budgeted manifest selected — static HTTP only,
+> no browser. `contracts/` remains the versioned vocabulary, as data rather than behavior,
+> and is still the single contract authority.
 
 ## Analysing a page
 
@@ -59,8 +60,26 @@ uv run python -m pxapi.adapters.inbound.discover_cli https://example.com/
 above. Discovery returns its own envelope — the accepted request, the run state, the stage
 executions, a `site-inventory.v1` and a `sampling-manifest.v1` — and PXAPI-19.B delivered it
 through the application path and that command line alone. PXAPI-19 introduced no HTTP
-discovery surface, this document describes none because none exists, and the pages the
-manifest selects are **not acquired**: acquiring them is PXAPI-20, which is not implemented.
+discovery surface, this document describes none because none exists, and the discovery
+command acquires none of the pages its manifest selects.
+
+Multi-page acquisition (PXAPI-20.B) is a third use case, also **command line only**:
+
+```bash
+# discover, select at most N pages, and acquire every selected page over static HTTP.
+# --max-selected-pages is required and has no default; --output-dir is optional.
+uv run python -m pxapi.adapters.inbound.acquire_cli https://example.com/ \
+  --max-selected-pages 3 --output-dir ./run-artifacts
+```
+
+`N` is the sampling manifest's declared selection budget and nothing else: every page the
+manifest selects is attempted exactly once and recorded as one `page-acquisition-record.v1`,
+in selection-rank order, with its page-scoped measurements and evidence. Whether the selection
+covered the site is the manifest's own `selection_complete` statement; no output claims more.
+A 4xx/5xx is a received response whose status is measured, but its document is not read as
+page content, and every per-page technical failure is recorded neutrally without failing the
+run. With `--output-dir`, each document set is written, read back, re-validated, and
+summarised per page in `receipt.json`.
 
 **A technical failure is never a finding about the website.** A timeout, a DNS failure, a
 refused target, a broken parser and a response we cannot decode each record why *our process*
@@ -266,6 +285,7 @@ entry that is stale, unearned, outside a layer or blanket fails on its own. The 
 | `adapters/web/html_links.py`, `adapters/web/site_discovery.py` | PXAPI-19.B |
 | `adapters/inbound/discover_cli.py`, `config/discovery_limits.py` | PXAPI-19.B |
 | `domain/page_acquisition.py`, `application/observe_static_page.py` | PXAPI-20.A |
+| `application/acquire_selected_pages.py`, `adapters/inbound/acquire_cli.py` | PXAPI-20.B |
 
 ### The Analysis Run lifecycle
 

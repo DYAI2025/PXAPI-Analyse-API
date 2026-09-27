@@ -1,7 +1,7 @@
 # PXAPI Project State
 
 **Snapshot date:** 2026-09-19  
-**Execution mode:** `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1. `WIP=1` is this implementation theme and it is the only one; the PXAPI-19 closeout theme is finished. PXAPI-20 is delivered as two sequential PR candidates under one Jira item, `20.A` then `20.B` (Jira `PXAPI-20` comment `16259`, `D-20-K`). The current candidate is `20.A — Static Page Evidence Foundation`; neither its merge nor its green gates make `PXAPI-20` Done.  
+**Execution mode:** `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1. `WIP=1` is this implementation theme and it is the only one; the PXAPI-19 closeout theme is finished. PXAPI-20 is delivered as two sequential PR candidates under one Jira item, `20.A` then `20.B` (Jira `PXAPI-20` comment `16259`, `D-20-K`). `20.A — Static Page Evidence Foundation` is merged (`e4066161…`); the current candidate is `20.B — Multi-Page Runtime & Real-Boundary`. Neither candidate's merge nor its green gates alone make `PXAPI-20` Done.  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
 **19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`  
 **19.B integrated implementation baseline (historical; no longer `main`):** `fe8d838023c8f9967151cad9aa1981e76dcf7d75`  
@@ -143,6 +143,22 @@ and `oracle/` are each a **0-byte** diff against the base, so the candidate adds
 changes no CI, changes no existing contract and changes no homepage behaviour.
 
 **Hard amendments that bound 20.A** (comment `16259`): `AnalyzeHomepage` is not refactored, subclassed, extracted in place or behaviourally modified, and `H1`–`H5` are not repaired in this slice (`D-20-E`, see `C-PXAPI-018`); the static-page path is a separate generic observation path; the **producer** observes with `observation_mode = STATIC_HTTP` only, while the contract carries the architecture's own `STATIC_HTTP | RENDERED_BROWSER` vocabulary (`D-20-C` as reconciled by `F-20A-R4M-001`); page linkage uses `measurement_refs` and neither `measurement-record.v1` nor `website-evidence.v1` is versioned to carry page identity (`D-20-B`); site-caused and technical outcomes stay neutral while PXAPI's own contract/invariant defects stay visible run failures (`D-20-D`); `raw_artifact_ref` exists as optional opaque provenance and is never emitted (`D-20-H`); the HTML parser is not altered and `H7` is an operational precondition rather than a blocker (`D-20-L`, see `C-PXAPI-019`); existing `SafePageFetcher` safety coverage is not duplicated to raise test volume (`D-20-O`); after 20.B merges with green gates, feature development **stops** for the first real customer/prospect pilot (`D-20-P`).
+
+### PXAPI-20.B candidate
+
+**State:** candidate on branch `agent/pxapi20b-20260927-001`, **not** on `main`. Base
+`e4066161f5d31bb10fccb9d36baac4197e61fc02` (PXAPI-20.A merged, PR #20). Evidence
+`docs/evidence/PXAPI-20B-multi-page-runtime.md`. DRS `IC` / `R2G` / `R4M` are Orchestrator and
+Product Owner authority and are **not** declared here. The paragraphs on the 20.A candidate
+above are kept as history; 20.A is merged.
+
+What the candidate adds: `src/pxapi/application/acquire_selected_pages.py` (the orchestrator:
+discovery → admission → one static fetch per selected page → acquisition record → page-scoped
+measurements and evidence); an admission gate in `domain/page_acquisition.py` that runs before
+any fetch; `build_site_acquisition` in the composition root; `adapters/inbound/acquire_cli.py`
+with a **required** `--max-selected-pages N` and no default; the D-20-F reading constraint in the
+observer (a non-2xx document is not parsed as page content); focused tests and an opt-in
+multi-page real-boundary smoke. Two `PXAPI-20.B` entries join `BEHAVIOR_ALLOWED`.
 
 ## Completed prerequisite
 

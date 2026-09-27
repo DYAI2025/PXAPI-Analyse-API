@@ -18,8 +18,10 @@ from pxapi.adapters.contracts.registry import ContractRegistry
 from pxapi.adapters.web.html_observations import read_html
 from pxapi.adapters.web.page_fetcher import SafePageFetcher
 from pxapi.adapters.web.site_discovery import HttpSiteDiscovery
+from pxapi.application.acquire_selected_pages import AcquireSelectedPages
 from pxapi.application.analyze_homepage import AnalyzeHomepage
 from pxapi.application.discover_site import DiscoverSite
+from pxapi.application.observe_static_page import StaticPageObserver
 from pxapi.config.contract_root import contract_root
 from pxapi.config.discovery_limits import DEFAULT_DISCOVERY_LIMITS
 from pxapi.config.fetch_limits import DEFAULT_FETCH_LIMITS
@@ -82,4 +84,40 @@ def build_site_discovery(
         # constructs its own use case with a declared ``SelectionBudgets``, and that declared
         # budget then travels in the manifest planned under it, where a reader can see it.
         budgets=SelectionBudgets(),
+    )
+
+
+def build_site_acquisition(
+    budgets: SelectionBudgets,
+    registry: ContractRegistry | None = None,
+    clock: Callable[[], datetime] = utc_now,
+    new_id: Callable[[], str] = new_identifier,
+) -> AcquireSelectedPages:
+    """The real multi-page acquisition use case (PXAPI-20.B).
+
+    ``budgets`` is required and has no default: the operator declares the selection bound
+    (D-20-A), it becomes the manifest's own declared budget, and nothing here truncates the
+    selection a second time. Discovery is wired exactly as ``build_site_discovery`` wires it, and
+    every selected page is fetched by the same strict ``SafePageFetcher`` the homepage analysis
+    uses; no argument here can relax the target policy or widen a bound.
+    """
+    registry = registry or default_registry()
+    discover = DiscoverSite(
+        discovery=HttpSiteDiscovery(
+            fetch_limits=DEFAULT_FETCH_LIMITS, limits=DEFAULT_DISCOVERY_LIMITS
+        ),
+        clock=clock,
+        new_id=new_id,
+        budgets=budgets,
+    )
+    return AcquireSelectedPages(
+        discover=discover,
+        fetcher=SafePageFetcher(limits=DEFAULT_FETCH_LIMITS),
+        observer=StaticPageObserver(
+            read_html=read_html,
+            new_id=new_id,
+            max_text_length=registry.max_single_line_text(),
+        ),
+        clock=clock,
+        new_id=new_id,
     )

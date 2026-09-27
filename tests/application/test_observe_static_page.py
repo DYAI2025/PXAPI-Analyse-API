@@ -29,6 +29,8 @@ import pytest
 from pxapi.adapters.contracts.registry import ContractRegistry
 from pxapi.adapters.web.html_observations import read_html
 from pxapi.application.observe_static_page import (
+    HTML_METRICS,
+    NON_SUCCESS_NOT_ASSESSED,
     NOT_ASSESSED_FOR,
     PAGE_METRICS,
     SCENARIO_SELECTED_PAGE_STATIC_FETCH,
@@ -299,6 +301,46 @@ def test_a_non_2xx_response_is_measured_and_judged_by_nothing() -> None:
     assert facts[Metric.HTTP_STATUS.value]["result"]["integer_value"] == 503
     assert state_of(facts[Metric.HTTP_STATUS.value]) == "KNOWN"
     assert_documents_validate(observation)
+
+
+@pytest.mark.parametrize("status", [301, 404, 500, 503])
+def test_a_non_2xx_error_document_is_never_parsed_as_page_content(status: int) -> None:
+    """PXAPI-20.B, D-20-F: the title of an error template is not the selected page's title."""
+    calls: list[bytes] = []
+
+    def spy(body: bytes, _charset: str | None = None):
+        calls.append(body)
+        return read_html(body)
+
+    observation = observe(response(status=status, body=page_body(title="Fehler")), read=spy)
+    facts = by_metric(observation)
+    assert calls == []
+    assert observation.document_status is DocumentStatus.NON_SUCCESS_STATUS
+    for metric in (*HTML_METRICS, Metric.META_ROBOTS_GENERIC_NOINDEX_PRESENT):
+        assert reason_of(facts[metric.value]) == NON_SUCCESS_NOT_ASSESSED
+    assert state_of(facts[Metric.X_ROBOTS_TAG_GENERIC_NOINDEX_PRESENT.value]) == "KNOWN"
+    assert len(observation.measurements) == len(PAGE_METRICS)
+    assert_documents_validate(observation)
+
+
+def test_a_2xx_response_is_still_read_as_page_content() -> None:
+    """Canary: the success range is not accidentally empty."""
+    facts = by_metric(observe(response(status=204)))
+    assert facts[Metric.PAGE_TITLE.value]["result"]["text_value"] == "Leistungen"
+
+
+def test_a_runtime_error_observation_is_neutral_for_every_metric() -> None:
+    observation = observer().observe_runtime_error(RUN_ID, PAGE, OBSERVED_AT)
+    assert observation.document_status is DocumentStatus.NO_RESPONSE
+    assert [m["metric_id"] for m in observation.measurements] == [m.value for m in PAGE_METRICS]
+    assert {reason_of(m) for m in observation.measurements} == {"RUNTIME_ERROR"}
+    assert_documents_validate(observation)
+
+
+def test_a_runtime_error_on_an_unrepresentable_identity_is_withheld() -> None:
+    observation = observer().observe_runtime_error(RUN_ID, UNREPRESENTABLE, OBSERVED_AT)
+    assert observation.measurements == () and observation.evidence == ()
+    assert observation.withheld_reason == MEASUREMENTS_WITHHELD_SOURCE_URL
 
 
 # --- site-controlled canonical links -----------------------------------------------------------

@@ -1,0 +1,116 @@
+# PXAPI-20.B — Multi-Page Runtime & Real-Boundary
+
+**Slice:** `PXAPI-20.B`, the second of the two sequential PR candidates of Jira `PXAPI-20`
+(`D-20-K`). **This document does not declare `IC`, `R2G`, `R4M` or `PXAPI-20` Done** — those are
+Orchestrator / Product Owner authority (`D-20-M`).
+
+**Exact base:** `e4066161f5d31bb10fccb9d36baac4197e61fc02` (PXAPI-20.A merged).
+**Branch:** `agent/pxapi20b-20260927-001`.
+**Candidate SHA:** `<GOVERNOR POST-PUSH EXACT-SHA READBACK>` — deliberately not embedded; a commit
+cannot truthfully contain its own SHA.
+
+**Authority:** Jira `PXAPI-20` comments `16258`, `16259` (`D-20-A` … `D-20-P`), `16325`, `16656`;
+Confluence `54362115` v1, `55181314` v1, `40239107` v2, `39846055` v4.
+
+## 1. What this candidate builds
+
+`Target → SiteInventory → SamplingManifest → admission → PageFetchPort (SafePageFetcher) →
+PageAcquisitionRecord(STATIC_HTTP) → MeasurementRecords → WebsiteEvidence`.
+
+| Module | Change |
+| --- | --- |
+| `src/pxapi/application/acquire_selected_pages.py` | **new** — the orchestrator |
+| `src/pxapi/domain/page_acquisition.py` | admission gate added (`ADMISSION_RULES`, `admitted_page_refs`, `SelectionNotAdmissible`); 20.A content unchanged |
+| `src/pxapi/application/observe_static_page.py` | `D-20-F` reading constraint for non-2xx; `observe_runtime_error` |
+| `src/pxapi/adapters/composition.py` | `build_site_acquisition(budgets, …)` — `budgets` required |
+| `src/pxapi/adapters/inbound/acquire_cli.py` | **new** — required `--max-selected-pages N`, optional `--output-dir` |
+| tests | `tests/application/test_acquire_selected_pages.py`, `tests/adapters/test_acquire_cli.py`, `tests/smoke/test_real_boundary_acquisition_smoke.py`, additions to `tests/application/test_observe_static_page.py`, `tests/test_package_scaffold.py` (+2 `PXAPI-20.B` entries) |
+
+Protected and unchanged: `analyze_homepage.py`, `derive_findings.py`, `discover_site.py`,
+`adapters/web/**`, `ports/**`, `config/**`, `contracts/v1/**`, `pyproject.toml`, `uv.lock`,
+`.github/`, `oracle/`. No contract, dependency or workflow changed.
+
+## 2. Decisions realised, and how
+
+| Decision | Realisation |
+| --- | --- |
+| `D-20-A` explicit bound, no secondary truncation | CLI `--max-selected-pages` is `required=True`, validated (ASCII whole number ≥ 1), and becomes `SelectionBudgets(max_selected_pages=N)` on the manifest. The orchestrator iterates **every** admitted selection; there is no other bound. `build_site_acquisition` has no default for `budgets`, and the existing `build_site_discovery` still declares none. |
+| `D-20-B` linkage, admission before fetch | `admitted_page_refs` refuses, before any fetch: wrong run, manifest not naming/pinning its inventory, inventory or manifest digest that does not reproduce, empty selection, duplicate Page Ref/rank, unknown or ineligible Page Ref. Records carry `measurement_refs`; no carrier contract was versioned. |
+| `D-20-C` static producer only | Every record: `STATIC_HTTP`, `STATIC_HTTP_PAGE_FETCH`, `1.0.0`. |
+| `D-20-D` neutral containment; our defects visible | Every fetch outcome, a fetch-path exception (`RUNTIME_ERROR`) and a port-contract breach are contained per page. A producer-invariant violation or an observation that raises fails the run (`PAGE_ACQUISITION_NOT_EMITTABLE`) and withholds all page documents; failed admission fails it as `SAMPLING_MANIFEST_NOT_ADMISSIBLE`. |
+| `D-20-F` non-2xx | Status, final URL and headers measured; the body is **not parsed**; document facts and the meta-robots channel are `NOT_ASSESSED / UNSUPPORTED`. |
+| `D-20-G` run timing | `entered_at` reproduced from the discovery run state unchanged. |
+| `D-20-H` | `raw_artifact_ref` never emitted; `body_digest` over decoded bytes whenever `body_decoded`. |
+| `D-20-J` | The seed goes through the same observer as every page; no finding is emitted anywhere. |
+| `D-20-O` | No `SafePageFetcher` unit case cloned; integration tests only prove the boundary sits in front of each page. |
+
+**One declared choice.** A redirect ending at a URL the Domain cannot canonicalise (raw
+backslash, malformed escape) has no `final_url_key`, which the contract requires on a received
+response. It is recorded as `INVALID_REDIRECT` — a redirect this service could not carry — rather
+than inventing an identity or letting a site fail the run.
+
+## 3. Test evidence (what the new tests prove)
+
+- exactly one attempt and one record per selection, in rank order; stage `PAGE_ACQUISITION`
+- budget 2 over 4 eligible pages → `selection_complete: false`, cause `SELECTION_BUDGET_EXHAUSTED`,
+  exactly 2 fetches (no secondary truncation, no over-fetch)
+- linkage: every measurement owned by exactly one record; every evidence resolves to one page
+- mixed 200 / 404 / `TIMEOUT` / exception in one run → run `SUCCEEDED`, siblings intact
+- 404, 410, 500, 503: error-document title never appears in output; parser never called
+- every `FetchFailureKind`, truncated body, undecodable body, unsupported media type, parser
+  failure, unkeyable redirect target, port-contract breach
+- replay: one frozen input serialises identically twice; a canary proves the comparison bites
+- admission: eight tampering cases, each fails before any fetch and names its rule; every
+  `ADMISSION_RULES` entry has a counterexample
+- our defects: duplicate identities (invariant failure) and a raising observer both fail the run
+  with all page documents withheld
+- production wiring: `SafePageFetcher` with the shipped `PublicTargetPolicy` class; with only its
+  DNS answer faked, private, link-local, partial-rebinding answers → `BLOCKED_TARGET` and a
+  resolver failure → `DNS_FAILURE` on every selected page, no socket opened
+- loopback integration through the real fetcher: `TOO_MANY_REDIRECTS`, `INVALID_REDIRECT`,
+  truncation, 404, undecodable `br` body
+- CLI: missing flag and seven invalid values exit 2; artifacts written, read back, re-validated;
+  a record order altered on disk is caught by the read-back
+
+## 4. Gate results
+
+| Gate | Result |
+| --- | --- |
+| `uv run ruff check .` / `ruff format --check .` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+| `uv run pytest` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+
+The authoring session had no shell tool, so it could not execute Ruff, pytest or the CLI. These
+fields are left for the runner's locked-runtime verification rather than filled with invented
+numbers.
+
+## 5. Real-boundary run
+
+| Field | Value |
+| --- | --- |
+| target | `https://www.rfc-editor.org/` (PXAPI-19 authorised origin) |
+| invocation | `uv run --locked python -m pxapi.adapters.inbound.acquire_cli https://www.rfc-editor.org/ --max-selected-pages 3 --output-dir docs/evidence/PXAPI-20B-real-boundary` |
+| equivalent opt-in smoke | `PXAPI_REAL_BOUNDARY_ACQUISITION_URL=https://www.rfc-editor.org/ PXAPI_REAL_BOUNDARY_OUTPUT_DIR=docs/evidence/PXAPI-20B-real-boundary uv run --locked pytest tests/smoke/test_real_boundary_acquisition_smoke.py` |
+| interpreter | `<NOT EXECUTED — record sys.version of the run>` |
+| run id / state | `<NOT EXECUTED>` |
+| inventory id / output digest | `<NOT EXECUTED>` |
+| manifest id / input / output digest / `selection_complete` / `incompleteness` | `<NOT EXECUTED>` |
+| page-acquisition / measurement / evidence set digests | `<NOT EXECUTED — receipt.json document_digests>` |
+
+Per-page table (to be filled from `receipt.json` → `pages`):
+
+| Rank | Page Ref | Outcome | HTTP | Measurement refs | Evidence refs | Neutral / withheld reason |
+| --- | --- | --- | --- | --- | --- | --- |
+| `<NOT EXECUTED>` | | | | | | |
+
+**The real-boundary run was not executed in the authoring session** (no shell tool). No artifact
+under `docs/evidence/PXAPI-20B-real-boundary/` is claimed, and no figure above is invented. The
+invocation is exact and `--output-dir` produces every artifact plus `receipt.json`, whose
+`pages` rows are this table's columns.
+
+## 6. Evidence ceiling
+
+Even once executed, this proves one bounded, explicitly budgeted selection of one controlled
+public origin acquired safely into valid, linked, page-scoped canonical documents. It does **not**
+prove complete site coverage (the manifest's `selection_complete` is the only coverage
+statement), browser rendering, scoring validity, PDF readiness, production scale, or customer
+value.

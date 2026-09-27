@@ -14,6 +14,7 @@ carries the fetcher's real outcomes through to truthful records.
 
 from __future__ import annotations
 
+import copy
 import inspect
 import json
 from pathlib import Path
@@ -40,6 +41,7 @@ from pxapi.domain.site_discovery import (
 from tests.adapters.http_test_server import ControlledHttpServer, Route, loopback_policy
 from tests.application.test_acquire_selected_pages import (
     ORIGIN,
+    REQUEST,
     SELECTED,
     FakeFetcher,
     build,
@@ -138,24 +140,33 @@ def test_the_output_check_covers_every_page_document_contract() -> None:
     ]
 
 
+def run_into(out: Path, capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
+    """One successful stubbed run publishing into ``out``; the envelope it printed."""
+    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 0
+    return json.loads(capsys.readouterr().out)
+
+
+def listing(directory: Path) -> dict[str, bytes]:
+    return {path.name: path.read_bytes() for path in directory.iterdir()}
+
+
 def test_the_artifacts_are_written_read_back_and_summarised_per_page(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     stub(monkeypatch)
     out = tmp_path / "run"
-    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 0
-    capsys.readouterr()
+    envelope = run_into(out, capsys)
 
     for _contract, file_name in acquire_cli.PRODUCED_DOCUMENTS.values():
         assert (out / file_name).is_file(), file_name
-    assert acquire_cli.read_back_problems(out, CONTRACTS) == []
+    assert set(listing(out)) == set(acquire_cli.expected_bundle(envelope))
+    assert acquire_cli.read_back_problems(out, CONTRACTS, envelope) == []
 
     receipt = json.loads((out / acquire_cli.RECEIPT_FILE).read_text(encoding="utf-8"))
+    assert receipt["run_id"] == envelope["analysis_run_state"]["run_id"]
     assert receipt["run_state"] == "SUCCEEDED"
     assert receipt["sampling_manifest"]["selection_complete"] is False
-    assert receipt["sampling_manifest"]["incompleteness"] == {
-        "cause": "SELECTION_BUDGET_EXHAUSTED"
-    }
+    assert receipt["sampling_manifest"]["incompleteness"] == {"cause": "SELECTION_BUDGET_EXHAUSTED"}
     assert [row["selection_rank"] for row in receipt["pages"]] == [1, 2, 3]
     assert [row["url_key"] for row in receipt["pages"]] == SELECTED[:3]
     measurements = json.loads((out / "measurement-records.json").read_text(encoding="utf-8"))
@@ -180,14 +191,164 @@ def test_the_read_back_sees_an_artifact_altered_on_disk(
 ) -> None:
     stub(monkeypatch)
     out = tmp_path / "run"
-    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 0
-    capsys.readouterr()
+    envelope = run_into(out, capsys)
 
     path = out / "page-acquisition-records.json"
     records = json.loads(path.read_text(encoding="utf-8"))
     path.write_text(json.dumps(list(reversed(records))), encoding="utf-8")
-    problems = acquire_cli.read_back_problems(out, CONTRACTS)
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, envelope)
+    assert "page-acquisition-records.json: differs from what this run wrote" in problems
     assert any("one_record_per_selection" in problem for problem in problems), problems
+
+
+# --- one run, one fresh bundle -----------------------------------------------------------------
+
+PAGE_MEMBERS = ("page_acquisitions", "measurements", "website_evidence")
+
+
+def test_a_successful_output_directory_is_not_reused_by_another_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    declared = stub(monkeypatch)
+    out = tmp_path / "run"
+    envelope = run_into(out, capsys)
+    before = listing(out)
+
+    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "2", "--output-dir", str(out)]) == 2
+    captured = capsys.readouterr()
+    assert "already exists" in captured.err
+    assert captured.out == ""
+    # Refused before a second acquisition started, and nothing on disk was touched.
+    assert len(declared) == 1
+    assert listing(out) == before
+    assert acquire_cli.read_back_problems(out, CONTRACTS, envelope) == []
+
+
+def test_an_empty_pre_existing_output_directory_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    declared = stub(monkeypatch)
+    out = tmp_path / "run"
+    out.mkdir()
+    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 2
+    captured = capsys.readouterr()
+    assert "already exists" in captured.err
+    assert ORIGIN not in captured.err
+    assert declared == []
+    assert listing(out) == {}
+
+
+def test_the_output_directory_is_created_atomically_even_if_it_appears_mid_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "run"
+    # The directory appears after the early check, while the acquisition runs.
+    stub(monkeypatch, tamper=lambda envelope: out.mkdir())
+    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 2
+    assert "already exists" in capsys.readouterr().err
+    assert listing(out) == {}
+
+
+def test_writing_never_merges_into_an_existing_directory(tmp_path: Path) -> None:
+    out = tmp_path / "run"
+    out.mkdir()
+    envelope = build(FakeFetcher(), 3).run(dict(REQUEST))
+    with pytest.raises(FileExistsError):
+        acquire_cli.write_artifacts(out, envelope)
+    assert listing(out) == {}
+
+
+def test_an_unwritable_output_location_is_an_output_failure_without_the_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    blocker = tmp_path / "file"
+    blocker.write_text("x", encoding="utf-8")
+    out = blocker / "run"
+    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 3
+    captured = capsys.readouterr()
+    assert "could not be written" in captured.err
+    assert ORIGIN not in captured.err
+    assert captured.out == ""
+
+
+def test_a_deleted_managed_file_fails_the_read_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    out = tmp_path / "run"
+    envelope = run_into(out, capsys)
+    (out / "measurement-records.json").unlink()
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, envelope)
+    assert "measurement-records.json: missing" in problems
+    assert any("refs_name_a_measurement" in problem for problem in problems), problems
+
+
+def test_a_partially_written_file_fails_the_read_back_without_crashing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    out = tmp_path / "run"
+    envelope = run_into(out, capsys)
+    path = out / "page-acquisition-records.json"
+    raw = path.read_bytes()
+    path.write_bytes(raw[: len(raw) // 2])
+    (out / acquire_cli.RECEIPT_FILE).write_bytes(b"\xff\xfe")
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, envelope)
+    assert "page-acquisition-records.json: differs from what this run wrote" in problems
+    assert "page-acquisition-records.json: not valid JSON" in problems
+    assert f"{acquire_cli.RECEIPT_FILE}: not valid JSON" in problems
+    assert acquire_cli.read_back_problems(out, CONTRACTS, envelope) == problems
+
+
+def test_a_managed_file_of_a_member_this_run_did_not_emit_fails_the_read_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    full = run_into(tmp_path / "full", capsys)
+    without_pages = {k: v for k, v in full.items() if k not in PAGE_MEMBERS}
+    out = tmp_path / "run"
+    acquire_cli.write_artifacts(out, without_pages)
+    assert acquire_cli.read_back_problems(out, CONTRACTS, without_pages) == []
+
+    stale = tmp_path / "full" / "page-acquisition-records.json"
+    (out / stale.name).write_bytes(stale.read_bytes())
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, without_pages)
+    assert problems == ["page-acquisition-records.json: not part of this run's bundle"]
+
+
+def test_artifacts_of_another_run_fail_the_read_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    envelope = run_into(tmp_path / "a", capsys)
+    other = run_into(tmp_path / "b", capsys)
+    other_run = other["analysis_run_state"]["run_id"]
+    assert other_run != envelope["analysis_run_state"]["run_id"]
+
+    name = "measurement-records.json"
+    (tmp_path / "a" / name).write_bytes((tmp_path / "b" / name).read_bytes())
+    problems = acquire_cli.read_back_problems(tmp_path / "a", CONTRACTS, envelope)
+    assert f"{name}: differs from what this run wrote" in problems
+    assert any(problem.startswith(f"{name}/0: does not belong to run") for problem in problems)
+
+
+def test_a_bundle_mixing_runs_fails_the_binding_check_even_when_its_bytes_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stub(monkeypatch)
+    envelope = run_into(tmp_path / "a", capsys)
+    other = run_into(tmp_path / "b", capsys)
+    mixed = copy.deepcopy(envelope)
+    mixed["measurements"][0]["run_id"] = other["analysis_run_state"]["run_id"]
+    mixed["sampling_manifest"]["inventory_output_digest"] = "sha256:" + "0" * 64
+    out = tmp_path / "mixed"
+    acquire_cli.write_artifacts(out, mixed)
+
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, mixed)
+    run_id = envelope["analysis_run_state"]["run_id"]
+    assert f"measurement-records.json/0: does not belong to run {run_id}" in problems
+    assert "sampling-manifest.json: not bound to this bundle's site inventory" in problems
 
 
 def test_a_credential_bearing_target_is_refused_without_being_echoed(

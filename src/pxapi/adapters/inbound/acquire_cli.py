@@ -16,6 +16,12 @@ website. With ``--output-dir`` each canonical document set is also written as a 
 from disk, re-validated and re-checked against the producer invariants, and summarised as a
 per-page ``receipt.json`` that follows the evidence chain the contracts define.
 
+The output directory is one run's bundle and nothing else. It must not exist beforehand: it is
+created atomically, every file in it is created exclusively, and an existing directory — even an
+empty one — is refused rather than reused, so artifacts of two runs can never be mixed. The
+read-back then requires the exact bundle this run emitted: every expected file present with
+exactly the bytes written, no other entry, and every document bound to this one run.
+
 Run it as ``python -m pxapi.adapters.inbound.acquire_cli <url> --max-selected-pages N``.
 """
 
@@ -162,42 +168,129 @@ def page_receipt(envelope: dict[str, Any]) -> dict[str, Any]:
     return receipt
 
 
+def expected_bundle(envelope: dict[str, Any]) -> dict[str, Any]:
+    """``file name -> value`` for exactly the files this run publishes, receipt included."""
+    bundle = {
+        file_name: envelope[member]
+        for member, (_contract, file_name) in PRODUCED_DOCUMENTS.items()
+        if member in envelope
+    }
+    bundle[RECEIPT_FILE] = page_receipt(envelope)
+    return bundle
+
+
 def write_artifacts(directory: Path, envelope: dict[str, Any]) -> None:
-    """Every produced document set as one readable JSON file, and the receipt beside them."""
-    directory.mkdir(parents=True, exist_ok=True)
-    for member, (_contract, file_name) in PRODUCED_DOCUMENTS.items():
-        if member in envelope:
-            _write_json(directory / file_name, envelope[member])
-    _write_json(directory / RECEIPT_FILE, page_receipt(envelope))
+    """Publish this run's bundle into a directory created for it, and only for it.
 
-
-def read_back_problems(directory: Path, registry: ContractRegistry) -> list[str]:
-    """Everything wrong with the artifacts *as read back from disk*, or nothing.
-
-    Re-validates every document against its contract and re-applies the acquisition producer
-    invariants to the set, so what a reader opens is what was checked — not merely what was
-    held in memory before it was written.
+    ``mkdir`` without ``exist_ok`` is the atomic create: it raises ``FileExistsError`` for any
+    existing entry, an empty directory included, so no earlier run's files can be merged with
+    this one's. Each file is then created exclusively, never overwritten.
     """
-    loaded: dict[str, Any] = {}
-    for member, (_contract, file_name) in PRODUCED_DOCUMENTS.items():
+    directory.mkdir(parents=True)
+    for file_name, value in expected_bundle(envelope).items():
+        with (directory / file_name).open("x", encoding="utf-8") as handle:
+            handle.write(_serialise(value))
+
+
+def read_back_problems(
+    directory: Path, registry: ContractRegistry, envelope: dict[str, Any]
+) -> list[str]:
+    """Everything wrong with the bundle *as read back from disk*, or nothing.
+
+    The bundle is checked against the one ``envelope`` it was written from: every expected file
+    must be present with exactly the bytes this run wrote, and no other entry may exist. What
+    was read is then re-validated against its contract, bound to this run, and re-checked
+    against the acquisition producer invariants, so what a reader opens is what was checked.
+    An unreadable or malformed file is reported, never raised.
+    """
+    expected = expected_bundle(envelope)
+    try:
+        present = sorted(entry.name for entry in directory.iterdir())
+    except OSError as error:
+        return [f"{directory.name}: output directory unreadable ({type(error).__name__})"]
+    unexpected = [name for name in present if name not in expected]
+    problems = [f"{name}: not part of this run's bundle" for name in unexpected]
+
+    on_disk: dict[str, Any] = {}
+    for file_name, value in expected.items():
         path = directory / file_name
-        if path.is_file():
-            loaded[member] = json.loads(path.read_text(encoding="utf-8"))
-    problems = invalid_documents(registry, loaded)
-    if "page_acquisitions" in loaded:
-        found = acquisition_violations(
-            loaded["page_acquisitions"],
-            loaded.get("sampling_manifest", {}),
-            loaded.get("measurements", []),
-            loaded.get("website_evidence", []),
-        )
-        problems += [f"{v.pointer} [{v.rule}]" for v in found]
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            problems.append(f"{file_name}: missing")
+            continue
+        except OSError as error:
+            problems.append(f"{file_name}: unreadable ({type(error).__name__})")
+            continue
+        if raw != _serialise(value).encode("utf-8"):
+            problems.append(f"{file_name}: differs from what this run wrote")
+        try:
+            on_disk[file_name] = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            problems.append(f"{file_name}: not valid JSON")
+
+    loaded = {
+        member: on_disk[file_name]
+        for member, (_contract, file_name) in PRODUCED_DOCUMENTS.items()
+        if file_name in on_disk
+    }
+    problems += invalid_documents(registry, loaded)
+    problems += _binding_problems(loaded, envelope.get("analysis_run_state", {}).get("run_id"))
+
+    if "page_acquisitions" in envelope:
+        manifest = loaded.get("sampling_manifest")
+        records = loaded.get("page_acquisitions", [])
+        measurements = loaded.get("measurements", [])
+        evidence = loaded.get("website_evidence", [])
+        page_sets = (records, measurements, evidence)
+        if isinstance(manifest, dict) and all(isinstance(s, list) for s in page_sets):
+            found = acquisition_violations(records, manifest, measurements, evidence)
+            problems += [f"{v.pointer} [{v.rule}]" for v in found]
+        else:
+            problems.append("page documents: the producer invariants cannot be applied")
+
+    if RECEIPT_FILE in on_disk:
+        try:
+            derived = page_receipt(loaded)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            derived = None
+        if on_disk[RECEIPT_FILE] != derived:
+            problems.append(f"{RECEIPT_FILE}: does not summarise the documents beside it")
     return problems
 
 
-def _write_json(path: Path, value: Any) -> None:
-    text = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)
-    path.write_text(text + "\n", encoding="utf-8")
+def _binding_problems(loaded: dict[str, Any], run_id: Any) -> list[str]:
+    """Every document read back that does not belong to this one run and its own bundle."""
+    problems: list[str] = []
+    for member, value in loaded.items():
+        file_name = PRODUCED_DOCUMENTS[member][1]
+        documents = value if isinstance(value, list) else [value]
+        for index, document in enumerate(documents):
+            if not isinstance(document, dict) or document.get("run_id") != run_id:
+                problems.append(f"{file_name}/{index}: does not belong to run {run_id}")
+
+    manifest = loaded.get("sampling_manifest")
+    if isinstance(manifest, dict):
+        inventory = loaded.get("site_inventory")
+        if not (
+            isinstance(inventory, dict)
+            and manifest.get("inventory_ref") == inventory.get("inventory_id")
+            and manifest.get("inventory_output_digest") == inventory.get("output_digest")
+        ):
+            problems.append("sampling-manifest.json: not bound to this bundle's site inventory")
+    return problems
+
+
+def _serialise(value: Any) -> str:
+    return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def _refuse_output_dir(directory: Path) -> int:
+    sys.stderr.write(
+        f"pxapi-acquire: output directory {directory} already exists; "
+        "every run publishes into a fresh one and nothing is reused.\n"
+    )
+    return 2
 
 
 def _emit(value: Any) -> None:
@@ -225,7 +318,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output-dir",
         type=Path,
         default=None,
-        help="also write every document set, and a per-page receipt, into this directory",
+        help=(
+            "also write every document set, and a per-page receipt, into this directory; it "
+            "must not exist yet and is created for this run alone"
+        ),
     )
     arguments = parser.parse_args(argv)
 
@@ -235,6 +331,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "pxapi-acquire: a target carrying credentials in its authority is refused.\n"
         )
         return 2
+
+    output_dir: Path | None = arguments.output_dir
+    if output_dir is not None and output_dir.exists(follow_symlinks=False):
+        # Refused before any request is made; the atomic create below is what guarantees it.
+        return _refuse_output_dir(output_dir)
 
     registry = default_registry()
     request = build_request(arguments.url)
@@ -256,9 +357,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 3
 
-    if arguments.output_dir is not None:
-        write_artifacts(arguments.output_dir, envelope)
-        problems = read_back_problems(arguments.output_dir, registry)
+    if output_dir is not None:
+        try:
+            write_artifacts(output_dir, envelope)
+        except FileExistsError:
+            return _refuse_output_dir(output_dir)
+        except OSError as error:
+            # The output location failed, not the website; the target is never echoed.
+            sys.stderr.write(
+                f"pxapi-acquire: artifacts could not be written ({type(error).__name__}).\n"
+            )
+            return 3
+        problems = read_back_problems(output_dir, registry, envelope)
         if problems:
             sys.stderr.write(f"pxapi-acquire: written artifacts failed read-back: {problems}\n")
             return 3

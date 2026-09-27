@@ -11,6 +11,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -364,11 +365,18 @@ def test_a_printed_envelope_that_differs_from_the_files_is_rejected() -> None:
 # --- the proof receipt --------------------------------------------------------------------------
 
 
+def _minor(request: str) -> str:
+    """The preferred minor a ``uv python find`` request pins (``...,==3.14.*`` -> ``"3.14"``)."""
+    match = re.search(r"==(\d+\.\d+)\.\*$", request)
+    assert match is not None, f"request pins no minor: {request!r}"
+    return match.group(1)
+
+
 class ScriptedHost:
     """Answers every command the proof issues as a healthy host would, and records them.
 
-    ``installed`` maps what ``uv python find`` is asked for (``"3.14"``) to the release the
-    interpreter it names reports; a request not in it is answered as uv does when nothing is
+    ``installed`` maps the minor a ``uv python find`` request pins (``"3.14"``) to the release
+    the interpreter it names reports; a request not in it is answered as uv does when nothing is
     installed. The project venv reports the synced interpreter's release unless
     ``project_version`` says otherwise.
     """
@@ -409,7 +417,7 @@ class ScriptedHost:
         argv = list(argv)
         self.calls.append(argv)
         self.envs.append(dict(env))
-        if argv[:3] == [str(self.uv), "python", "find"] and argv[-1] not in self.pythons:
+        if argv[:3] == [str(self.uv), "python", "find"] and _minor(argv[-1]) not in self.pythons:
             stderr = f"error: No interpreter found for Python {argv[-1]} in system path\n"
             return subprocess.CompletedProcess(argv, 2, stdout="", stderr=stderr)
         return subprocess.CompletedProcess(argv, 0, stdout=self._answer(argv, env), stderr="")
@@ -423,7 +431,7 @@ class ScriptedHost:
             if argv[1] == "--version":
                 return "uv 0.9.99\n"
             if argv[1:3] == ["python", "find"]:
-                return f"{self.python(argv[-1])}\n"
+                return f"{self.python(_minor(argv[-1]))}\n"
             if argv[1:3] == ["python", "dir"]:
                 return f"{self.managed_dir or '/nowhere'}\n"
             if argv[1] == "sync":
@@ -523,6 +531,7 @@ def test_a_passing_proof_receipt_preserves_every_recorded_fact(tmp_path: Path) -
     assert receipt["python_candidates"] == [
         {
             "requested": "3.14",
+            "request": ">=3.13,<3.15,==3.14.*",
             "path": str(host.python("3.14")),
             "version": "3.14.0",
             "outcome": "selected",
@@ -559,7 +568,7 @@ def test_an_installed_3_14_is_preferred_over_an_installed_3_13(tmp_path: Path) -
     facts: dict[str, Any] = {}
     _run(root, host, facts)
 
-    assert _finds(host) == ["3.14"]
+    assert _finds(host) == [">=3.13,<3.15,==3.14.*"]
     assert facts["selected_python"]["path"] == str(host.python("3.14"))
     assert facts["selected_python"]["version"] == "3.14.1"
     (sync,) = _synced(host)
@@ -579,11 +588,16 @@ def test_an_installed_3_13_is_the_automatic_fallback_when_3_14_is_missing(
     receipt = json.loads(json.dumps(proof.build_receipt(facts, None)))
 
     assert receipt["verdict"] == "PASSED"
-    assert _finds(host) == ["3.14", "3.13"]
+    assert _finds(host) == [">=3.13,<3.15,==3.14.*", ">=3.13,<3.15,==3.13.*"]
     assert receipt["python_candidates"] == [
-        {"requested": "3.14", "outcome": "not installed"},
+        {
+            "requested": "3.14",
+            "request": ">=3.13,<3.15,==3.14.*",
+            "outcome": "not installed",
+        },
         {
             "requested": "3.13",
+            "request": ">=3.13,<3.15,==3.13.*",
             "path": str(host.python("3.13")),
             "version": "3.13.13",
             "outcome": "selected",
@@ -706,14 +720,94 @@ def test_every_uv_call_is_locked_system_only_and_isolated(tmp_path: Path) -> Non
     for call, env in zip(host.calls, host.envs, strict=True):
         if call[1:2] in (["python"], ["sync"]):
             assert env["UV_PYTHON_DOWNLOADS"] == "never"
-            assert env["UV_PYTHON_PREFERENCE"] == "only-system"
             assert "VIRTUAL_ENV" not in env
             scratch = Path(env["UV_PROJECT_ENVIRONMENT"]).parent
             assert not scratch.is_relative_to(root)
             assert Path(env["UV_CACHE_DIR"]).parent == scratch
         if call[1:3] == ["python", "find"]:
-            assert call[3:6] == list(proof.NO_MANAGED)
+            assert call[3:-1] == list(proof.SYSTEM_FIND)
+            assert "UV_PYTHON_PREFERENCE" not in env
+        elif call[1:2] in (["python"], ["sync"]):
+            assert env["UV_PYTHON_PREFERENCE"] == "only-system"
     assert facts["lock"]["unchanged"] is True
+
+
+def test_the_discovery_argv_is_the_runner_proven_system_only_form() -> None:
+    assert proof.SYSTEM_FIND == (
+        "--no-config",
+        "--no-project",
+        "--system",
+        "--no-managed-python",
+        "--no-python-downloads",
+    )
+    assert proof.find_argv(Path("/opt/bin/uv"), ">=3.13,<3.15,==3.13.*") == [
+        "/opt/bin/uv",
+        "python",
+        "find",
+        "--no-config",
+        "--no-project",
+        "--system",
+        "--no-managed-python",
+        "--no-python-downloads",
+        ">=3.13,<3.15,==3.13.*",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("requires", "wanted", "request"),
+    [
+        (">=3.13,<3.15", (3, 14), ">=3.13,<3.15,==3.14.*"),
+        (">=3.13,<3.15", (3, 13), ">=3.13,<3.15,==3.13.*"),
+        (" >=3.13 , <3.15 ", (3, 13), ">=3.13,<3.15,==3.13.*"),
+        (">=3.13,<3.14", (3, 14), ">=3.13,<3.14,==3.14.*"),
+    ],
+)
+def test_the_discovery_request_intersects_requires_python_with_the_minor(
+    requires: str, wanted: tuple[int, int], request: str
+) -> None:
+    assert proof.python_request(requires, wanted) == request
+
+
+def test_discovery_ignores_host_uv_configuration_and_python_pins(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    (root / ".python-version").write_text("3.12\n")
+    (root / "uv.toml").write_text('python-preference = "only-managed"\n')
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
+    environ = {
+        "PATH": "/usr/bin",
+        "UV_PYTHON": "3.12",
+        "UV_PYTHON_PREFERENCE": "only-managed",
+        "UV_MANAGED_PYTHON": "1",
+        "UV_NO_MANAGED_PYTHON": "0",
+        "UV_CONFIG_FILE": str(root / "uv.toml"),
+        "UV_PROJECT": str(root),
+    }
+    facts: dict[str, Any] = {}
+    proof.run_proof(
+        root,
+        root / proof.PROOF_DIR,
+        facts,
+        runner=host,
+        environ=environ,
+        which=lambda _name: str(host.uv),
+        executable=CONTROL,
+        expected_sha=SHA,
+    )
+
+    finds = [
+        (call, env)
+        for call, env in zip(host.calls, host.envs, strict=True)
+        if call[1:3] == ["python", "find"]
+    ]
+    assert [call for call, _env in finds] == [
+        proof.find_argv(host.uv, ">=3.13,<3.15,==3.14.*"),
+        proof.find_argv(host.uv, ">=3.13,<3.15,==3.13.*"),
+    ]
+    for _call, env in finds:
+        assert not proof.DISCOVERY_DROPPED & set(env)
+        assert env["UV_PYTHON_DOWNLOADS"] == "never"
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+    assert facts["selected_python"]["version"] == "3.13.13"
 
 
 def test_a_lock_rewritten_by_the_sync_fails_the_bootstrap(tmp_path: Path) -> None:

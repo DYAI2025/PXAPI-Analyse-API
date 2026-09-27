@@ -10,7 +10,8 @@ It uses the standard library only and changes nothing on the host. It
 2. locates ``uv`` on ``PATH``, else beside ``sys.executable`` or, for a control interpreter under
    ``<home>/.agt-runner/``, in ``<home>/.local/bin`` — read off the interpreter path, not ``HOME``;
 3. selects an already installed system Python — 3.14 preferred, else 3.13 — that satisfies the
-   checkout's ``requires-python``, with downloads and uv-managed Pythons disabled;
+   checkout's ``requires-python``, with downloads, uv-managed Pythons, ``.python-version`` and
+   project or user uv configuration all excluded from discovery;
 4. builds a disposable project environment under ``TMPDIR`` with ``uv sync --locked`` against
    the checkout's own ``pyproject.toml`` and ``uv.lock``, and proves ``uv.lock`` is byte-identical
    afterwards;
@@ -51,6 +52,28 @@ MIN_PAGES = 2
 PREFERRED_PYTHONS = ((3, 14), (3, 13))
 #: Every ``uv python`` / ``uv sync`` call: only system Pythons, never a download.
 NO_MANAGED = ("--python-preference", "only-system", "--no-python-downloads")
+#: Every ``uv python find``: installed system Pythons only, never a download, a virtual
+#: environment, a ``.python-version`` pin or any project or user uv configuration.
+SYSTEM_FIND = (
+    "--no-config",
+    "--no-project",
+    "--system",
+    "--no-managed-python",
+    "--no-python-downloads",
+)
+#: Host variables that name, rank or configure an interpreter; ``uv python find`` runs without
+#: them so :data:`SYSTEM_FIND` alone decides (``UV_PYTHON_PREFERENCE`` would also collide with
+#: ``--no-managed-python``).
+DISCOVERY_DROPPED = frozenset(
+    {
+        "UV_PYTHON",
+        "UV_PYTHON_PREFERENCE",
+        "UV_MANAGED_PYTHON",
+        "UV_NO_MANAGED_PYTHON",
+        "UV_CONFIG_FILE",
+        "UV_PROJECT",
+    }
+)
 PROOF_DIR = Path(".proof-output") / "pxapi20b-real-boundary"
 CANONICAL_DIR = "canonical"
 PROOF_RECEIPT = "proof-receipt.json"
@@ -151,6 +174,22 @@ def satisfies(version: Sequence[int], spec: str) -> bool:
         if not holds:
             return False
     return True
+
+
+def python_request(requires: str, wanted: Sequence[int]) -> str:
+    """``requires`` intersected with one preferred minor, e.g. ``>=3.13,<3.15,==3.13.*``."""
+    clauses = [raw.strip() for raw in requires.split(",") if raw.strip()]
+    minor = ".".join(str(part) for part in wanted)
+    return ",".join([*clauses, f"=={minor}.*"])
+
+
+def find_argv(uv: Path, request: str) -> list[str]:
+    return [str(uv), "python", "find", *SYSTEM_FIND, request]
+
+
+def discovery_environment(env: Mapping[str, str]) -> dict[str, str]:
+    """``env`` without the variables in :data:`DISCOVERY_DROPPED`."""
+    return {key: value for key, value in env.items() if key not in DISCOVERY_DROPPED}
 
 
 def runner_home(interpreter: Path) -> Path | None:
@@ -480,21 +519,25 @@ def select_python(
 ) -> tuple[Path, dict[str, Any]]:
     """The first :data:`PREFERRED_PYTHONS` interpreter fit to build the project runtime.
 
-    A candidate is what ``uv python find`` names with downloads and uv-managed Pythons off. It
-    is accepted only when it is not under uv's managed directory and its probe reports the
-    requested minor version and a release satisfying ``requires``. Each candidate's outcome is
-    appended to ``candidates``; a missing or rejected one moves on to the next, and none left
-    fails the bootstrap. Nothing is installed, downloaded or looked up under ``HOME``.
+    A candidate is what ``uv python find`` names for ``requires`` intersected with the preferred
+    minor, run with :data:`SYSTEM_FIND` and without :data:`DISCOVERY_DROPPED`, so neither a
+    ``.python-version`` pin nor project or user uv configuration chooses it. It is accepted only
+    when it is not under uv's managed directory and its probe reports the requested minor
+    version and a release satisfying ``requires``. Each candidate's outcome is appended to
+    ``candidates``; a missing or rejected one moves on to the next, and none left fails the
+    bootstrap. Nothing is installed, downloaded or looked up under ``HOME``.
     """
     managed = _checked(runner, "bootstrap", [str(uv), "python", "dir"], root, env).strip()
     managed_root = os.path.realpath(managed) if managed else None
+    find_env = discovery_environment(env)
     for wanted in PREFERRED_PYTHONS:
         version = ".".join(str(part) for part in wanted)
-        entry: dict[str, Any] = {"requested": version}
+        request = python_request(requires, wanted)
+        entry: dict[str, Any] = {"requested": version, "request": request}
         candidates.append(entry)
-        find = [str(uv), "python", "find", *NO_MANAGED, version]
+        find = find_argv(uv, request)
         try:
-            completed = runner(find, root, env)
+            completed = runner(find, root, find_env)
         except (OSError, subprocess.SubprocessError) as error:
             detail = f"{uv} could not run ({type(error).__name__})"
             raise ProofFailure("bootstrap", detail) from error

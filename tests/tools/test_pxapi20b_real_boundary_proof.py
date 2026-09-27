@@ -754,7 +754,7 @@ def test_the_discovery_argv_is_the_runner_proven_system_only_form() -> None:
 
 
 @pytest.mark.parametrize(
-    ("requires", "wanted", "request"),
+    ("requires", "wanted", "python_request"),
     [
         (">=3.13,<3.15", (3, 14), ">=3.13,<3.15,==3.14.*"),
         (">=3.13,<3.15", (3, 13), ">=3.13,<3.15,==3.13.*"),
@@ -763,9 +763,9 @@ def test_the_discovery_argv_is_the_runner_proven_system_only_form() -> None:
     ],
 )
 def test_the_discovery_request_intersects_requires_python_with_the_minor(
-    requires: str, wanted: tuple[int, int], request: str
+    requires: str, wanted: tuple[int, int], python_request: str
 ) -> None:
-    assert proof.python_request(requires, wanted) == request
+    assert proof.python_request(requires, wanted) == python_request
 
 
 def test_discovery_ignores_host_uv_configuration_and_python_pins(tmp_path: Path) -> None:

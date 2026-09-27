@@ -687,7 +687,7 @@ def test_no_compatible_installed_python_fails_the_bootstrap_before_any_sync(
 def test_an_unsupported_requires_python_fails_the_bootstrap(tmp_path: Path) -> None:
     root = _checkout(tmp_path, "~=3.14")
     host = ScriptedHost(tmp_path)
-    failure, facts = _failed(root, host)
+    failure, _facts = _failed(root, host)
     assert failure.stage == "bootstrap"
     assert "unsupported" in failure.detail
     assert _finds(host) == []

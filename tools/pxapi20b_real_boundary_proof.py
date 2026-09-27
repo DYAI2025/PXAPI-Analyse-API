@@ -7,7 +7,8 @@ Run it with any Python 3.11+ *control* interpreter from a fresh exact-SHA checko
 It uses the standard library only and changes nothing on the host. It
 
 1. records the checkout's exact ``HEAD`` SHA and refuses a checkout with tracked modifications;
-2. locates ``uv`` on ``PATH`` or beside ``sys.executable``;
+2. locates ``uv`` on ``PATH``, else beside ``sys.executable`` or, for a control interpreter under
+   ``<home>/.agt-runner/``, in ``<home>/.local/bin`` — read off the interpreter path, not ``HOME``;
 3. selects an already installed Python 3.14 with downloads and uv-managed Pythons disabled;
 4. builds a disposable project environment under ``TMPDIR`` with ``uv sync --locked`` against
    the checkout's own ``pyproject.toml`` and ``uv.lock``, and proves ``uv.lock`` is byte-identical
@@ -50,6 +51,8 @@ CANONICAL_DIR = "canonical"
 PROOF_RECEIPT = "proof-receipt.json"
 CLI_MODULE = "pxapi.adapters.inbound.acquire_cli"
 COMMAND_TIMEOUT_SECONDS = 1_800
+#: The Agent-team runner's directory directly under the real user home.
+RUNNER_DIR = ".agt-runner"
 
 #: ``envelope member -> canonical file``; mirrors ``acquire_cli.PRODUCED_DOCUMENTS``, which this
 #: control-runtime harness cannot import. A unit test keeps the two identical.
@@ -145,21 +148,46 @@ def satisfies(version: Sequence[int], spec: str) -> bool:
     return True
 
 
-def uv_candidates(executable: str) -> list[Path]:
-    """Deterministic places ``uv`` sits beside the control interpreter, in lookup order."""
+def runner_home(interpreter: Path) -> Path | None:
+    """``<home>`` when ``interpreter`` lies under ``<home>/.agt-runner/``, else ``None``.
+
+    Read off the interpreter path alone, never off ``HOME``: a proof sandbox may point ``HOME``
+    at a scratch directory, while the control interpreter still lives in the real home.
+    """
+    if not interpreter.is_absolute() or RUNNER_DIR not in interpreter.parts[1:]:
+        return None
+    index = interpreter.parts.index(RUNNER_DIR, 1)
+    return Path(*interpreter.parts[:index])
+
+
+def uv_candidates(executable: str, resolve: Callable[[str], str] = os.path.realpath) -> list[Path]:
+    """Deterministic places ``uv`` sits when ``PATH`` does not name it, in lookup order.
+
+    Beside the control interpreter, as given and resolved; then, for a control interpreter under
+    ``<home>/.agt-runner/``, ``<home>/.local/bin`` — where uv's standalone installer puts it.
+    """
     names = ("uv.exe", "uv") if os.name == "nt" else ("uv",)
-    directories: list[Path] = []
-    for directory in (Path(executable).parent, Path(os.path.realpath(executable)).parent):
-        if directory not in directories:
-            directories.append(directory)
-    return [directory / name for directory in directories for name in names]
+    interpreters = (Path(executable), Path(resolve(executable)))
+    directories: list[Path] = [interpreter.parent for interpreter in interpreters]
+    for interpreter in interpreters:
+        home = runner_home(interpreter)
+        if home is not None:
+            directories.append(home / ".local" / "bin")
+    unique = list(dict.fromkeys(directories))
+    return [directory / name for directory in unique for name in names]
+
+
+def is_executable_file(path: Path) -> bool:
+    """Whether ``path`` exists as a regular file this process may execute."""
+    return path.is_file() and os.access(path, os.X_OK)
 
 
 def find_uv(
     which: Callable[[str], str | None], executable: str, is_executable: Callable[[Path], bool]
 ) -> Path | None:
+    """``uv`` from ``PATH`` first, then from :func:`uv_candidates`; only an executable file."""
     found = which("uv")
-    if found:
+    if found and is_executable(Path(found)):
         return Path(found)
     for candidate in uv_candidates(executable):
         if is_executable(candidate):
@@ -338,12 +366,13 @@ def _check_linkage(
             f"at least {MIN_PAGES} needed"
         )
 
-    return problems, {
+    summary = {
         "run": _run_summary(state, inventory, manifest),
         "pages": _page_rows(ranked, records, measurements, evidence),
         "linked_page_refs": linked,
         "document_digests": receipt.get("document_digests"),
     }
+    return problems, summary
 
 
 def _run_summary(
@@ -449,9 +478,9 @@ def run_proof(
     if _checked(runner, "checkout", status, root, environ).strip():
         raise ProofFailure("checkout", "tracked files differ from the exact SHA")
 
-    uv = find_uv(which, executable, lambda p: p.is_file() and os.access(p, os.X_OK))
+    uv = find_uv(which, executable, is_executable_file)
     if uv is None:
-        raise ProofFailure("bootstrap", "uv not found on PATH or beside the control interpreter")
+        raise ProofFailure("bootstrap", "uv not found on PATH or at any deterministic candidate")
     uv_version = _checked(runner, "bootstrap", [str(uv), "--version"], root, environ).strip()
     facts["uv"] = {"path": str(uv), "version": uv_version}
 

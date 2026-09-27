@@ -110,6 +110,44 @@ under `docs/evidence/PXAPI-20B-real-boundary/` is claimed, and no figure above i
 invocation is exact and `--output-dir` produces every artifact plus `receipt.json`, whose
 `pages` rows are this table's columns.
 
+### 5.1 Proof harness repair (`run-pxapi20b-proof-harness-repair-20260927-001`)
+
+**Base:** `926822759e77233594e4f55ef23f1a270bd8280c`. The declared real-boundary execution is run
+by `tools/pxapi20b_real_boundary_proof.py` from the Agent-team control interpreter
+(`/Users/benjaminpoersch/.agt-runner/venv/bin/python`, Python 3.11); the project runtime stays
+separate and uv-locked. This repair changes only the harness, its tests and this record:
+
+- **Formatter.** Exact-head GitHub Actions run `36319802878` was red on Python 3.13 and 3.14 only
+  because `ruff format --check` would reformat the harness. The harness is brought to the
+  repository formatter's output; the artifact-bundle implementation is not touched.
+- **uv discovery.** Under the proof sandbox `PATH` holds only the control interpreter's directory
+  and system directories, and `HOME` may be scratch, so the accepted uv at
+  `/Users/benjaminpoersch/.local/bin/uv` was not found. Lookup order is now: `PATH`; beside the
+  control interpreter as given and as resolved; then `<home>/.local/bin/uv`, where `<home>` is
+  read off the interpreter path itself when it lies under `<home>/.agt-runner/` — never off
+  `HOME`. No further system locations are added: the sandbox `PATH` already carries the system
+  directories. Only an existing, executable regular file is accepted, a `PATH` hit included.
+  Nothing is downloaded, no shell or credential is used, `runner.env` is untouched, and the
+  exact uv path and `uv --version` are recorded in `proof-receipt.json` as before.
+- **Tests.** `tests/tools/test_pxapi20b_real_boundary_proof.py` (offline, harness imported by
+  file path): `PATH` first; `/Users/benjaminpoersch/.local/bin/uv` derived from the control
+  interpreter path with `HOME` set to scratch and home lookup forbidden; absence and rejection of
+  non-executable candidates; the Python 3.14 / `requires-python` predicate; the exact CLI argv
+  with `https://www.rfc-editor.org/` and `--max-selected-pages 3`; bundle checks rejecting
+  one-page, missing, extra, mixed-run and broken-linkage bundles and accepting a coherent
+  two-page one; a scripted host proving the receipt keeps the exact SHA, both runtimes, the lock
+  digest before and after, the page table and the evidence ceiling.
+
+| Gate | Result |
+| --- | --- |
+| `uv run ruff check .` / `ruff format --check .` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+| `uv run pytest` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+
+The authoring session again had no shell tool: formatting was applied by hand to the formatter's
+rules, not by running it. **The declared real-boundary execution is still pending**: the coding
+agent neither executed nor claims any network proof, no `proof-receipt.json` exists, and every
+`<NOT EXECUTED>` field above stands. No proof descriptor is added by this repair.
+
 ## 6. Evidence ceiling
 
 Even once executed, this proves one bounded, explicitly budgeted selection of one controlled

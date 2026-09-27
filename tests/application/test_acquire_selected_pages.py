@@ -350,7 +350,7 @@ def test_mixed_outcomes_are_contained_per_page_and_the_run_still_succeeds() -> N
         {
             PAGE_A: response(PAGE_A, status=404, body=html("Seite nicht gefunden")),
             PAGE_B: PageFetchFailure(FetchFailureKind.TIMEOUT),
-            PAGE_C: RuntimeError("the fetch path broke"),
+            PAGE_C: PageFetchFailure(FetchFailureKind.DNS_FAILURE),
         }
     )
     envelope = run(fetcher)
@@ -358,14 +358,14 @@ def test_mixed_outcomes_are_contained_per_page_and_the_run_still_succeeds() -> N
     assert envelope["analysis_run_state"]["state"] == "SUCCEEDED"
     assert fetcher.calls == SELECTED
     outcomes = [r["acquisition_outcome"] for r in envelope["page_acquisitions"]]
-    assert outcomes == ["RESPONSE_RECEIVED", "RESPONSE_RECEIVED", "TIMEOUT", "RUNTIME_ERROR"]
+    assert outcomes == ["RESPONSE_RECEIVED", "RESPONSE_RECEIVED", "TIMEOUT", "DNS_FAILURE"]
     assert invalid_documents(CONTRACTS, envelope) == []
 
     # The sibling that worked keeps its truthful facts.
     seed = measurements_of(envelope, ORIGIN)
     assert seed[Metric.PAGE_TITLE.value]["result"]["text_value"] == "Leistungen"
     assert reasons_of(envelope, PAGE_B) == {"TIMEOUT"}
-    assert reasons_of(envelope, PAGE_C) == {"RUNTIME_ERROR"}
+    assert reasons_of(envelope, PAGE_C) == {NOT_ASSESSED_FOR[FetchFailureKind.DNS_FAILURE]}
     for url_key in (PAGE_B, PAGE_C):
         assert "http_status" not in record_for(envelope, url_key)
     assert keys_anywhere(envelope) & VERDICT_KEYS == set()
@@ -463,13 +463,6 @@ def test_a_redirect_ending_at_a_url_with_no_identity_is_an_invalid_redirect() ->
     assert record["acquisition_outcome"] == "INVALID_REDIRECT"
     assert "final_url_key" not in record and "http_status" not in record
     assert reasons_of(envelope, PAGE_A) == {NOT_ASSESSED_FOR[FetchFailureKind.INVALID_REDIRECT]}
-    assert invalid_documents(CONTRACTS, envelope) == []
-
-
-def test_a_fetcher_breaking_its_port_contract_is_a_runtime_error_on_that_page_only() -> None:
-    envelope = run(FakeFetcher({PAGE_B: "not an outcome"}))
-    assert record_for(envelope, PAGE_B)["acquisition_outcome"] == "RUNTIME_ERROR"
-    assert record_for(envelope, PAGE_C)["acquisition_outcome"] == "RESPONSE_RECEIVED"
     assert invalid_documents(CONTRACTS, envelope) == []
 
 
@@ -600,7 +593,7 @@ def test_a_failed_discovery_is_returned_as_is_and_nothing_is_fetched() -> None:
     assert not {"page_acquisitions", "measurements", "website_evidence"} & set(envelope)
 
 
-# --- our own defects stay visible ------------------------------------------------------------------
+# --- our own defects stay visible ------------------------------------------------------------
 
 
 def test_a_document_set_breaking_a_producer_invariant_fails_the_run_and_is_withheld() -> None:
@@ -630,3 +623,39 @@ def test_an_observation_that_raises_is_our_defect_and_never_a_page_outcome() -> 
     assert envelope["analysis_run_state"]["failure"] == {"code": ACQUISITION_WITHHELD_CODE}
     assert "page_acquisitions" not in envelope
     assert invalid_documents(CONTRACTS, envelope) == []
+
+
+#: Fetch-port behaviour outside the port contract, which is outcomes and never exceptions.
+PORT_CONTRACT_BREACHES = {
+    "raises": RuntimeError("the fetch path broke"),
+    "returns_text": "not an outcome",
+    "returns_dict": {"status": 200},
+}
+
+
+@pytest.mark.parametrize("case", sorted(PORT_CONTRACT_BREACHES))
+def test_a_fetch_port_contract_breach_fails_the_run_and_withholds_every_page(case: str) -> None:
+    """D-20-D: a fetcher that raises or returns a foreign shape is our defect, not a site fact.
+
+    It fails the run even though its sibling pages were fetched successfully, and no page
+    document — not even a sibling's — is emitted, exactly as for an observer or invariant defect.
+    """
+    fetcher = FakeFetcher({PAGE_B: PORT_CONTRACT_BREACHES[case]})
+    envelope = run(fetcher)
+
+    assert envelope["analysis_run_state"]["state"] == "FAILED"
+    assert envelope["analysis_run_state"]["failure"] == {"code": ACQUISITION_WITHHELD_CODE}
+    assert envelope["stage_executions"][-1]["stage_id"] == PAGE_ACQUISITION_STAGE
+    assert envelope["stage_executions"][-1]["status"] == "FAILED"
+    assert not {"page_acquisitions", "measurements", "website_evidence"} & set(envelope)
+    assert "RUNTIME_ERROR" not in json.dumps(envelope)
+    assert invalid_documents(CONTRACTS, envelope) == []
+
+
+def test_the_same_pages_with_expected_failures_only_still_succeed() -> None:
+    """Canary for the test above: replacing the breach by an expected outcome is contained."""
+    fetcher = FakeFetcher({PAGE_B: PageFetchFailure(FetchFailureKind.CONNECTION_FAILURE)})
+    envelope = run(fetcher)
+    assert envelope["analysis_run_state"]["state"] == "SUCCEEDED"
+    assert record_for(envelope, PAGE_B)["acquisition_outcome"] == "CONNECTION_FAILURE"
+    assert record_for(envelope, PAGE_C)["acquisition_outcome"] == "RESPONSE_RECEIVED"

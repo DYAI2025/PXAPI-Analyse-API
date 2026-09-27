@@ -245,22 +245,6 @@ class StaticPageObserver:
         measurements, status = self._measured(run_id, url_key, result, observed_at)
         return self._observation(tuple(measurements), status)
 
-    def observe_runtime_error(self, run_id: str, url_key: str, observed_at: str) -> PageObservation:
-        """Observe one selected page whose acquisition raised inside our own code.
-
-        Nothing about the page was established, so every metric is ``NOT_ASSESSED`` with
-        ``RUNTIME_ERROR`` at the selected identity — a statement about this service, never about
-        the page. The withhold rule applies exactly as it does to any other outcome.
-        """
-        withheld = withheld_reason_for(url_key)
-        if withheld is not None:
-            return PageObservation((), (), DocumentStatus.WITHHELD, withheld)
-        measurements = tuple(
-            self._not_assessed(run_id, metric, url_key, observed_at, "RUNTIME_ERROR")
-            for metric in PAGE_METRICS
-        )
-        return self._observation(measurements, DocumentStatus.NO_RESPONSE)
-
     def _observation(
         self, measurements: tuple[dict[str, Any], ...], status: DocumentStatus
     ) -> PageObservation:

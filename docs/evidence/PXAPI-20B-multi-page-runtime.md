@@ -21,7 +21,7 @@ PageAcquisitionRecord(STATIC_HTTP) → MeasurementRecords → WebsiteEvidence`.
 | --- | --- |
 | `src/pxapi/application/acquire_selected_pages.py` | **new** — the orchestrator |
 | `src/pxapi/domain/page_acquisition.py` | admission gate added (`ADMISSION_RULES`, `admitted_page_refs`, `SelectionNotAdmissible`); 20.A content unchanged |
-| `src/pxapi/application/observe_static_page.py` | `D-20-F` reading constraint for non-2xx; `observe_runtime_error` |
+| `src/pxapi/application/observe_static_page.py` | `D-20-F` reading constraint for non-2xx |
 | `src/pxapi/adapters/composition.py` | `build_site_acquisition(budgets, …)` — `budgets` required |
 | `src/pxapi/adapters/inbound/acquire_cli.py` | **new** — required `--max-selected-pages N`, optional `--output-dir` |
 | tests | `tests/application/test_acquire_selected_pages.py`, `tests/adapters/test_acquire_cli.py`, `tests/smoke/test_real_boundary_acquisition_smoke.py`, additions to `tests/application/test_observe_static_page.py`, `tests/test_package_scaffold.py` (+2 `PXAPI-20.B` entries) |
@@ -37,7 +37,7 @@ Protected and unchanged: `analyze_homepage.py`, `derive_findings.py`, `discover_
 | `D-20-A` explicit bound, no secondary truncation | CLI `--max-selected-pages` is `required=True`, validated (ASCII whole number ≥ 1), and becomes `SelectionBudgets(max_selected_pages=N)` on the manifest. The orchestrator iterates **every** admitted selection; there is no other bound. `build_site_acquisition` has no default for `budgets`, and the existing `build_site_discovery` still declares none. |
 | `D-20-B` linkage, admission before fetch | `admitted_page_refs` refuses, before any fetch: wrong run, manifest not naming/pinning its inventory, inventory or manifest digest that does not reproduce, empty selection, duplicate Page Ref/rank, unknown or ineligible Page Ref. Records carry `measurement_refs`; no carrier contract was versioned. |
 | `D-20-C` static producer only | Every record: `STATIC_HTTP`, `STATIC_HTTP_PAGE_FETCH`, `1.0.0`. |
-| `D-20-D` neutral containment; our defects visible | Every fetch outcome, a fetch-path exception (`RUNTIME_ERROR`) and a port-contract breach are contained per page. A producer-invariant violation or an observation that raises fails the run (`PAGE_ACQUISITION_NOT_EMITTABLE`) and withholds all page documents; failed admission fails it as `SAMPLING_MANIFEST_NOT_ADMISSIBLE`. |
+| `D-20-D` neutral containment; our defects visible | **Site / per-page outcomes** — every `PageFetchFailure` kind (timeout, DNS, blocked/private/rebinding target, connection, protocol, invalid redirect, redirect limit), 4xx/5xx, truncated or undecodable bodies, unsupported media types and parser failure — are contained on their own page and the run succeeds. **PXAPI runtime / port-contract defects** — a fetch port that raises or returns anything other than `PageFetchOutcome \| PageFetchFailure`, an observation that raises, or a producer-invariant violation — fail the run as `PAGE_ACQUISITION_NOT_EMITTABLE` and withhold every page acquisition, measurement and evidence document, siblings included. Failed admission fails it as `SAMPLING_MANIFEST_NOT_ADMISSIBLE`. This producer never emits the `RUNTIME_ERROR` acquisition outcome. |
 | `D-20-F` non-2xx | Status, final URL and headers measured; the body is **not parsed**; document facts and the meta-robots channel are `NOT_ASSESSED / UNSUPPORTED`. |
 | `D-20-G` run timing | `entered_at` reproduced from the discovery run state unchanged. |
 | `D-20-H` | `raw_artifact_ref` never emitted; `body_digest` over decoded bytes whenever `body_decoded`. |
@@ -55,10 +55,13 @@ than inventing an identity or letting a site fail the run.
 - budget 2 over 4 eligible pages → `selection_complete: false`, cause `SELECTION_BUDGET_EXHAUSTED`,
   exactly 2 fetches (no secondary truncation, no over-fetch)
 - linkage: every measurement owned by exactly one record; every evidence resolves to one page
-- mixed 200 / 404 / `TIMEOUT` / exception in one run → run `SUCCEEDED`, siblings intact
+- mixed 200 / 404 / `TIMEOUT` / `DNS_FAILURE` in one run → run `SUCCEEDED`, siblings intact
 - 404, 410, 500, 503: error-document title never appears in output; parser never called
 - every `FetchFailureKind`, truncated body, undecodable body, unsupported media type, parser
-  failure, unkeyable redirect target, port-contract breach
+  failure, unkeyable redirect target — each contained on its page
+- port-contract defects: a fetcher that raises, or returns text or a dict, fails the run with
+  `PAGE_ACQUISITION_NOT_EMITTABLE` and emits no page document; a canary replacing the breach by
+  an expected `CONNECTION_FAILURE` keeps the run `SUCCEEDED` with siblings intact
 - replay: one frozen input serialises identically twice; a canary proves the comparison bites
 - admission: eight tampering cases, each fails before any fetch and names its rule; every
   `ADMISSION_RULES` entry has a counterexample

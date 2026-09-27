@@ -20,15 +20,16 @@ the run fails naming our defect.
 
 **A site outcome is contained per page and stays neutral** (D-20-D, D-20-F). A 4xx or 5xx is a
 received response whose status is measured; a timeout, a DNS failure, a refused target, a bad
-redirect, a truncated or undecodable body, a parser failure and an exception out of the fetch
-path each become one truthful record whose observations are ``NOT_ASSESSED`` or withheld. One
-page's outcome never touches a sibling's records, and none of them is a finding, a score or a
-polarity — this module emits none of those at all.
+redirect, a truncated or undecodable body and a parser failure each become one truthful record
+whose observations are ``NOT_ASSESSED`` or withheld. One page's outcome never touches a
+sibling's records, and none of them is a finding, a score or a polarity — this module emits
+none of those at all.
 
-**Our own defects stay visible.** A set of page documents that breaks a producer invariant, or
-an observation that raises, fails the run with a code naming this service, and every page
-document is withheld rather than emitted in part. It is never laundered into a neutral page
-outcome.
+**Our own defects stay visible.** A fetch port that raises or returns something other than a
+``PageFetchOutcome`` or ``PageFetchFailure``, an observation that raises, and a set of page
+documents that breaks a producer invariant each fail the run with a code naming this service,
+and every page document is withheld rather than emitted in part. None of them is laundered into
+a neutral page outcome: the port contract is outcomes, so a breach of it is not a site fact.
 
 **A response URL with no identity is not a received response we can record.** The contract
 requires ``final_url_key`` on every received response, and a redirect can end at a URL the
@@ -82,6 +83,10 @@ PAGE_DOCUMENT_MEMBERS: Final[tuple[str, ...]] = (
     "measurements",
     "website_evidence",
 )
+
+
+class PortContractBreach(Exception):
+    """The fetch port returned something that is neither outcome shape. A defect of ours."""
 
 
 class SiteDiscoveryUseCase(Protocol):
@@ -144,7 +149,8 @@ class AcquireSelectedPages:
             require_emittable_acquisition(records, manifest, measurements, evidence)
         except Exception:
             # Every site outcome was already contained inside ``_acquire``; what reaches here
-            # is ours — an observation that raised, or a document set we may not emit.
+            # is ours — a fetch port that raised or broke its contract, an observation that
+            # raised, or a document set we may not emit.
             return self._failed(envelope, started, self.clock(), ACQUISITION_WITHHELD_CODE)
 
         finished = self.clock()
@@ -171,14 +177,12 @@ class AcquireSelectedPages:
     ) -> tuple[dict[str, Any], PageObservation]:
         """One attempt at one selected page, its record and its observation."""
         acquisition_id = self.new_id()
-        try:
-            result: Any = self.fetcher.fetch(url_key)
-        except Exception:
-            # The port contract is outcomes, not exceptions. A fetcher that breaks it is our
-            # defect on this one page, recorded as our runtime's failure and nothing more.
-            result = None
+        # The port contract is outcomes, not exceptions: an exception out of the fetcher, or a
+        # value that is neither outcome shape, is a defect of this service and propagates to
+        # ``run``, which fails the run and withholds every page document (D-20-D).
+        result: Any = self.fetcher.fetch(url_key)
         if not isinstance(result, PageFetchOutcome | PageFetchFailure):
-            result = None
+            raise PortContractBreach(type(result).__name__)
         acquired_at = _instant(self.clock())
 
         final_url_key = None
@@ -187,16 +191,12 @@ class AcquireSelectedPages:
             if final_url_key is None:
                 result = PageFetchFailure(FetchFailureKind.INVALID_REDIRECT)
 
-        if result is None:
-            outcome = AcquisitionOutcome.RUNTIME_ERROR
-            observation = self.observer.observe_runtime_error(run_id, url_key, acquired_at)
-        else:
-            outcome = (
-                AcquisitionOutcome.RESPONSE_RECEIVED
-                if isinstance(result, PageFetchOutcome)
-                else AcquisitionOutcome(result.kind.value)
-            )
-            observation = self.observer.observe(run_id, url_key, result, acquired_at)
+        outcome = (
+            AcquisitionOutcome.RESPONSE_RECEIVED
+            if isinstance(result, PageFetchOutcome)
+            else AcquisitionOutcome(result.kind.value)
+        )
+        observation = self.observer.observe(run_id, url_key, result, acquired_at)
 
         document: dict[str, Any] = {
             "schema_version": "1.0.0",

@@ -329,20 +329,6 @@ def test_a_2xx_response_is_still_read_as_page_content() -> None:
     assert facts[Metric.PAGE_TITLE.value]["result"]["text_value"] == "Leistungen"
 
 
-def test_a_runtime_error_observation_is_neutral_for_every_metric() -> None:
-    observation = observer().observe_runtime_error(RUN_ID, PAGE, OBSERVED_AT)
-    assert observation.document_status is DocumentStatus.NO_RESPONSE
-    assert [m["metric_id"] for m in observation.measurements] == [m.value for m in PAGE_METRICS]
-    assert {reason_of(m) for m in observation.measurements} == {"RUNTIME_ERROR"}
-    assert_documents_validate(observation)
-
-
-def test_a_runtime_error_on_an_unrepresentable_identity_is_withheld() -> None:
-    observation = observer().observe_runtime_error(RUN_ID, UNREPRESENTABLE, OBSERVED_AT)
-    assert observation.measurements == () and observation.evidence == ()
-    assert observation.withheld_reason == MEASUREMENTS_WITHHELD_SOURCE_URL
-
-
 # --- site-controlled canonical links -----------------------------------------------------------
 
 #: `(canonical the page declares, whether its value is representable)`. The first four are the

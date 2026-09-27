@@ -115,7 +115,7 @@ def test_the_budget_becomes_the_manifest_s_declared_selection_budget(
     assert [r["url_key"] for r in envelope["page_acquisitions"]] == SELECTED[:3]
 
 
-# --- canonical output ------------------------------------------------------------------------------
+# --- canonical output ------------------------------------------------------------------------
 
 
 def test_a_document_that_fails_its_own_contract_is_withheld(

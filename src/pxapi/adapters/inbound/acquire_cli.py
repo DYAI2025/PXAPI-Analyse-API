@@ -43,7 +43,8 @@ from pxapi.domain.sampling_policy import SelectionBudgets
 from pxapi.domain.site_identity import UrlRefusal, refuse
 
 #: ``envelope member -> (the contract every document under it must satisfy, artifact file)``.
-#: A list member is checked item by item and written as one JSON array.
+#: A plural member (see :data:`CONTAINER_SHAPES`) is checked item by item and written as one
+#: JSON array.
 PRODUCED_DOCUMENTS: dict[str, tuple[str, str]] = {
     "analysis_run_request": ("analysis-run-request", "analysis-run-request.json"),
     "analysis_run_state": ("analysis-run-state", "analysis-run-state.json"),
@@ -55,6 +56,20 @@ PRODUCED_DOCUMENTS: dict[str, tuple[str, str]] = {
     "website_evidence": ("website-evidence", "website-evidence.json"),
 }
 
+#: ``envelope member -> its top-level container``: ``dict`` is exactly one JSON object, ``list``
+#: exactly one JSON array of objects. A member in any other shape is canonical output invalid.
+CONTAINER_SHAPES: dict[str, type] = {
+    "analysis_run_request": dict,
+    "analysis_run_state": dict,
+    "stage_executions": list,
+    "site_inventory": dict,
+    "sampling_manifest": dict,
+    "page_acquisitions": list,
+    "measurements": list,
+    "website_evidence": list,
+}
+_CONTAINER_WORDING = {dict: "one JSON object", list: "a JSON array of objects"}
+
 RECEIPT_FILE = "receipt.json"
 
 
@@ -65,14 +80,37 @@ def page_budget(text: str) -> int:
     return int(text)
 
 
+def has_container_shape(member: str, value: Any) -> bool:
+    """Whether ``value`` has the top-level container :data:`CONTAINER_SHAPES` names for it."""
+    if CONTAINER_SHAPES[member] is list:
+        return isinstance(value, list) and all(isinstance(item, dict) for item in value)
+    return isinstance(value, dict)
+
+
+def container_problems(envelope: dict[str, Any]) -> list[str]:
+    """One problem for every produced member whose top-level container has the wrong shape."""
+    problems: list[str] = []
+    for member, (_contract, file_name) in PRODUCED_DOCUMENTS.items():
+        if member in envelope and not has_container_shape(member, envelope[member]):
+            expected = _CONTAINER_WORDING[CONTAINER_SHAPES[member]]
+            problems.append(f"{file_name}: container is not {expected}")
+    return problems
+
+
 def invalid_documents(registry: ContractRegistry, envelope: dict[str, Any]) -> list[str]:
-    """The contract name of every produced document that fails its contract."""
-    failures: list[str] = []
+    """Every member whose container has the wrong shape, then the contract name of every
+    produced document that fails its contract.
+
+    A member in the wrong container is reported by :func:`container_problems` and its items are
+    not validated: a singleton wrapped in a list, or a plural member given as one object, is
+    this service's own defect however valid the items inside it are.
+    """
+    failures = container_problems(envelope)
     for member, (contract, _file) in PRODUCED_DOCUMENTS.items():
-        if member not in envelope:
+        if member not in envelope or not has_container_shape(member, envelope[member]):
             continue
         value = envelope[member]
-        documents = value if isinstance(value, list) else [value]
+        documents = value if CONTAINER_SHAPES[member] is list else [value]
         failures += [contract for document in documents if registry.validate(contract, document)]
     return failures
 
@@ -199,9 +237,10 @@ def read_back_problems(
 
     The bundle is checked against the one ``envelope`` it was written from: every expected file
     must be present with exactly the bytes this run wrote, and no other entry may exist. What
-    was read is then re-validated against its contract, bound to this run, and re-checked
-    against the acquisition producer invariants, so what a reader opens is what was checked.
-    An unreadable or malformed file is reported, never raised.
+    was read must have its member's container shape, and is then re-validated against its
+    contract, bound to this run, and re-checked against the acquisition producer invariants, so
+    what a reader opens is what was checked. An unreadable or malformed file is reported, never
+    raised.
     """
     expected = expected_bundle(envelope)
     try:
@@ -234,16 +273,20 @@ def read_back_problems(
         for member, (_contract, file_name) in PRODUCED_DOCUMENTS.items()
         if file_name in on_disk
     }
-    problems += invalid_documents(registry, loaded)
-    problems += _binding_problems(loaded, envelope.get("analysis_run_state", {}).get("run_id"))
+    # The container shape is checked first; a misshapen member reaches no helper below.
+    problems += container_problems(loaded)
+    shaped = {member: v for member, v in loaded.items() if has_container_shape(member, v)}
+    problems += invalid_documents(registry, shaped)
+    problems += _binding_problems(shaped, envelope.get("analysis_run_state", {}).get("run_id"))
 
     if "page_acquisitions" in envelope:
-        manifest = loaded.get("sampling_manifest")
-        records = loaded.get("page_acquisitions", [])
-        measurements = loaded.get("measurements", [])
-        evidence = loaded.get("website_evidence", [])
-        page_sets = (records, measurements, evidence)
-        if isinstance(manifest, dict) and all(isinstance(s, list) for s in page_sets):
+        manifest = shaped.get("sampling_manifest")
+        records = shaped.get("page_acquisitions", [])
+        measurements = shaped.get("measurements", [])
+        evidence = shaped.get("website_evidence", [])
+        page_members = ("page_acquisitions", "measurements", "website_evidence")
+        misshapen = any(member in loaded and member not in shaped for member in page_members)
+        if isinstance(manifest, dict) and not misshapen:
             found = acquisition_violations(records, manifest, measurements, evidence)
             problems += [f"{v.pointer} [{v.rule}]" for v in found]
         else:
@@ -251,7 +294,7 @@ def read_back_problems(
 
     if RECEIPT_FILE in on_disk:
         try:
-            derived = page_receipt(loaded)
+            derived = page_receipt(loaded) if len(shaped) == len(loaded) else None
         except (AttributeError, KeyError, TypeError, ValueError):
             derived = None
         if on_disk[RECEIPT_FILE] != derived:

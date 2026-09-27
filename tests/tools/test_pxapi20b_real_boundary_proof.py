@@ -163,11 +163,14 @@ def test_a_missing_uv_fails_the_bootstrap_stage(tmp_path: Path) -> None:
 # --- runtime selection and command line ---------------------------------------------------------
 
 
-def test_the_project_requires_python_admits_exactly_the_required_python() -> None:
+def test_the_project_requires_python_admits_both_preferred_pythons() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     requires = pyproject["project"]["requires-python"]
-    assert proof.REQUIRED_PYTHON == (3, 14)
+    assert proof.PREFERRED_PYTHONS == ((3, 14), (3, 13))
     assert proof.satisfies((3, 14, 0), requires)
+    assert proof.satisfies((3, 13, 13), requires)
+    assert not proof.satisfies((3, 12, 9), requires)
+    assert not proof.satisfies((3, 15, 0), requires)
 
 
 @pytest.mark.parametrize(
@@ -208,6 +211,8 @@ def test_the_canonical_files_mirror_the_command_line() -> None:
     produced = {member: name for member, (_c, name) in acquire_cli.PRODUCED_DOCUMENTS.items()}
     assert produced == proof.CANONICAL_FILES
     assert acquire_cli.RECEIPT_FILE == proof.CLI_RECEIPT
+    plural = {member for member, shape in acquire_cli.CONTAINER_SHAPES.items() if shape is list}
+    assert plural == proof.LIST_MEMBERS
 
 
 # --- the canonical bundle -----------------------------------------------------------------------
@@ -360,24 +365,53 @@ def test_a_printed_envelope_that_differs_from_the_files_is_rejected() -> None:
 
 
 class ScriptedHost:
-    """Answers every command the proof issues as a healthy host would, and records them."""
+    """Answers every command the proof issues as a healthy host would, and records them.
 
-    def __init__(self, tmp_path: Path, version_info: Sequence[int] = (3, 14, 0)) -> None:
+    ``installed`` maps what ``uv python find`` is asked for (``"3.14"``) to the release the
+    interpreter it names reports; a request not in it is answered as uv does when nothing is
+    installed. The project venv reports the synced interpreter's release unless
+    ``project_version`` says otherwise.
+    """
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        installed: Mapping[str, Sequence[int]] | None = None,
+        *,
+        project_version: Sequence[int] | None = None,
+        managed_dir: Path | None = None,
+        lock_rewrite: tuple[Path, bytes] | None = None,
+    ) -> None:
         self.uv = tmp_path / "bin" / "uv"
         self.uv.parent.mkdir()
         self.uv.write_text("#!/bin/sh\nexit 1\n")
         self.uv.chmod(0o755)
-        self.base_python = tmp_path / "python3.14" / "bin" / "python3.14"
         self.trust_bundle = tmp_path / "cacert.pem"
         self.trust_bundle.write_text("certificates\n")
-        self.version_info = list(version_info)
+        installed = {"3.14": (3, 14, 0)} if installed is None else installed
+        self.pythons = {
+            request: (tmp_path / f"python{request}" / "bin" / f"python{request}", list(info))
+            for request, info in installed.items()
+        }
+        self.project_version = None if project_version is None else list(project_version)
+        self.managed_dir = managed_dir
+        self.lock_rewrite = lock_rewrite
+        self.synced: str | None = None
         self.calls: list[list[str]] = []
+        self.envs: list[dict[str, str]] = []
+
+    def python(self, request: str) -> Path:
+        return self.pythons[request][0]
 
     def __call__(
         self, argv: Sequence[str], _cwd: Path, env: Mapping[str, str]
     ) -> subprocess.CompletedProcess[str]:
         argv = list(argv)
         self.calls.append(argv)
+        self.envs.append(dict(env))
+        if argv[:3] == [str(self.uv), "python", "find"] and argv[-1] not in self.pythons:
+            stderr = f"error: No interpreter found for Python {argv[-1]} in system path\n"
+            return subprocess.CompletedProcess(argv, 2, stdout="", stderr=stderr)
         return subprocess.CompletedProcess(argv, 0, stdout=self._answer(argv, env), stderr="")
 
     def _answer(self, argv: list[str], env: Mapping[str, str]) -> str:
@@ -386,16 +420,28 @@ class ScriptedHost:
         if argv[:2] == ["git", "status"]:
             return ""
         if argv[0] == str(self.uv):
-            return {
-                "--version": "uv 0.9.99\n",
-                "python": f"{self.base_python}\n" if argv[2:3] == ["find"] else "/nowhere\n",
-                "sync": "",
-            }[argv[1]]
+            if argv[1] == "--version":
+                return "uv 0.9.99\n"
+            if argv[1:3] == ["python", "find"]:
+                return f"{self.python(argv[-1])}\n"
+            if argv[1:3] == ["python", "dir"]:
+                return f"{self.managed_dir or '/nowhere'}\n"
+            if argv[1] == "sync":
+                self.synced = argv[argv.index("--python") + 1]
+                if self.lock_rewrite is not None:
+                    self.lock_rewrite[0].write_bytes(self.lock_rewrite[1])
+                return ""
         if argv[1:3] == ["-c", proof.PROBE]:
-            base = argv[0] == str(self.base_python)
-            prefix = "/usr/local" if base else env["UV_PROJECT_ENVIRONMENT"]
-            version = ".".join(str(part) for part in self.version_info)
-            probe = {"prefix": prefix, "version": version, "version_info": self.version_info}
+            by_path = {str(path): info for path, info in self.pythons.values()}
+            if argv[0] in by_path:
+                prefix, info = "/usr/local", by_path[argv[0]]
+            else:
+                assert argv[0] == str(proof.venv_python(Path(env["UV_PROJECT_ENVIRONMENT"])))
+                assert self.synced is not None, "the venv is probed only after uv sync"
+                prefix = env["UV_PROJECT_ENVIRONMENT"]
+                info = self.project_version or by_path[self.synced]
+            version = ".".join(str(part) for part in info)
+            probe = {"prefix": prefix, "version": version, "version_info": info}
             return json.dumps({"executable": argv[0], **probe}) + "\n"
         if argv[1:3] == ["-c", proof.CERTIFI_PROBE]:
             return f"{self.trust_bundle}\n"
@@ -409,12 +455,41 @@ class ScriptedHost:
         raise AssertionError(f"unexpected command {argv}")
 
 
-def _checkout(tmp_path: Path) -> Path:
+def _checkout(tmp_path: Path, requires: str = ">=3.13,<3.15") -> Path:
     root = tmp_path / "checkout"
     root.mkdir()
-    (root / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.13,<3.15"\n')
+    (root / "pyproject.toml").write_text(f'[project]\nrequires-python = "{requires}"\n')
     (root / "uv.lock").write_bytes(b"version = 1\n")
     return root
+
+
+def _run(root: Path, host: ScriptedHost, facts: dict[str, Any]) -> None:
+    proof.run_proof(
+        root,
+        root / proof.PROOF_DIR,
+        facts,
+        runner=host,
+        environ={"PATH": "/usr/bin", "HOME": SCRATCH_HOME, "VIRTUAL_ENV": "/elsewhere"},
+        which=lambda _name: str(host.uv),
+        executable=CONTROL,
+        expected_sha=SHA,
+    )
+
+
+def _failed(root: Path, host: ScriptedHost) -> tuple[proof.ProofFailure, dict[str, Any]]:
+    facts: dict[str, Any] = {}
+    with pytest.raises(proof.ProofFailure) as failure:
+        _run(root, host, facts)
+    assert not any(call[1:3] == ["-m", proof.CLI_MODULE] for call in host.calls)
+    return failure.value, facts
+
+
+def _finds(host: ScriptedHost) -> list[str]:
+    return [call[-1] for call in host.calls if call[1:3] == ["python", "find"]]
+
+
+def _synced(host: ScriptedHost) -> list[list[str]]:
+    return [call for call in host.calls if call[1:2] == ["sync"]]
 
 
 def test_a_passing_proof_receipt_preserves_every_recorded_fact(tmp_path: Path) -> None:
@@ -440,7 +515,19 @@ def test_a_passing_proof_receipt_preserves_every_recorded_fact(tmp_path: Path) -
     assert receipt["exact_sha"] == SHA
     assert receipt["control_runtime"]["executable"] == CONTROL
     assert receipt["uv"] == {"path": str(host.uv), "version": "uv 0.9.99"}
-    assert receipt["selected_python"] == {"path": str(host.base_python), "version": "3.14.0"}
+    assert receipt["selected_python"] == {
+        "path": str(host.python("3.14")),
+        "version": "3.14.0",
+        "requires_python": ">=3.13,<3.15",
+    }
+    assert receipt["python_candidates"] == [
+        {
+            "requested": "3.14",
+            "path": str(host.python("3.14")),
+            "version": "3.14.0",
+            "outcome": "selected",
+        }
+    ]
     assert receipt["project_runtime"]["version"] == "3.14.0"
     assert receipt["requires_python"] == ">=3.13,<3.15"
     assert receipt["lock"] == {
@@ -463,26 +550,210 @@ def test_a_passing_proof_receipt_preserves_every_recorded_fact(tmp_path: Path) -
     assert "--no-python-downloads" in sync
 
 
-def test_a_python_other_than_3_14_fails_the_bootstrap(tmp_path: Path) -> None:
-    root = _checkout(tmp_path)
-    host = ScriptedHost(tmp_path, version_info=(3, 13, 7))
-    facts: dict[str, Any] = {}
-    with pytest.raises(proof.ProofFailure) as failure:
-        proof.run_proof(
-            root,
-            root / proof.PROOF_DIR,
-            facts,
-            runner=host,
-            environ={},
-            which=lambda _name: str(host.uv),
-            executable=CONTROL,
-        )
-    assert failure.value.stage == "bootstrap"
-    assert not any(call[1:3] == ["-m", proof.CLI_MODULE] for call in host.calls)
+# --- interpreter selection ----------------------------------------------------------------------
 
-    receipt = proof.build_receipt(facts, failure.value)
+
+def test_an_installed_3_14_is_preferred_over_an_installed_3_13(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.14": (3, 14, 1), "3.13": (3, 13, 13)})
+    facts: dict[str, Any] = {}
+    _run(root, host, facts)
+
+    assert _finds(host) == ["3.14"]
+    assert facts["selected_python"]["path"] == str(host.python("3.14"))
+    assert facts["selected_python"]["version"] == "3.14.1"
+    (sync,) = _synced(host)
+    assert sync[sync.index("--python") + 1] == str(host.python("3.14"))
+    assert facts["project_runtime"]["version"] == "3.14.1"
+
+
+def test_an_installed_3_13_is_the_automatic_fallback_when_3_14_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
+    monkeypatch.setattr(Path, "home", _forbidden)
+    monkeypatch.setattr(os.path, "expanduser", _forbidden)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts)
+    receipt = json.loads(json.dumps(proof.build_receipt(facts, None)))
+
+    assert receipt["verdict"] == "PASSED"
+    assert _finds(host) == ["3.14", "3.13"]
+    assert receipt["python_candidates"] == [
+        {"requested": "3.14", "outcome": "not installed"},
+        {
+            "requested": "3.13",
+            "path": str(host.python("3.13")),
+            "version": "3.13.13",
+            "outcome": "selected",
+        },
+    ]
+    assert receipt["selected_python"] == {
+        "path": str(host.python("3.13")),
+        "version": "3.13.13",
+        "requires_python": ">=3.13,<3.15",
+    }
+    assert receipt["requires_python"] == ">=3.13,<3.15"
+    assert receipt["project_runtime"]["version"] == "3.13.13"
+    (sync,) = _synced(host)
+    assert sync[sync.index("--python") + 1] == str(host.python("3.13"))
+    assert receipt["pages"] == _expected_rows()
+    assert receipt["evidence_ceiling"] == proof.EVIDENCE_CEILING
+
+
+@pytest.mark.parametrize(
+    ("requires", "installed", "outcome_3_14"),
+    [
+        # The 3.14 uv names reports another release: rejected, 3.13 taken.
+        (">=3.13,<3.15", {"3.14": (3, 12, 9), "3.13": (3, 13, 13)}, "rejected: not Python 3.14"),
+        # A checkout whose requires-python excludes 3.14 falls back to 3.13.
+        (
+            ">=3.13,<3.14",
+            {"3.14": (3, 14, 0), "3.13": (3, 13, 13)},
+            "rejected: does not satisfy >=3.13,<3.14",
+        ),
+    ],
+    ids=["wrong-release", "outside-requires-python"],
+)
+def test_an_incompatible_3_14_falls_back_to_a_compatible_3_13(
+    tmp_path: Path, requires: str, installed: dict[str, Sequence[int]], outcome_3_14: str
+) -> None:
+    root = _checkout(tmp_path, requires)
+    host = ScriptedHost(tmp_path, installed)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts)
+
+    first, second = facts["python_candidates"]
+    assert first["outcome"] == outcome_3_14
+    assert second["outcome"] == "selected"
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+    assert facts["requires_python"] == requires
+
+
+def test_a_uv_managed_candidate_is_rejected(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(
+        tmp_path,
+        {"3.14": (3, 14, 0), "3.13": (3, 13, 13)},
+        managed_dir=tmp_path / "python3.14",
+    )
+    host.python("3.14").parent.mkdir(parents=True)
+    facts: dict[str, Any] = {}
+    _run(root, host, facts)
+
+    assert facts["python_candidates"][0]["outcome"] == "rejected: uv-managed Python"
+    assert facts["selected_python"]["path"] == str(host.python("3.13"))
+    assert not any(call[0] == str(host.python("3.14")) for call in host.calls)
+
+
+@pytest.mark.parametrize(
+    ("requires", "installed", "outcomes"),
+    [
+        (">=3.13,<3.15", {}, ["not installed", "not installed"]),
+        (
+            ">=3.13,<3.15",
+            {"3.14": (3, 15, 0), "3.13": (3, 12, 9)},
+            ["rejected: not Python 3.14", "rejected: not Python 3.13"],
+        ),
+        (
+            ">=3.15",
+            {"3.14": (3, 14, 0), "3.13": (3, 13, 13)},
+            ["rejected: does not satisfy >=3.15", "rejected: does not satisfy >=3.15"],
+        ),
+    ],
+    ids=["missing", "wrong-releases", "outside-requires-python"],
+)
+def test_no_compatible_installed_python_fails_the_bootstrap_before_any_sync(
+    tmp_path: Path, requires: str, installed: dict[str, Sequence[int]], outcomes: list[str]
+) -> None:
+    root = _checkout(tmp_path, requires)
+    host = ScriptedHost(tmp_path, installed)
+    failure, facts = _failed(root, host)
+
+    assert failure.stage == "bootstrap"
+    assert "no installed system Python (3.14, 3.13) satisfies" in failure.detail
+    assert [entry["outcome"] for entry in facts["python_candidates"]] == outcomes
+    assert "selected_python" not in facts
+    assert _synced(host) == []
+    receipt = proof.build_receipt(facts, failure)
     assert receipt["verdict"] == "FAILED"
     assert receipt["failure"]["stage"] == "bootstrap"
     assert receipt["exact_sha"] == SHA
-    assert receipt["selected_python"]["version"] == "3.13.7"
+    assert receipt["requires_python"] == requires
     assert receipt["evidence_ceiling"] == proof.EVIDENCE_CEILING
+
+
+def test_an_unsupported_requires_python_fails_the_bootstrap(tmp_path: Path) -> None:
+    root = _checkout(tmp_path, "~=3.14")
+    host = ScriptedHost(tmp_path)
+    failure, facts = _failed(root, host)
+    assert failure.stage == "bootstrap"
+    assert "unsupported" in failure.detail
+    assert _finds(host) == []
+
+
+def test_every_uv_call_is_locked_system_only_and_isolated(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 13)})
+    facts: dict[str, Any] = {}
+    _run(root, host, facts)
+
+    (sync,) = _synced(host)
+    assert sync[2] == "--locked"
+    assert sync[sync.index("--python-preference") + 1] == "only-system"
+    assert "--no-python-downloads" in sync
+    for call, env in zip(host.calls, host.envs, strict=True):
+        if call[1:2] in (["python"], ["sync"]):
+            assert env["UV_PYTHON_DOWNLOADS"] == "never"
+            assert env["UV_PYTHON_PREFERENCE"] == "only-system"
+            assert "VIRTUAL_ENV" not in env
+            scratch = Path(env["UV_PROJECT_ENVIRONMENT"]).parent
+            assert not scratch.is_relative_to(root)
+            assert Path(env["UV_CACHE_DIR"]).parent == scratch
+        if call[1:3] == ["python", "find"]:
+            assert call[3:6] == list(proof.NO_MANAGED)
+    assert facts["lock"]["unchanged"] is True
+
+
+def test_a_lock_rewritten_by_the_sync_fails_the_bootstrap(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, lock_rewrite=(root / "uv.lock", b"version = 2\n"))
+    failure, facts = _failed(root, host)
+    assert failure.stage == "bootstrap"
+    assert "uv.lock changed" in failure.detail
+    assert facts["lock"]["unchanged"] is False
+    assert facts["lock"]["sha256_before"] != facts["lock"]["sha256_after"]
+
+
+@pytest.mark.parametrize(
+    ("installed", "project_version", "detail"),
+    [
+        ({"3.14": (3, 14, 0)}, (3, 15, 0), "is outside >=3.13,<3.15"),
+        ({"3.14": (3, 14, 0)}, (3, 12, 9), "is outside >=3.13,<3.15"),
+        ({"3.14": (3, 14, 0)}, (3, 13, 13), "not the selected Python"),
+        ({"3.13": (3, 13, 13)}, (3, 14, 0), "not the selected Python"),
+    ],
+)
+def test_the_project_runtime_is_validated_against_requires_python(
+    tmp_path: Path,
+    installed: dict[str, Sequence[int]],
+    project_version: Sequence[int],
+    detail: str,
+) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, installed, project_version=project_version)
+    failure, facts = _failed(root, host)
+    assert failure.stage == "runtime"
+    assert detail in failure.detail
+    expected = ".".join(str(part) for part in project_version)
+    assert facts["project_runtime"]["version"] == expected
+
+
+def test_a_project_runtime_on_another_patch_release_is_accepted(tmp_path: Path) -> None:
+    root = _checkout(tmp_path)
+    host = ScriptedHost(tmp_path, {"3.13": (3, 13, 12)}, project_version=(3, 13, 13))
+    facts: dict[str, Any] = {}
+    _run(root, host, facts)
+    assert facts["project_runtime"]["version"] == "3.13.13"
+    assert facts["problems"] == []

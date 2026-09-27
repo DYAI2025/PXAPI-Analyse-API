@@ -9,7 +9,8 @@ It uses the standard library only and changes nothing on the host. It
 1. records the checkout's exact ``HEAD`` SHA and refuses a checkout with tracked modifications;
 2. locates ``uv`` on ``PATH``, else beside ``sys.executable`` or, for a control interpreter under
    ``<home>/.agt-runner/``, in ``<home>/.local/bin`` — read off the interpreter path, not ``HOME``;
-3. selects an already installed Python 3.14 with downloads and uv-managed Pythons disabled;
+3. selects an already installed system Python — 3.14 preferred, else 3.13 — that satisfies the
+   checkout's ``requires-python``, with downloads and uv-managed Pythons disabled;
 4. builds a disposable project environment under ``TMPDIR`` with ``uv sync --locked`` against
    the checkout's own ``pyproject.toml`` and ``uv.lock``, and proves ``uv.lock`` is byte-identical
    afterwards;
@@ -45,7 +46,11 @@ from typing import Any
 TARGET = "https://www.rfc-editor.org/"
 MAX_SELECTED_PAGES = 3
 MIN_PAGES = 2
-REQUIRED_PYTHON = (3, 14)
+#: Installed system Pythons tried in this order (D-20-L prefers 3.14); each must also satisfy
+#: the checkout's ``requires-python``.
+PREFERRED_PYTHONS = ((3, 14), (3, 13))
+#: Every ``uv python`` / ``uv sync`` call: only system Pythons, never a download.
+NO_MANAGED = ("--python-preference", "only-system", "--no-python-downloads")
 PROOF_DIR = Path(".proof-output") / "pxapi20b-real-boundary"
 CANONICAL_DIR = "canonical"
 PROOF_RECEIPT = "proof-receipt.json"
@@ -444,12 +449,81 @@ def _checked(
     return completed.stdout
 
 
-def _probe(runner: Runner, stage: str, python: Path, cwd: Path, env: Mapping[str, str]) -> Any:
+def _probe(
+    runner: Runner, stage: str, python: Path, cwd: Path, env: Mapping[str, str]
+) -> dict[str, Any]:
     output = _checked(runner, stage, [str(python), "-c", PROBE], cwd, env)
     try:
-        return json.loads(output.strip().splitlines()[-1])
+        probed = json.loads(output.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError) as error:
         raise ProofFailure(stage, "interpreter probe printed no JSON") from error
+    if not isinstance(probed, dict):
+        raise ProofFailure(stage, "interpreter probe printed no JSON object")
+    return probed
+
+
+def version_info(probed: Mapping[str, Any]) -> tuple[int, ...] | None:
+    """The probed ``sys.version_info[:3]``, or ``None`` when the probe did not report one."""
+    info = probed.get("version_info")
+    if not isinstance(info, list) or not info or not all(type(part) is int for part in info):
+        return None
+    return tuple(info)
+
+
+def select_python(
+    runner: Runner,
+    uv: Path,
+    root: Path,
+    env: Mapping[str, str],
+    requires: str,
+    candidates: list[dict[str, Any]],
+) -> tuple[Path, dict[str, Any]]:
+    """The first :data:`PREFERRED_PYTHONS` interpreter fit to build the project runtime.
+
+    A candidate is what ``uv python find`` names with downloads and uv-managed Pythons off. It
+    is accepted only when it is not under uv's managed directory and its probe reports the
+    requested minor version and a release satisfying ``requires``. Each candidate's outcome is
+    appended to ``candidates``; a missing or rejected one moves on to the next, and none left
+    fails the bootstrap. Nothing is installed, downloaded or looked up under ``HOME``.
+    """
+    managed = _checked(runner, "bootstrap", [str(uv), "python", "dir"], root, env).strip()
+    managed_root = os.path.realpath(managed) if managed else None
+    for wanted in PREFERRED_PYTHONS:
+        version = ".".join(str(part) for part in wanted)
+        entry: dict[str, Any] = {"requested": version}
+        candidates.append(entry)
+        find = [str(uv), "python", "find", *NO_MANAGED, version]
+        try:
+            completed = runner(find, root, env)
+        except (OSError, subprocess.SubprocessError) as error:
+            detail = f"{uv} could not run ({type(error).__name__})"
+            raise ProofFailure("bootstrap", detail) from error
+        found = (completed.stdout or "").strip() if completed.returncode == 0 else ""
+        if not found:
+            entry["outcome"] = "not installed"
+            continue
+        python = Path(found)
+        entry["path"] = str(python)
+        if managed_root and Path(os.path.realpath(python)).is_relative_to(managed_root):
+            entry["outcome"] = "rejected: uv-managed Python"
+            continue
+        try:
+            probed = _probe(runner, "bootstrap", python, root, env)
+        except ProofFailure as failure:
+            entry["outcome"] = f"rejected: probe failed ({failure.detail[-200:]})"
+            continue
+        entry["version"] = probed.get("version")
+        info = version_info(probed)
+        if info is None or info[:2] != wanted:
+            entry["outcome"] = f"rejected: not Python {version}"
+            continue
+        if not satisfies(info, requires):
+            entry["outcome"] = f"rejected: does not satisfy {requires}"
+            continue
+        entry["outcome"] = "selected"
+        return python, probed
+    tried = ", ".join(".".join(str(part) for part in wanted) for wanted in PREFERRED_PYTHONS)
+    raise ProofFailure("bootstrap", f"no installed system Python ({tried}) satisfies {requires}")
 
 
 def run_proof(
@@ -485,6 +559,10 @@ def run_proof(
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     requires = pyproject["project"]["requires-python"]
     facts["requires_python"] = requires
+    try:
+        satisfies((0,), requires)
+    except ValueError as error:
+        raise ProofFailure("bootstrap", f"requires-python {requires!r}: {error}") from error
     lock = root / "uv.lock"
     before = sha256_hex(lock.read_bytes())
     facts["lock"] = {"sha256_before": before}
@@ -492,22 +570,17 @@ def run_proof(
     with tempfile.TemporaryDirectory(prefix="pxapi20b-proof-") as scratch_name:
         scratch = Path(scratch_name)
         uv_env = uv_environment(environ, scratch)
-        no_managed = ["--python-preference", "only-system", "--no-python-downloads"]
-        version = ".".join(str(part) for part in REQUIRED_PYTHON)
-        find = [str(uv), "python", "find", *no_managed, version]
-        base_python = Path(_checked(runner, "bootstrap", find, root, uv_env).strip())
-        managed = _checked(runner, "bootstrap", [str(uv), "python", "dir"], root, uv_env).strip()
-        managed_root = os.path.realpath(managed) if managed else None
-        if managed_root and Path(os.path.realpath(base_python)).is_relative_to(managed_root):
-            raise ProofFailure("bootstrap", f"{base_python} is a uv-managed Python")
-        base = _probe(runner, "bootstrap", base_python, root, uv_env)
-        facts["selected_python"] = {"path": str(base_python), "version": base.get("version")}
-        if tuple(base.get("version_info", ()))[:2] != REQUIRED_PYTHON:
-            raise ProofFailure("bootstrap", f"{base_python} is not Python {version}")
-        if not satisfies(base["version_info"], requires):
-            raise ProofFailure("bootstrap", f"Python {base['version']} does not meet {requires}")
+        candidates: list[dict[str, Any]] = []
+        facts["python_candidates"] = candidates
+        base_python, base = select_python(runner, uv, root, uv_env, requires, candidates)
+        base_info = version_info(base)
+        facts["selected_python"] = {
+            "path": str(base_python),
+            "version": base.get("version"),
+            "requires_python": requires,
+        }
 
-        sync = [str(uv), "sync", "--locked", "--python", str(base_python), *no_managed]
+        sync = [str(uv), "sync", "--locked", "--python", str(base_python), *NO_MANAGED]
         _checked(runner, "bootstrap", sync, root, uv_env)
         after = sha256_hex(lock.read_bytes())
         facts["lock"].update(sha256_after=after, unchanged=after == before)
@@ -521,8 +594,12 @@ def run_proof(
             "version": project.get("version"),
             "prefix": project.get("prefix"),
         }
-        if tuple(project.get("version_info", ()))[:2] != REQUIRED_PYTHON:
-            raise ProofFailure("runtime", "the project environment is not Python 3.14")
+        project_info = version_info(project)
+        if project_info is None or not satisfies(project_info, requires):
+            detail = f"the project environment's Python {project.get('version')!r} is outside"
+            raise ProofFailure("runtime", f"{detail} {requires}")
+        if base_info is None or project_info[:2] != base_info[:2]:
+            raise ProofFailure("runtime", "the project environment is not the selected Python")
         if os.path.realpath(project.get("prefix", "")) != os.path.realpath(scratch / "venv"):
             raise ProofFailure("runtime", "the project interpreter is not the disposable venv")
 

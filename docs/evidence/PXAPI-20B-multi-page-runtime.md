@@ -148,6 +148,56 @@ rules, not by running it. **The declared real-boundary execution is still pendin
 agent neither executed nor claims any network proof, no `proof-receipt.json` exists, and every
 `<NOT EXECUTED>` field above stands. No proof descriptor is added by this repair.
 
+### 5.2 Oracle interpreter and canonical cardinality repair (`run-pxapi20b-oracle-cardinality-repair-20260927-002`)
+
+**Base:** `cf8964ee8c985208e954e62f378b770b481478fc`. This repair changes only the harness, the
+acquisition command line's canonical-output boundary, their tests and this record.
+
+- **Proof interpreter.** The harness no longer hard-requires Python 3.14. It reads the exact
+  `requires-python` of the checkout's `pyproject.toml` (`>=3.13,<3.15`), then asks
+  `uv python find` — downloads and uv-managed Pythons off — for an already installed system
+  Python 3.14 and, if that is missing or rejected, 3.13. A candidate is accepted only when it is
+  not under `uv python dir`, its probe reports the requested minor version, and that release
+  satisfies `requires-python`; none left fails the bootstrap before any sync. `HOME` is not used,
+  nothing is downloaded, and the operator is never asked to install or select a Python.
+  `UV_PYTHON_DOWNLOADS=never`, `UV_PYTHON_PREFERENCE=only-system`, `uv sync --locked`, the
+  disposable `TMPDIR` environment and the `uv.lock` byte check are unchanged. The disposable
+  project runtime is validated against `requires-python` and the selected interpreter's minor
+  version, not an exact 3.14 tuple. `proof-receipt.json` records `requires_python`, every
+  candidate's outcome (`python_candidates`) and the chosen interpreter path and version
+  (`selected_python`). Exact SHA, target, `--max-selected-pages 3`, bundle, linkage, artifact and
+  evidence-ceiling checks, and the proof's own container check (`_shaped`), are unchanged.
+- **Canonical container cardinality.** `acquire_cli.CONTAINER_SHAPES` names the top-level
+  container of every `PRODUCED_DOCUMENTS` member: `analysis_run_request`, `analysis_run_state`,
+  `site_inventory` and `sampling_manifest` are exactly one JSON object; `stage_executions`,
+  `page_acquisitions`, `measurements` and `website_evidence` are exactly one JSON array of
+  objects. A member in any other shape — a singleton wrapped in a list, a plural member given as
+  one object or a scalar, an array holding a non-object — is reported as a deterministic
+  `<file>: container is not …` problem and its items are not validated. Before publication this
+  makes the run `CANONICAL_OUTPUT_INVALID` (exit 3), so no receipt is derived and no artifact is
+  written. On read-back the same rule runs first, and a misshapen member reaches none of the
+  contract, binding, producer-invariant or receipt helpers. No JSON Schema and no valid document
+  changed.
+- **Tests.** `tests/tools/test_pxapi20b_real_boundary_proof.py`: 3.14 preferred over an installed
+  3.13; automatic 3.13 fallback with home lookup forbidden; incompatible 3.14 (wrong release,
+  outside `requires-python`) falling back; a uv-managed candidate rejected; missing, wrong and
+  out-of-range candidates failing the bootstrap before any sync; an unsupported `requires-python`;
+  locked, system-only, isolated uv calls; a rewritten lock; project-runtime validation; the
+  proof's list members mirroring `CONTAINER_SHAPES`. `tests/adapters/test_acquire_cli.py`:
+  singleton-as-list, plural-as-dict, plural with a non-object and plural-as-scalar withheld as
+  `CANONICAL_OUTPUT_INVALID` with no artifact and no receipt; the same shapes read back from disk
+  reported without raising and kept from the producer invariants; a neutral mixed
+  200 / 404 / `TIMEOUT` run still publishing the same valid bundle.
+
+| Gate | Result |
+| --- | --- |
+| `uv run ruff check .` / `ruff format --check .` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+| `uv run pytest` | `<NOT RUN IN THE AUTHORING SESSION — runner/Governor readback>` |
+
+The authoring session again had no shell tool, so neither the tests, Ruff nor the proof could be
+executed here. **The declared real-boundary execution is still pending**: no `proof-receipt.json`
+exists, every `<NOT EXECUTED>` field above stands, and no proof descriptor is added.
+
 ## 6. Evidence ceiling
 
 Even once executed, this proves one bounded, explicitly budgeted selection of one controlled

@@ -38,9 +38,12 @@ from pxapi.domain.site_discovery import (
     SourceAttempt,
     SourceOutcome,
 )
+from pxapi.ports.page_fetch import FetchFailureKind, PageFetchFailure
 from tests.adapters.http_test_server import ControlledHttpServer, Route, loopback_policy
 from tests.application.test_acquire_selected_pages import (
     ORIGIN,
+    PAGE_A,
+    PAGE_B,
     REQUEST,
     SELECTED,
     FakeFetcher,
@@ -48,6 +51,7 @@ from tests.application.test_acquire_selected_pages import (
     clock,
     counting_ids,
     report,
+    response,
 )
 from tests.application.test_discover_site import FakeDiscovery
 from tests.contracts.support import CONTRACTS
@@ -140,6 +144,75 @@ def test_the_output_check_covers_every_page_document_contract() -> None:
     ]
 
 
+def test_every_produced_member_declares_its_container_shape() -> None:
+    assert set(acquire_cli.CONTAINER_SHAPES) == set(acquire_cli.PRODUCED_DOCUMENTS)
+    plural = {member for member, shape in acquire_cli.CONTAINER_SHAPES.items() if shape is list}
+    assert plural == {"stage_executions", "page_acquisitions", "measurements", "website_evidence"}
+    assert set(acquire_cli.CONTAINER_SHAPES.values()) == {dict, list}
+
+
+def _singleton_as_list(envelope: dict[str, Any]) -> None:
+    envelope["sampling_manifest"] = [envelope["sampling_manifest"]]
+
+
+def _plural_as_dict(envelope: dict[str, Any]) -> None:
+    envelope["measurements"] = envelope["measurements"][0]
+
+
+def _plural_with_a_non_object(envelope: dict[str, Any]) -> None:
+    envelope["website_evidence"].append("e-2")
+
+
+def _plural_as_scalar(envelope: dict[str, Any]) -> None:
+    envelope["stage_executions"] = 7
+
+
+NOT_AN_OBJECT = "container is not one JSON object"
+NOT_AN_ARRAY = "container is not a JSON array of objects"
+MISSHAPEN = [
+    (_singleton_as_list, f"sampling-manifest.json: {NOT_AN_OBJECT}"),
+    (_plural_as_dict, f"measurement-records.json: {NOT_AN_ARRAY}"),
+    (_plural_with_a_non_object, f"website-evidence.json: {NOT_AN_ARRAY}"),
+    (_plural_as_scalar, f"stage-execution-records.json: {NOT_AN_ARRAY}"),
+]
+MISSHAPEN_IDS = ["singleton-as-list", "plural-as-dict", "plural-with-non-object", "plural-scalar"]
+
+
+@pytest.mark.parametrize(("tamper", "problem"), MISSHAPEN, ids=MISSHAPEN_IDS)
+def test_a_member_in_the_wrong_container_is_canonical_output_invalid(
+    tamper: Any, problem: str
+) -> None:
+    envelope = build(FakeFetcher(), 3).run(dict(REQUEST))
+    assert acquire_cli.container_problems(envelope) == []
+    assert acquire_cli.invalid_documents(CONTRACTS, envelope) == []
+    tamper(envelope)
+    # Every item inside may still satisfy its contract; the container alone is the defect.
+    assert acquire_cli.container_problems(envelope) == [problem]
+    assert acquire_cli.invalid_documents(CONTRACTS, envelope) == [problem]
+
+
+@pytest.mark.parametrize("tamper", [tamper for tamper, _ in MISSHAPEN], ids=MISSHAPEN_IDS)
+def test_a_misshapen_member_is_withheld_before_any_artifact_or_receipt_exists(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    tamper: Any,
+) -> None:
+    stub(monkeypatch, tamper=tamper)
+    receipts: list[Any] = []
+    monkeypatch.setattr(acquire_cli, "page_receipt", lambda envelope: receipts.append(envelope))
+    out = tmp_path / "run"
+    assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 3
+    output = json.loads(capsys.readouterr().out)
+    # PXAPI's own defect, never a site outcome: the problem document replaces the envelope.
+    assert output["code"] == "CANONICAL_OUTPUT_INVALID"
+    assert CONTRACTS.validate("problem", output) == ()
+    assert "page_acquisitions" not in output
+    assert "acquisition_outcome" not in json.dumps(output)
+    assert not out.exists()
+    assert receipts == []
+
+
 def run_into(out: Path, capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
     """One successful stubbed run publishing into ``out``; the envelope it printed."""
     assert acquire_cli.main([ORIGIN, "--max-selected-pages", "3", "--output-dir", str(out)]) == 0
@@ -199,6 +272,96 @@ def test_the_read_back_sees_an_artifact_altered_on_disk(
     problems = acquire_cli.read_back_problems(out, CONTRACTS, envelope)
     assert "page-acquisition-records.json: differs from what this run wrote" in problems
     assert any("one_record_per_selection" in problem for problem in problems), problems
+
+
+@pytest.mark.parametrize(
+    ("file_name", "reshape", "wording"),
+    [
+        ("sampling-manifest.json", lambda document: [document], NOT_AN_OBJECT),
+        ("analysis-run-state.json", lambda document: [document], NOT_AN_OBJECT),
+        ("measurement-records.json", lambda documents: documents[0], NOT_AN_ARRAY),
+        ("website-evidence.json", lambda documents: [*documents, 7], NOT_AN_ARRAY),
+    ],
+    ids=["singleton-as-list", "run-state-as-list", "plural-as-dict", "plural-with-non-object"],
+)
+def test_a_misshapen_artifact_read_back_from_disk_is_reported_not_raised(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    file_name: str,
+    reshape: Any,
+    wording: str,
+) -> None:
+    stub(monkeypatch)
+    out = tmp_path / "run"
+    envelope = run_into(out, capsys)
+    path = out / file_name
+    path.write_text(json.dumps(reshape(json.loads(path.read_text(encoding="utf-8")))))
+
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, envelope)
+    assert f"{file_name}: differs from what this run wrote" in problems
+    assert problems.count(f"{file_name}: {wording}") == 1
+    assert f"{acquire_cli.RECEIPT_FILE}: does not summarise the documents beside it" in problems
+    contract = next(c for c, name in acquire_cli.PRODUCED_DOCUMENTS.values() if name == file_name)
+    assert contract not in problems
+    assert acquire_cli.read_back_problems(out, CONTRACTS, envelope) == problems
+
+
+@pytest.mark.parametrize(
+    "file_name",
+    ["sampling-manifest.json", "page-acquisition-records.json", "measurement-records.json"],
+)
+def test_a_misshapen_page_document_keeps_the_producer_invariants_from_running(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    file_name: str,
+) -> None:
+    stub(monkeypatch)
+    out = tmp_path / "run"
+    envelope = run_into(out, capsys)
+    path = out / file_name
+    document = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps(document[0] if isinstance(document, list) else [document]))
+
+    def forbidden(*_args: Any) -> Any:
+        pytest.fail("the producer invariants must not see a misshapen container")
+
+    monkeypatch.setattr(acquire_cli, "acquisition_violations", forbidden)
+    problems = acquire_cli.read_back_problems(out, CONTRACTS, envelope)
+    assert "page documents: the producer invariants cannot be applied" in problems
+
+
+def test_neutral_mixed_page_outcomes_still_publish_the_same_valid_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fetcher = FakeFetcher(
+        {
+            PAGE_A: response(PAGE_A, status=404),
+            PAGE_B: PageFetchFailure(FetchFailureKind.TIMEOUT),
+        }
+    )
+
+    def fake_build(budgets: SelectionBudgets, registry: Any = None) -> Any:
+        return build(fetcher, budgets.max_selected_pages)
+
+    monkeypatch.setattr(acquire_cli, "build_site_acquisition", fake_build)
+    out = tmp_path / "run"
+    envelope = run_into(out, capsys)
+
+    assert envelope["analysis_run_state"]["state"] == "SUCCEEDED"
+    records = envelope["page_acquisitions"]
+    assert [r["acquisition_outcome"] for r in records] == [
+        "RESPONSE_RECEIVED",
+        "RESPONSE_RECEIVED",
+        "TIMEOUT",
+    ]
+    assert records[1]["http_status"] == 404
+    assert acquire_cli.container_problems(envelope) == []
+    assert acquire_cli.invalid_documents(CONTRACTS, envelope) == []
+    assert acquire_cli.read_back_problems(out, CONTRACTS, envelope) == []
+    for member, (_contract, file_name) in acquire_cli.PRODUCED_DOCUMENTS.items():
+        assert json.loads((out / file_name).read_text(encoding="utf-8")) == envelope[member]
 
 
 # --- one run, one fresh bundle -----------------------------------------------------------------

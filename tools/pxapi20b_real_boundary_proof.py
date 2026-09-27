@@ -306,10 +306,9 @@ def _check_linkage(
     if receipt.get("run_id") != run_id or receipt.get("run_state") != state.get("state"):
         problems.append(f"{CLI_RECEIPT}: does not describe this run")
 
-    if (
-        manifest.get("inventory_ref") != inventory.get("inventory_id")
-        or manifest.get("inventory_output_digest") != inventory.get("output_digest")
-    ):
+    if manifest.get("inventory_ref") != inventory.get("inventory_id") or manifest.get(
+        "inventory_output_digest"
+    ) != inventory.get("output_digest"):
         problems.append("sampling manifest is not bound to this run's site inventory")
     if manifest.get("budgets") != {"max_selected_pages": budget}:
         problems.append(f"sampling manifest budget is not max_selected_pages={budget}")
@@ -336,10 +335,9 @@ def _check_linkage(
         problems.append("a measurement identity occurs twice")
     owner: dict[str, str] = {}
     for record in records:
-        if (
-            record.get("sampling_manifest_ref") != manifest.get("sampling_manifest_id")
-            or record.get("sampling_manifest_output_digest") != manifest.get("output_digest")
-        ):
+        if record.get("sampling_manifest_ref") != manifest.get(
+            "sampling_manifest_id"
+        ) or record.get("sampling_manifest_output_digest") != manifest.get("output_digest"):
             problems.append(f"record {record.get('acquisition_id')}: not bound to the manifest")
         for ref in record.get("measurement_refs", []):
             if ref not in measurement_ids:

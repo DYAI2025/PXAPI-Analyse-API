@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "proofs": [
+    {
+      "id": "pxapi20b-real-boundary",
+      "runtime": "python",
+      "entrypoint": "tools/pxapi20b_real_boundary_proof.py",
+      "output_dir": ".proof-output/pxapi20b-real-boundary",
+      "artifacts": [
+        {"path": "proof-receipt.json", "kind": "json"},
+        {"path": "canonical/analysis-run-request.json", "kind": "json"},
+        {"path": "canonical/analysis-run-state.json", "kind": "json"},
+        {"path": "canonical/stage-execution-records.json", "kind": "json"},
+        {"path": "canonical/site-inventory.json", "kind": "json"},
+        {"path": "canonical/sampling-manifest.json", "kind": "json"},
+        {"path": "canonical/page-acquisition-records.json", "kind": "json"},
+        {"path": "canonical/measurement-records.json", "kind": "json"},
+        {"path": "canonical/website-evidence.json", "kind": "json"},
+        {"path": "canonical/receipt.json", "kind": "json"}
+      ],
+      "mandatory": true,
+      "timeout_seconds": 1800
+    }
+  ],
+  "integrity_roots": [
+    "src/pxapi",
+    "contracts/v1",
+    "pyproject.toml",
+    "uv.lock"
+  ]
+}

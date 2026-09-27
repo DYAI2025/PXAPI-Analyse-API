@@ -61,9 +61,11 @@ SYSTEM_FIND = (
     "--no-managed-python",
     "--no-python-downloads",
 )
-#: Host variables that name, rank or configure an interpreter; ``uv python find`` runs without
-#: them so :data:`SYSTEM_FIND` alone decides (``UV_PYTHON_PREFERENCE`` would also collide with
-#: ``--no-managed-python``).
+#: The ``uv python dir`` managed-root probe, independent of project or user uv configuration.
+MANAGED_DIR = ("--no-config",)
+#: Host variables that name, rank, configure or relocate an interpreter; ``uv python dir`` and
+#: ``uv python find`` run without them so :data:`MANAGED_DIR` and :data:`SYSTEM_FIND` alone
+#: decide (``UV_PYTHON_PREFERENCE`` would also collide with ``--no-managed-python``).
 DISCOVERY_DROPPED = frozenset(
     {
         "UV_PYTHON",
@@ -72,6 +74,7 @@ DISCOVERY_DROPPED = frozenset(
         "UV_NO_MANAGED_PYTHON",
         "UV_CONFIG_FILE",
         "UV_PROJECT",
+        "UV_PYTHON_INSTALL_DIR",
     }
 )
 PROOF_DIR = Path(".proof-output") / "pxapi20b-real-boundary"
@@ -181,6 +184,10 @@ def python_request(requires: str, wanted: Sequence[int]) -> str:
     clauses = [raw.strip() for raw in requires.split(",") if raw.strip()]
     minor = ".".join(str(part) for part in wanted)
     return ",".join([*clauses, f"=={minor}.*"])
+
+
+def managed_dir_argv(uv: Path) -> list[str]:
+    return [str(uv), "python", "dir", *MANAGED_DIR]
 
 
 def find_argv(uv: Path, request: str) -> list[str]:
@@ -522,14 +529,15 @@ def select_python(
     A candidate is what ``uv python find`` names for ``requires`` intersected with the preferred
     minor, run with :data:`SYSTEM_FIND` and without :data:`DISCOVERY_DROPPED`, so neither a
     ``.python-version`` pin nor project or user uv configuration chooses it. It is accepted only
-    when it is not under uv's managed directory and its probe reports the requested minor
+    when it is not under uv's managed directory (``uv python dir`` with :data:`MANAGED_DIR`, also
+    without :data:`DISCOVERY_DROPPED`) and its probe reports the requested minor
     version and a release satisfying ``requires``. Each candidate's outcome is appended to
     ``candidates``; a missing or rejected one moves on to the next, and none left fails the
     bootstrap. Nothing is installed, downloaded or looked up under ``HOME``.
     """
-    managed = _checked(runner, "bootstrap", [str(uv), "python", "dir"], root, env).strip()
-    managed_root = os.path.realpath(managed) if managed else None
     find_env = discovery_environment(env)
+    managed = _checked(runner, "bootstrap", managed_dir_argv(uv), root, find_env).strip()
+    managed_root = os.path.realpath(managed) if managed else None
     for wanted in PREFERRED_PYTHONS:
         version = ".".join(str(part) for part in wanted)
         request = python_request(requires, wanted)

@@ -420,6 +420,12 @@ class ScriptedHost:
         if argv[:3] == [str(self.uv), "python", "find"] and _minor(argv[-1]) not in self.pythons:
             stderr = f"error: No interpreter found for Python {argv[-1]} in system path\n"
             return subprocess.CompletedProcess(argv, 2, stdout="", stderr=stderr)
+        if argv[:3] == [str(self.uv), "python", "dir"] and (
+            "UV_CONFIG_FILE" in env or "UV_PROJECT" in env
+        ):
+            # Real uv exits 2 on an unreadable UV_CONFIG_FILE or a UV_PROJECT without a project.
+            stderr = "error: Failed to parse the configured uv settings\n"
+            return subprocess.CompletedProcess(argv, 2, stdout="", stderr=stderr)
         return subprocess.CompletedProcess(argv, 0, stdout=self._answer(argv, env), stderr="")
 
     def _answer(self, argv: list[str], env: Mapping[str, str]) -> str:
@@ -433,7 +439,8 @@ class ScriptedHost:
             if argv[1:3] == ["python", "find"]:
                 return f"{self.python(_minor(argv[-1]))}\n"
             if argv[1:3] == ["python", "dir"]:
-                return f"{self.managed_dir or '/nowhere'}\n"
+                install_dir = env.get("UV_PYTHON_INSTALL_DIR", self.managed_dir or "/nowhere")
+                return f"{install_dir}\n"
             if argv[1] == "sync":
                 self.synced = argv[argv.index("--python") + 1]
                 if self.lock_rewrite is not None:
@@ -724,9 +731,12 @@ def test_every_uv_call_is_locked_system_only_and_isolated(tmp_path: Path) -> Non
             scratch = Path(env["UV_PROJECT_ENVIRONMENT"]).parent
             assert not scratch.is_relative_to(root)
             assert Path(env["UV_CACHE_DIR"]).parent == scratch
-        if call[1:3] == ["python", "find"]:
+        if call[1:3] == ["python", "dir"]:
+            assert call == proof.managed_dir_argv(host.uv)
+            assert not proof.DISCOVERY_DROPPED & set(env)
+        elif call[1:3] == ["python", "find"]:
             assert call[3:-1] == list(proof.SYSTEM_FIND)
-            assert "UV_PYTHON_PREFERENCE" not in env
+            assert not proof.DISCOVERY_DROPPED & set(env)
         elif call[1:2] in (["python"], ["sync"]):
             assert env["UV_PYTHON_PREFERENCE"] == "only-system"
     assert facts["lock"]["unchanged"] is True
@@ -751,6 +761,13 @@ def test_the_discovery_argv_is_the_runner_proven_system_only_form() -> None:
         "--no-python-downloads",
         ">=3.13,<3.15,==3.13.*",
     ]
+    assert proof.managed_dir_argv(Path("/opt/bin/uv")) == [
+        "/opt/bin/uv",
+        "python",
+        "dir",
+        "--no-config",
+    ]
+    assert "UV_PYTHON_INSTALL_DIR" in proof.DISCOVERY_DROPPED
 
 
 @pytest.mark.parametrize(
@@ -781,6 +798,8 @@ def test_discovery_ignores_host_uv_configuration_and_python_pins(tmp_path: Path)
         "UV_NO_MANAGED_PYTHON": "0",
         "UV_CONFIG_FILE": str(root / "uv.toml"),
         "UV_PROJECT": str(root),
+        # Would make every installed system Python look uv-managed.
+        "UV_PYTHON_INSTALL_DIR": str(tmp_path),
     }
     facts: dict[str, Any] = {}
     proof.run_proof(
@@ -794,6 +813,15 @@ def test_discovery_ignores_host_uv_configuration_and_python_pins(tmp_path: Path)
         expected_sha=SHA,
     )
 
+    probes = [
+        (call, env)
+        for call, env in zip(host.calls, host.envs, strict=True)
+        if call[1:3] == ["python", "dir"]
+    ]
+    assert [call for call, _env in probes] == [proof.managed_dir_argv(host.uv)]
+    for _call, env in probes:
+        assert not proof.DISCOVERY_DROPPED & set(env)
+        assert env["UV_PYTHON_DOWNLOADS"] == "never"
     finds = [
         (call, env)
         for call, env in zip(host.calls, host.envs, strict=True)

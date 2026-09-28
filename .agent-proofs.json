@@ -56,6 +56,8 @@
     "src/pxapi",
     "contracts/v1",
     "pyproject.toml",
-    "uv.lock"
+    "uv.lock",
+    "tools/pxapi20b_real_boundary_proof.py",
+    "tests/tools/test_pxapi20b_real_boundary_proof.py"
   ]
 }

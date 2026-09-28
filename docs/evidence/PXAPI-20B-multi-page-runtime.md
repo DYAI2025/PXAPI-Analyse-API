@@ -15,8 +15,21 @@ truthfully contain its own SHA, so the Delivery Runner re-runs the mandatory rea
 the exact documentation result SHA and publishes fresh artifacts externally. Nothing in this file
 claims a merge, a PR, `main` CI on a merge SHA, or `PXAPI-20` Done.
 
-**Authority:** Jira `PXAPI-20` comments `16258`, `16259` (`D-20-A` … `D-20-P`), `16325`, `16656`;
-Confluence `54362115` v1, `55181314` v1, `40239107` v2, `39846055` v4.
+**Review checkpoint and repair (2026-09-28).** Jira `PXAPI-20` comment `16689` is the accepted
+independent exact-head review of `0bbd7878d3478ab0ff91787f5ea2e2008d32ccc1`, the
+evidence-reconcile head on top of `28e29a0`: `IC` GREEN, `R2G` NOT_GREEN, `R4M` NOT_GREEN, because
+of `F-20B-R4M-001` and `F-20B-R4M-002` (§5.5). The exact-base GitHub Actions `python-compat` run
+`36350997318` succeeded on Python 3.13.15 and 3.14.7 with Ruff green and `3307 passed, 2 skipped`.
+§5.5 records the proof-integrity repair authored on
+`agent/pxapi20b-proof-integrity-repair-20260928-001`: it changes the proof oracle, its focused
+test, the proof descriptor's integrity roots and the two documents, and nothing of the verified
+runtime. The proof at the repair's result SHA was not executed by this document's author; the
+Delivery Runner runs it and, because the oracle changed, its verdict is reviewed independently.
+Every figure in §4 and §5 stays bound to `28e29a0`; the two findings concern what the proof
+*checked*, not what the runtime produced.
+
+**Authority:** Jira `PXAPI-20` comments `16258`, `16259` (`D-20-A` … `D-20-P`), `16325`, `16656`,
+`16689`; Confluence `54362115` v1, `55181314` v1, `40239107` current, `39846055` v4.
 
 ## 1. What this candidate builds
 
@@ -287,6 +300,59 @@ proof at that documentation result SHA and publishes a fresh set, which will car
 inventory, manifest and acquisition ids and new artifact digests. That later set is evidence about
 its own SHA and is recorded by its own run, not by editing this table.
 
+### 5.5 Proof-integrity repair (`run-pxapi20b-proof-integrity-repair-20260928-001`)
+
+**Base:** `0bbd7878d3478ab0ff91787f5ea2e2008d32ccc1` on
+`agent/pxapi20b-evidence-reconcile-20260927-001`. **Branch:**
+`agent/pxapi20b-proof-integrity-repair-20260928-001`. Current `main`
+`e4066161f5d31bb10fccb9d36baac4197e61fc02`; no 20.B PR exists. Authority for the findings: Jira
+`PXAPI-20` comment `16689`. This is a bounded repair of the proof oracle, not a new implementation
+and not a new ticket; the verified 20.B runtime is preserved byte for byte.
+
+**Findings repaired.**
+
+- `F-20B-R4M-001` — at the base, `tools/pxapi20b_real_boundary_proof.py` checked JSON, container
+  shape and linkage, but validated no canonical document against its registered contract, applied
+  no producer invariant, and copied `receipt.document_digests` into its own summary instead of
+  recomputing anything. A bundle with a missing `schema_version`, invalid digest strings and a
+  forged document count could return no problems and a `PASSED` receipt.
+- `F-20B-R4M-002` — checkout cleanliness was `git status --porcelain --untracked-files=no`, and the
+  command line ran with the checkout root as its working directory, so an untracked top-level
+  `pxapi` package would have been imported in place of the tracked `src/pxapi` while the proof
+  recorded the tracked SHA.
+
+**What changed** — proof oracle only. `src/pxapi/**` (acquisition runtime, application,
+composition and `acquire_cli.py` included), `contracts/**`, every test outside
+`tests/tools/test_pxapi20b_real_boundary_proof.py`, `AnalyzeHomepage`, `SafePageFetcher`,
+`adapters/web/**`, `pyproject.toml`, `uv.lock`, `.github/**`, `oracle/**`, `README.md`,
+`docs/context/project-state.md` and `docs/context/decision-ledger.md` are byte-identical to the
+base. No PR, merge, Jira transition or comment, or Confluence mutation was made.
+
+| File | Change |
+| --- | --- |
+| `tools/pxapi20b_real_boundary_proof.py` | **Isolation.** After the tracked-cleanliness check, `git status --porcelain --untracked-files=all -- src contracts` must print nothing and no checkout-root entry named `pxapi` or `pxapi.<ext>` may exist, else stage `isolation` fails before `uv` runs. Every Python the harness starts — the interpreter probes, the production command line and the verifier — runs with `-I` (no `PYTHON*` variable, no user site, no script or working directory on `sys.path`) from an empty scratch working directory under `TMPDIR`, never from the checkout; `PYTHONPATH`, `PYTHONHOME`, `VIRTUAL_ENV`, `SSL_CERT_DIR` and `PXAPI_CONTRACTS_DIR` are dropped from the command environment as well. **Verification.** A second consumer (`CONTRACT_VERIFIER`) runs as the locked project runtime after the command line: it reports the real `pxapi.__file__`, the runtime's contract root and its `isolated`/`safe_path` flags, validates every canonical document against its registered contract in the checkout's `contracts/v1`, and applies `pxapi.domain.page_acquisition.acquisition_violations` to the documents as read back. The observed origin must resolve to the tracked `src/pxapi` of the checkout or to a `pxapi` package inside the disposable environment, the contract root must be the checkout's, and the flags must be set, else stage `isolation` fails; any schema or producer-invariant violation fails stage `contract`. The verifier reads no receipt and reports malformed files as problems rather than raising. **Recomputation**, standard library only, in the control interpreter: the semantic SHA-256 digests and counts of the page-acquisition, measurement and WebsiteEvidence documents; `SiteInventory.output_digest`; `SamplingManifest.input_digest` and `output_digest` — projections and canonical JSON options restated from `pxapi.domain.acquisition_digests` and pinned by test; and every `receipt.json` member derivable from the canonical documents (`run_id`, `run_state`, `failure_code`, the inventory and manifest blocks including `selected_count` and `candidate_count`, `document_digests`, and every per-page row and its cardinality), compared for exact parity with recomputed digests in place of copied ones. `SiteInventory.input_digest` is shape-checked only: it is over discovery observations the published bundle does not carry (`INVENTORY_INPUT` is empty), and that ceiling is stated rather than filled. **Cardinality.** Selections must be objects with positive whole-number ranks, unique, dense `1..n`, at most the budget and candidates of the bound inventory; acquisitions must be exactly the selections in rank order with none missing, extra or duplicated and unique `acquisition_id`; measurement refs must be unique per record, resolve, be owned by exactly one record, and every measurement must be owned; each measurement must be observed at its record's `acquired_at`, sourced at the Page Ref when no response arrived and at no more than one response URL otherwise, and a page may measure one metric once; every evidence record must carry nonempty refs resolving to measurements of exactly one page, mirror its measurement's `source_url` and `observed_at`, and carry no polarity; `measurements_withheld_reason` if and only if there are no refs; no `raw_artifact_ref`. **Fail-closed.** `NaN`/`Infinity` are refused as the registry refuses them; a malformed bundle is a deterministic list of problems and a nonzero result; a harness defect still leaves a `FAILED` receipt. New receipt members `isolation`, `verification` and `recomputed_digests`; new failure stages `isolation`, `verification` and `contract`. |
+| `tests/tools/test_pxapi20b_real_boundary_proof.py` | The schema-invalid placeholder fixture is replaced by the shipped runtime's own output over the frozen discovery report and a fake fetch port, published through `acquire_cli.expected_bundle` — asserted contract-valid and producer-valid before use, with a neutral 200 / 404 / `TIMEOUT` variant and a complete-selection variant. The harness's canonical JSON options, digest member classes, projections and re-derived receipt are pinned against `pxapi.domain.acquisition_digests` and `acquire_cli.page_receipt`. Negative cases, each passing only when the proof rejects: an untracked checkout-root `pxapi` package, `pxapi.py` or `pxapi.pyc`; untracked entries under `src` / `contracts`; a `pxapi` imported from outside the locked project; a runtime without isolation flags; missing `schema_version` in a singleton and in a plural document; malformed and wrong inventory `output_digest`; malformed inventory `input_digest`; wrong manifest `input_digest` and `output_digest`; duplicate, gapped and unknown selections; missing, duplicate and extra acquisitions; a record unbound from the manifest; a `raw_artifact_ref`; empty refs without a reason; missing, duplicated and orphan measurements; a measurement owned by two records, named twice by one record, or measuring a metric twice; a measurement outside its page's instant or response context; unlinked, empty, duplicated, cross-page, out-of-context and polarised evidence; a document of another run; a failed run state; forged receipt document count, semantic digest, `selected_count`, manifest and inventory digests, `candidate_count` and `run_state`; forged receipt rows (outcome, status, measurement refs, evidence refs, reasons, withheld reason, rank, body digest); wrong row count, a missing and an underivable receipt member; stdout / file mismatch; six malformed-bundle shapes reported deterministically without raising. The real verifier is executed by the test interpreter under `-I` on the positive fixture (origin bound to `src/pxapi`, every file counted), on a document without `schema_version`, on an invalid digest and an unsupported version, on a duplicated record (producer rules named) and on a misshapen and an unreadable file. The scripted-host proof run covers the whole pipeline — every Python call isolated and started from the scratch directory, the command environment cleaned, each failure stage, contract and linkage problems recorded together — and one run over the repository's own checkout with the verifier actually executed. Every bootstrap, interpreter-selection, lock, uv-isolation and well-known-directory check of §5.1–§5.3 is retained. |
+| `.agent-proofs.json` | Additive only: `tools/pxapi20b_real_boundary_proof.py` and `tests/tools/test_pxapi20b_real_boundary_proof.py` join `integrity_roots`. Every existing root, artifact, `mandatory`, `output_dir` and `timeout_seconds` is unchanged. |
+| `docs/evidence/PXAPI-20B-multi-page-runtime.md`, `docs/context/contradiction-ledger.md` | This section, the header checkpoint note, the §6 note and `C-PXAPI-024`. |
+
+**Authorship state, written at the time.** The authoring session had no shell tool: neither the
+focused tests, the full suite, Ruff nor the proof were executed there, and no figure below is
+invented. Formatting was written to the repository formatter's rules by hand, not by running it.
+
+| Gate | Result |
+| --- | --- |
+| `uv run pytest tests/tools/test_pxapi20b_real_boundary_proof.py` | not run in this authoring session (no shell tool); to be measured by the Delivery Runner on the exact result SHA |
+| `uv run pytest` from a fresh runner-owned locked environment | not run in this authoring session; the base's `2 skipped` and its warning count are expected to be preserved, and any deviation is a finding |
+| `uv run ruff check .` / `uv run ruff format --check .` | not run in this authoring session |
+| mandatory proof `pxapi20b-real-boundary` at the result SHA | not run in this authoring session. The Delivery Runner runs it under runner policy against `https://www.rfc-editor.org/` through the production command line with explicit `--max-selected-pages 3` on the measured-fast supported interpreter selection (`D-20-L`); because the oracle changed, its verdict requires independent review (`VERIFIED_ORACLE_CHANGED/INDEPENDENT_REVIEW`) and is not self-authorised by this repair |
+
+**Evidence ceiling of this repair.** It makes the proof a second, independent consumer of the
+bundle and binds the runtime it observed to the tracked installation. It does not change what the
+runtime produces, does not widen the public proof beyond one bounded selection of one origin, adds
+no product or architecture decision, and declares no gate. `resolution.next_action`: the Delivery
+Runner executes the focused tests, the full suite, Ruff and the mandatory proof on the exact result
+SHA and publishes the artifacts; then independent `R2G` / `R4M` at that head (`D-20-M`).
+
 ## 6. Evidence ceiling
 
 Executed, this proves **one bounded point-in-time selection of one controlled public origin over
@@ -300,3 +366,9 @@ run, §3) remains **regression evidence from tests** and is not claimed as obser
 Independent Governor review recommends `IC` / `R2G` / `R4M` `GREEN` for `28e29a0`; that
 recommendation, the gates themselves, PR creation, merge and `PXAPI-20` closeout are Orchestrator /
 Product Owner authority (`D-20-M`) and none of them is declared by this document.
+
+**Superseded, preserved (2026-09-28).** The recommendation above preceded the accepted exact-head
+review of `0bbd787` in Jira `PXAPI-20` comment `16689`, which records `IC` GREEN and `R2G` /
+`R4M` NOT_GREEN for the proof-oracle findings repaired in §5.5. The sentence is kept as written;
+no gate is declared here, and the next evaluation is the independent one at the repair's result
+SHA.

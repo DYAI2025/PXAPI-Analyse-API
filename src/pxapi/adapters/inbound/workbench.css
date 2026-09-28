@@ -46,7 +46,8 @@ button {
 table { border-collapse: collapse; width: 100%; }
 /* A narrow screen scrolls a wide table inside its own container instead of squeezing it. */
 .table-wrap > table { min-width: 34rem; }
-td code { overflow-wrap: normal; }
+/* Opaque identifiers may wrap; a measured value keeps room to be read. */
+td .value { display: inline-block; min-width: 14rem; }
 caption { text-align: left; font-weight: 600; padding: .25rem 0; }
 th, td { text-align: left; vertical-align: top; padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
 th { background: var(--wash); }

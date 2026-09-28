@@ -17,10 +17,10 @@ It is network-dependent evidence and deliberately **not** a push-CI test. It
    result page → every selected page opened in the Evidence Inspector → the validation section;
    it fails if any script element, event-handler attribute or dialog appears;
 4. downloads the canonical artifact bundle and the validation receipt *through the browser*, and
-   reads them back independently of the adapter: every canonical document is validated against
-   its registered contract, the page documents against the producer invariants, the bundle
-   digest is recomputed and compared with the receipt, and the receipt is validated against its
-   contract and the receipt rules;
+   reads them back independently of the adapter: the bundle must hold exactly the canonical
+   documents, each validated against its registered contract, the page documents against the
+   producer invariants; the bundle digest is recomputed over the downloaded files and compared
+   with the receipt's, and the receipt is validated against its contract and the receipt rules;
 5. writes everything under ``--output-dir`` (default ``.proof-output/pxapi25-workbench-real-
    boundary``, untracked): ``proof-receipt.json``, the downloaded files, the extracted canonical
    documents and full-page screenshots at a normal and a narrow viewport.
@@ -120,7 +120,6 @@ def read_back(archive: bytes, receipt_bytes: bytes) -> dict[str, Any]:
     from pxapi.application.validate_analysis_run import (
         CANONICAL_MEMBERS,
         RECEIPT_CONTRACT,
-        RECEIPT_FILE,
         bundle_digest,
     )
     from pxapi.domain.page_acquisition import acquisition_violations
@@ -143,9 +142,7 @@ def read_back(archive: bytes, receipt_bytes: bytes) -> dict[str, Any]:
             found = registry.validate(spec.contract, document)
             if found:
                 problems.append(f"{spec.file_name}/{index}: {len(found)} contract violation(s)")
-    unexpected = sorted(
-        set(files) - {m.file_name for m in CANONICAL_MEMBERS.values()} - {RECEIPT_FILE}
-    )
+    unexpected = sorted(set(files) - {m.file_name for m in CANONICAL_MEMBERS.values()})
     problems += [f"{name}: not part of the bundle" for name in unexpected]
 
     if "sampling_manifest" in documents and "page_acquisitions" in documents:
@@ -158,14 +155,11 @@ def read_back(archive: bytes, receipt_bytes: bytes) -> dict[str, Any]:
         problems += [f"producer invariant {v.pointer} [{v.rule}]" for v in found]
 
     receipt = loads_json(receipt_bytes.decode("utf-8"))
-    if files.get(RECEIPT_FILE) != receipt_bytes:
-        problems.append("the separately downloaded receipt differs from the bundled one")
     if registry.validate(RECEIPT_CONTRACT, receipt):
         problems.append("the receipt fails its contract")
     rules = receipt_rule_violations(receipt)
     problems += [f"receipt rule {v.pointer} [{v.rule}]" for v in rules]
-    canonical = {name: content for name, content in files.items() if name != RECEIPT_FILE}
-    recomputed = bundle_digest(canonical)
+    recomputed = bundle_digest(files)
     if recomputed != receipt.get("artifact_bundle_digest"):
         problems.append("the recomputed bundle digest differs from the receipt's")
     return {

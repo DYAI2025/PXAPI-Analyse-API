@@ -13,8 +13,8 @@ import html.parser
 import io
 import itertools
 import json
+import re
 import threading
-import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,7 @@ from pxapi.adapters.composition import build_site_acquisition
 from pxapi.adapters.inbound import workbench as workbench_module
 from pxapi.adapters.inbound.http_api import create_app as create_http_api
 from pxapi.adapters.inbound.workbench import (
+    LOOPBACK_HOSTS,
     SECURITY_HEADERS,
     Workbench,
     archive_of,
@@ -91,9 +92,16 @@ class Acquisitions:
         return Gated()
 
 
+#: The Host names a test application answers to: the test client's own, plus loopback.
+TEST_HOSTS = ("testserver", *LOOPBACK_HOSTS)
+
+
 def client_for(acquisitions: Any = None, **kwargs: Any) -> TestClient:
     app = create_workbench_app(
-        registry=CONTRACTS, acquisition=acquisitions or Acquisitions(), **kwargs
+        registry=CONTRACTS,
+        acquisition=acquisitions or Acquisitions(),
+        allowed_hosts=TEST_HOSTS,
+        **kwargs,
     )
     return TestClient(app)
 
@@ -268,7 +276,7 @@ def test_the_declared_budget_becomes_the_manifest_s_selection_budget() -> None:
 
 def test_a_private_target_is_refused_by_the_shipped_policy_and_shown_neutrally() -> None:
     """Production wiring: the loopback target is refused before any connection is opened."""
-    client = TestClient(create_workbench_app(registry=CONTRACTS))
+    client = TestClient(create_workbench_app(registry=CONTRACTS, allowed_hosts=TEST_HOSTS))
     location = completed_run(client, "http://127.0.0.1:9/", "3")
     page = client.get(location)
     assert page.status_code == 200
@@ -624,7 +632,7 @@ def test_the_artifact_bundle_downloads_and_reads_back_as_valid_canonical_documen
     assert "attachment" in download.headers["content-disposition"]
     files = read_archive(download.content)
     canonical = {member.file_name for member in CANONICAL_MEMBERS.values()}
-    assert set(files) == canonical | {RECEIPT_FILE}
+    assert set(files) == canonical, "the bundle is the canonical documents and nothing else"
 
     for member in CANONICAL_MEMBERS.values():
         value = json.loads(files[member.file_name])
@@ -632,12 +640,11 @@ def test_the_artifact_bundle_downloads_and_reads_back_as_valid_canonical_documen
         for document in documents:
             assert CONTRACTS.validate(member.contract, document) == (), member.file_name
 
-    receipt = json.loads(files[RECEIPT_FILE])
+    receipt = client.get(f"{location}/{RECEIPT_FILE}").json()
     assert CONTRACTS.validate(RECEIPT_CONTRACT, receipt) == ()
     assert receipt_rule_violations(receipt) == ()
     assert receipt["overall_state"] == "PASS"
-    without_receipt = {name: content for name, content in files.items() if name != RECEIPT_FILE}
-    assert receipt["artifact_bundle_digest"] == bundle_digest(without_receipt)
+    assert receipt["artifact_bundle_digest"] == bundle_digest(files)
 
 
 def test_the_bundle_is_deterministic_across_downloads() -> None:
@@ -648,14 +655,15 @@ def test_the_bundle_is_deterministic_across_downloads() -> None:
     )
 
 
-def test_the_receipt_downloads_on_its_own_and_is_the_bundle_s_receipt() -> None:
+def test_the_receipt_downloads_on_its_own_and_pins_the_bundle_it_validated() -> None:
     client = client_for()
     location = completed_run(client)
     alone = client.get(f"{location}/{RECEIPT_FILE}")
     assert alone.status_code == 200
     assert alone.headers["content-type"] == "application/json"
-    bundled = read_archive(client.get(f"{location}/artifacts.zip").content)[RECEIPT_FILE]
-    assert alone.content == bundled
+    assert "attachment" in alone.headers["content-disposition"]
+    bundle = read_archive(client.get(f"{location}/artifacts.zip").content)
+    assert alone.json()["artifact_bundle_digest"] == bundle_digest(bundle)
 
 
 def test_the_archive_helpers_round_trip_exactly() -> None:
@@ -675,9 +683,238 @@ def test_the_stylesheet_is_local_and_references_nothing_remote() -> None:
     assert ":focus-visible" in css.text
 
 
-def test_the_guard_wait_is_bounded() -> None:
-    """Canary for the concurrency test's own harness: an unreleased gate would hang forever."""
-    gate = threading.Event()
-    started = time.monotonic()
-    assert gate.wait(timeout=0.05) is False
-    assert time.monotonic() - started < 5
+# --- independent review findings (2026-09-29) ----------------------------------------------
+
+SECRET = "s3cr3t-token"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://operator:{SECRET}@example.com/a\\b",
+        f"https://operator:{SECRET}@example.com/a{chr(0xA0)}b",
+        f"https://operator:{SECRET}@example.com/a{chr(0x3000)}b",
+        f"https://operator:{SECRET}@exa[mple.com/",
+        f"https://operator:{SECRET}@[::1/",
+        f"https://operator:{SECRET}@example.com/a b",
+        f"ftp://operator:{SECRET}@example.com/",
+        f"https://operator:{SECRET}@example.com/" + "a" * 2100,
+        f"https:\\\\operator:{SECRET}@example.com/",
+    ],
+    ids=[
+        "backslash",
+        "nbsp",
+        "ideographic-space",
+        "bracket",
+        "ipv6-bracket",
+        "space",
+        "ftp",
+        "over-length",
+        "backslash-scheme",
+    ],
+)
+def test_a_credential_url_with_a_second_defect_is_refused_and_never_echoed(url: str) -> None:
+    """Userinfo is detected whatever other rule the URL breaks first."""
+    acquisitions = Acquisitions()
+    answer = submit(client_for(acquisitions), url)
+    assert answer.status_code == 422
+    assert SECRET not in answer.text
+    assert acquisitions.budgets == []
+
+
+def test_the_served_bundle_is_exactly_the_validated_canonical_bundle() -> None:
+    """No circularity in what is downloaded: the zip holds the canonical documents only, and
+    re-validating it with the shipped use case reproduces the receipt's bundle verdict."""
+    from pxapi.application.validate_analysis_run import ValidateAnalysisRun
+
+    client = client_for()
+    location = completed_run(client, budget="4")
+    files = read_archive(client.get(f"{location}/artifacts.zip").content)
+    receipt = client.get(f"{location}/{RECEIPT_FILE}").json()
+    assert RECEIPT_FILE not in files
+    assert set(files) == {member.file_name for member in CANONICAL_MEMBERS.values()}
+    assert bundle_digest(files) == receipt["artifact_bundle_digest"]
+    envelope = {
+        name: json.loads(files[member.file_name]) for name, member in CANONICAL_MEMBERS.items()
+    }
+    again = ValidateAnalysisRun(CONTRACTS, lambda: __import__("datetime").datetime.now(), str).run(
+        envelope, files, run_id=receipt["run_id"], declared_budget=4
+    )
+    assert again["gates"]["ARTIFACT_BUNDLE_VALIDITY"] == {"state": "PASS", "reasons": []}
+    assert again["overall_state"] == receipt["overall_state"]
+
+
+def _anchors_resolve(document: str) -> list[str]:
+    tags = parsed(document)
+    targets = [
+        value[1:]
+        for _tag, attrs in _anchor_attrs(document)
+        for name, value in attrs
+        if name == "href" and value.startswith("#")
+    ]
+    return [target for target in targets if target not in tags.ids]
+
+
+def test_every_in_page_link_resolves_on_the_result_and_the_withheld_page() -> None:
+    client = client_for()
+    assert _anchors_resolve(client.get(completed_run(client)).text) == []
+
+    def break_contract(envelope: dict[str, Any]) -> None:
+        envelope["measurements"][0]["schema_version"] = "9.9.9"
+
+    class Tampering(Acquisitions):
+        def __call__(self, budgets: SelectionBudgets, registry: Any) -> Any:
+            inner = super().__call__(budgets, registry)
+
+            class Tampered:
+                def run(self, request: dict[str, Any]) -> dict[str, Any]:
+                    envelope = inner.run(request)
+                    break_contract(envelope)
+                    return envelope
+
+            return Tampered()
+
+    withheld_client = client_for(Tampering())
+    page = withheld_client.get(completed_run(withheld_client)).text
+    assert "Canonical documents withheld" in page
+    assert _anchors_resolve(page) == []
+    assert 'href="#withheld"' in page
+
+
+@pytest.mark.parametrize("host", ["attacker.example:8000", "rebound.test", "10.0.0.5:8001"])
+def test_a_foreign_host_is_refused_before_anything_runs(host: str) -> None:
+    """DNS rebinding: the page is same-origin with the attacker's name, so only Host tells."""
+    acquisitions = Acquisitions()
+    client = client_for(acquisitions)
+    headers = {"Host": host, "Sec-Fetch-Site": "same-origin", "Origin": f"http://{host}"}
+    assert submit(client, headers=headers).status_code == 400
+    assert client.get("/operator", headers={"Host": host}).status_code == 400
+    assert acquisitions.budgets == []
+
+
+def test_the_production_app_accepts_only_loopback_host_names() -> None:
+    client = TestClient(create_workbench_app(registry=CONTRACTS))
+    assert client.get("/operator").status_code == 400, "TestClient's own host is not loopback"
+    assert client.get("/operator", headers={"Host": "127.0.0.1:8001"}).status_code == 200
+    assert client.get("/operator", headers={"Host": "localhost:8001"}).status_code == 200
+
+
+def _raw_post(app: Any, chunks: list[bytes], headers: list[tuple[bytes, bytes]]) -> tuple[int, int]:
+    """Drive the ASGI app directly; return (status, how many body chunks it pulled)."""
+    import asyncio
+
+    pulled = 0
+    status: list[int] = []
+    queue = list(chunks)
+
+    async def receive() -> dict[str, Any]:
+        nonlocal pulled
+        if queue:
+            pulled += 1
+            chunk = queue.pop(0)
+            return {"type": "http.request", "body": chunk, "more_body": bool(queue)}
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            status.append(message["status"])
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/operator/runs",
+        "raw_path": b"/operator/runs",
+        "query_string": b"",
+        "headers": [(b"host", b"testserver"), *headers],
+        "client": ("127.0.0.1", 1),
+        "server": ("testserver", 80),
+    }
+    asyncio.run(app(scope, receive, send))
+    return status[0], pulled
+
+
+def test_an_oversized_body_is_refused_without_being_buffered() -> None:
+    app = create_workbench_app(
+        registry=CONTRACTS, acquisition=Acquisitions(), allowed_hosts=("testserver",)
+    )
+    form = [(b"content-type", b"application/x-www-form-urlencoded")]
+    chunk = b"a" * 1024
+    status, pulled = _raw_post(app, [chunk] * 256, form)
+    assert status == 413
+    assert pulled <= 17, f"the app read {pulled} KiB before refusing"
+    declared = [*form, (b"content-length", str(256 * 1024).encode())]
+    status, pulled = _raw_post(app, [chunk] * 256, declared)
+    assert status == 413
+    assert pulled == 0, "a declared oversized body is refused before it is read"
+
+
+# --- states are rendered as words on the elements that carry them ---------------------------
+
+
+def _gate_rows(document: str) -> dict[str, str]:
+    """``gate family -> the state word its row's badge renders``, read from the gates table."""
+    rows: dict[str, str] = {}
+
+    class Rows(html.parser.HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.in_gates = False
+            self.row: list[str] = []
+            self.cell = -1
+            self.badge_depth = 0
+            self.texts: list[list[str]] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            classes = dict(attrs).get("class") or ""
+            if tag == "table" and "gates" in classes.split():
+                self.in_gates = True
+            elif self.in_gates and tag == "tr":
+                self.texts = []
+            elif self.in_gates and tag == "td":
+                self.texts.append([])
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "table":
+                self.in_gates = False
+            elif self.in_gates and tag == "tr" and len(self.texts) == 3:
+                family = re.findall(r"[A-Z][A-Z_]+", "".join(self.texts[0]))[-1]
+                rows[family] = " ".join("".join(self.texts[1]).split())
+
+        def handle_data(self, data: str) -> None:
+            if self.in_gates and self.texts:
+                self.texts[-1].append(data)
+
+    Rows().feed(document)
+    return rows
+
+
+def test_each_gate_row_renders_the_receipt_s_own_state_in_words() -> None:
+    fetcher = FakeFetcher({PAGE_B: PageFetchFailure(FetchFailureKind.TIMEOUT)})
+    client = client_for(Acquisitions(fetcher))
+    location = completed_run(client)
+    receipt = client.get(f"{location}/{RECEIPT_FILE}").json()
+    rows = _gate_rows(client.get(location).text)
+    assert set(rows) == set(receipt["gates"])
+    words = {
+        "PASS": "PASS",
+        "FAIL": "FAIL",
+        "BLOCKED": "BLOCKED",
+        "NOT_APPLICABLE": "NOT APPLICABLE",
+    }
+    for family, gate in receipt["gates"].items():
+        assert rows[family].endswith(words[gate["state"]]), (family, rows[family])
+    assert {rows["ACQUISITION_COMPLETENESS"], rows["INPUT_CONTRACT"]} == {"! BLOCKED", "✓ PASS"}
+
+
+def test_the_overall_badge_and_the_run_state_render_the_real_states() -> None:
+    fetcher = FakeFetcher({PAGE_B: PageFetchFailure(FetchFailureKind.TIMEOUT)})
+    client = client_for(Acquisitions(fetcher))
+    page = client.get(completed_run(client)).text
+    overall = page.split('class="overall"')[1].split("</p>")[0]
+    assert 'class="badge badge-blocked"' in overall
+    assert "BLOCKED" in "".join(parsed(overall).text)
+    run_state = page.split("<dt>Run state</dt>")[1].split("</dd>")[0]
+    assert "SUCCEEDED" in "".join(parsed(run_state).text)

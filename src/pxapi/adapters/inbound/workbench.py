@@ -35,7 +35,7 @@ import io
 import re
 import threading
 import zipfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Protocol
@@ -44,6 +44,7 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from pxapi.adapters.composition import (
     build_site_acquisition,
@@ -89,6 +90,11 @@ SECURITY_HEADERS: Final[dict[str, str]] = {
     "X-Frame-Options": "DENY",
     "Cache-Control": "no-store",
 }
+
+#: The host names this workbench answers to. Loopback only: it is an internal tool, and a Host
+#: check is what keeps a DNS-rebinding page from operating it. Starlette's host check does not
+#: parse bracketed IPv6 literals, so ``[::1]`` is not offered.
+LOOPBACK_HOSTS: Final[tuple[str, ...]] = ("127.0.0.1", "localhost")
 
 #: One fixed modification time for every archive member, so one bundle is one set of bytes.
 _ARCHIVE_TIME: Final = (1980, 1, 1, 0, 0, 0)
@@ -172,6 +178,24 @@ def read_archive(content: bytes) -> dict[str, bytes]:
         return {info.filename: archive.read(info) for info in archive.infolist()}
 
 
+async def _bounded_body(request: Request) -> bytes | None:
+    """The request body, or ``None`` as soon as it is known to exceed :data:`MAX_FORM_BYTES`.
+
+    A declared oversized length is refused before anything is read, and an undeclared one is
+    read chunk by chunk and abandoned at the bound, so the bound limits memory, not only the
+    answer.
+    """
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdigit() or int(declared) > MAX_FORM_BYTES):
+        return None
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_FORM_BYTES:
+            return None
+    return bytes(body)
+
+
 def _html(document: str, status: int = 200) -> HTMLResponse:
     return HTMLResponse(content=document, status_code=status)
 
@@ -179,6 +203,28 @@ def _html(document: str, status: int = 200) -> HTMLResponse:
 def _single(fields: dict[str, list[str]], name: str) -> str | None:
     values = fields.get(name, [])
     return values[0] if len(values) == 1 else None
+
+
+def may_carry_credentials(url: str) -> bool:
+    """Whether ``url`` may carry userinfo, decided conservatively and independently of order.
+
+    The Domain's ``site_identity.refuse`` reports only the *first* rule a URL breaks, so a URL
+    with userinfo that also has a backslash, a space, a stray bracket or an unsupported scheme
+    is reported under that other rule. Admission therefore also treats any ``@`` in the
+    authority — the text after ``//`` up to the first ``/``, ``?``, ``#`` or backslash — as
+    userinfo, and a URL without ``//`` as carrying userinfo if it has an ``@`` at all. Refusing
+    an unusual URL that merely contains ``@`` there costs nothing; admitting a secret would
+    persist it in the run's request document.
+    """
+    try:
+        if refuse(url) is UrlRefusal.CREDENTIALS_PRESENT:
+            return True
+    except Exception:
+        pass
+    if "//" not in url:
+        return "@" in url
+    authority = re.split(r"[/?#\\]", url.split("//", 1)[1], maxsplit=1)[0]
+    return "@" in authority
 
 
 def _cross_site(request: Request) -> bool:
@@ -224,9 +270,9 @@ class Workbench:
     def admit(self, fields: dict[str, list[str]]) -> tuple[dict[str, Any], int] | views.FormState:
         """A validated request document and budget, or the form to show again with errors.
 
-        Nothing is fetched here. The URL is checked by the Domain's identity rule for userinfo,
-        which is refused without being echoed back, and then by the request contract itself —
-        the same two refusals the command line applies, never a weaker check of our own.
+        Nothing is fetched here. A URL that may carry userinfo is refused first and never
+        echoed back (:func:`may_carry_credentials`), whatever else is wrong with it; every other
+        URL is then checked by the request contract itself, never by a weaker check of our own.
         """
         url = _single(fields, URL_FIELD)
         budget_text = _single(fields, BUDGET_FIELD)
@@ -243,14 +289,11 @@ class Workbench:
             except (argparse.ArgumentTypeError, ValueError):
                 errors.append("The page budget must be a whole number of at least 1.")
 
-        echo_url = url or ""
+        # A refused URL is shown again for correction, unless it could hold a secret at all.
+        echo_url = "" if url is None or "@" in url else url
         request: dict[str, Any] | None = None
         if url:
-            try:
-                credentials = refuse(url) is UrlRefusal.CREDENTIALS_PRESENT
-            except Exception:
-                credentials = False
-            if credentials:
+            if may_carry_credentials(url):
                 errors.append(
                     "A target carrying credentials in its authority is refused; it is not "
                     "shown again here."
@@ -277,9 +320,11 @@ class Workbench:
         withheld = tuple(dict.fromkeys(invalid_documents(self.registry, envelope)))
 
         # Publish the canonical bundle and read it back as a consumer would, then validate the
-        # run against what was actually published. The receipt is built only afterwards and
-        # never enters the bundle it decides.
-        published = read_archive(archive_of(build_artifact_bundle(envelope)))
+        # run against what was actually published. The archive validated here is the archive
+        # served, byte for byte. The receipt is built only afterwards, pins it by digest, and is
+        # never part of it: it has its own download.
+        archive = archive_of(build_artifact_bundle(envelope))
+        published = read_archive(archive)
         receipt = ValidateAnalysisRun(self.registry, self.clock, self.new_id).run(
             envelope, published, run_id=run_id, declared_budget=budget
         )
@@ -287,9 +332,6 @@ class Workbench:
             receipt_rule_violations(receipt)
         )
 
-        archive = None
-        if receipt_valid and not withheld:
-            archive = archive_of({**published, RECEIPT_FILE: canonical_bytes(receipt)})
         return CompletedRun(
             run_id=run_id,
             target_url=request["target_url"],
@@ -297,7 +339,7 @@ class Workbench:
             envelope=None if withheld else envelope,
             receipt=receipt if receipt_valid else None,
             withheld_contracts=withheld,
-            archive=archive,
+            archive=archive if receipt_valid and not withheld else None,
         )
 
     def completed(self, run_id: str) -> CompletedRun | None:
@@ -312,6 +354,7 @@ def create_workbench_app(
     acquisition: AcquisitionFactory | None = None,
     clock: Callable[[], datetime] = utc_now,
     new_id: Callable[[], str] = new_identifier,
+    allowed_hosts: Sequence[str] = LOOPBACK_HOSTS,
 ) -> FastAPI:
     """Build the Workbench. The arguments exist for tests; the defaults are the real thing."""
     registry = registry or default_registry()
@@ -324,6 +367,10 @@ def create_workbench_app(
         openapi_url=None,
     )
     app.state.workbench = workbench
+
+    # A page served under another name is not this workbench's page, even when the name
+    # resolves to loopback: DNS rebinding makes an attacker's origin "same-origin" with it.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -364,8 +411,8 @@ def create_workbench_app(
                 ),
                 415,
             )
-        body = await request.body()
-        if len(body) > MAX_FORM_BYTES:
+        body = await _bounded_body(request)
+        if body is None:
             return _html(
                 views.message_page(
                     "Submission too large",

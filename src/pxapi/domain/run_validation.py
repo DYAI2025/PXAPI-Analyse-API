@@ -101,6 +101,7 @@ class ReasonCode(StrEnum):
     DOCUMENT_CONTAINER_INVALID = "DOCUMENT_CONTAINER_INVALID"
     DOCUMENT_CONTRACT_INVALID = "DOCUMENT_CONTRACT_INVALID"
     DOCUMENT_SEMANTICS_INVALID = "DOCUMENT_SEMANTICS_INVALID"
+    PRODUCER_INVARIANT_BROKEN = "PRODUCER_INVARIANT_BROKEN"
     RUN_BINDING_BROKEN = "RUN_BINDING_BROKEN"
     LINKED_DOCUMENT_MISSING = "LINKED_DOCUMENT_MISSING"
     SELECTION_BINDING_BROKEN = "SELECTION_BINDING_BROKEN"
@@ -126,6 +127,7 @@ class ReasonCode(StrEnum):
     DISCOVERY_SOURCE_LIMITED = "DISCOVERY_SOURCE_LIMITED"
     # --- the gate does not apply ---------------------------------------------------------------
     RUN_EMITTED_NO_PAGE_DOCUMENTS = "RUN_EMITTED_NO_PAGE_DOCUMENTS"
+    REQUEST_WITHHELD_BY_POLICY = "REQUEST_WITHHELD_BY_POLICY"
 
 
 @dataclass(frozen=True)
@@ -220,6 +222,11 @@ REASONS: Final[dict[ReasonCode, ReasonSpec]] = {
     ReasonCode.DOCUMENT_SEMANTICS_INVALID: _spec(
         GateState.FAIL,
         "A canonical document breaks a contract rule JSON Schema cannot state.",
+        _F.CANONICAL_VALIDITY,
+    ),
+    ReasonCode.PRODUCER_INVARIANT_BROKEN: _spec(
+        GateState.FAIL,
+        "A canonical document breaks a guarantee its producer makes about the documents it emits.",
         _F.CANONICAL_VALIDITY,
     ),
     ReasonCode.RUN_BINDING_BROKEN: _spec(
@@ -345,6 +352,12 @@ REASONS: Final[dict[ReasonCode, ReasonSpec]] = {
         "the acquisition completeness gate states why.",
         _F.EVIDENCE_COVERAGE,
         _F.UNRESOLVED_CONFLICTS_LIMITATIONS,
+    ),
+    ReasonCode.REQUEST_WITHHELD_BY_POLICY: _spec(
+        GateState.NOT_APPLICABLE,
+        "The target carried credentials, so the run refused it and, by data minimisation, "
+        "persisted no request document; there is no input document to validate.",
+        _F.INPUT_CONTRACT,
     ),
 }
 

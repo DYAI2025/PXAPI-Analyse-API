@@ -418,6 +418,8 @@ class ResultView:
     archive_available: bool
 
 
+#: The in-page navigation of a result whose documents are shown, and of one whose documents
+#: were withheld. Each names exactly the sections that page renders, so no link points nowhere.
 RESULT_NAV: Final[tuple[tuple[str, str], ...]] = (
     ("overview", "Run overview"),
     ("validation", "Run validation"),
@@ -425,6 +427,13 @@ RESULT_NAV: Final[tuple[tuple[str, str], ...]] = (
     ("coverage", "Coverage"),
     ("pages", "Selected pages"),
     ("evidence", "Evidence inspector"),
+    ("artifacts", "Artifacts"),
+)
+WITHHELD_NAV: Final[tuple[tuple[str, str], ...]] = (
+    ("overview", "Run overview"),
+    ("validation", "Run validation"),
+    ("limitations", "Limitations"),
+    ("withheld", "Documents withheld"),
     ("artifacts", "Artifacts"),
 )
 
@@ -442,7 +451,8 @@ def result_page(view: ResultView) -> Markup:
     else:
         sections += [_coverage(envelope), _pages(envelope), _evidence(envelope)]
     sections.append(_artifacts(view))
-    return page(f"Run {view.run_id}", *sections, nav=RESULT_NAV)
+    nav = WITHHELD_NAV if envelope is None else RESULT_NAV
+    return page(f"Run {view.run_id}", *sections, nav=nav)
 
 
 def _section(anchor: str, heading: str, *body: Any) -> Markup:
@@ -959,7 +969,8 @@ def _artifacts(view: ResultView) -> Markup:
                     "Download the canonical artifact bundle (zip)",
                     href=f"{base}/artifacts.zip",
                 ),
-                " — every canonical document of this run and the validation receipt.",
+                " \u2014 the run's canonical documents, byte for byte as validated. The receipt "
+                "pins them by digest and is downloaded on its own.",
             )
         )
     else:

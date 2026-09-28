@@ -58,14 +58,21 @@ def test_a_tampered_canonical_file_is_reported(served_bundle: tuple[bytes, bytes
     assert "the recomputed bundle digest differs from the receipt's" in problems
 
 
-def test_a_receipt_that_is_not_the_bundled_one_is_reported(
+def test_a_receipt_for_another_bundle_is_reported(served_bundle: tuple[bytes, bytes]) -> None:
+    archive, receipt = served_bundle
+    other = json.loads(receipt)
+    other["artifact_bundle_digest"] = "sha256:" + "0" * 64
+    problems = load_tool().read_back(archive, json.dumps(other).encode())["problems"]
+    assert "the recomputed bundle digest differs from the receipt's" in problems
+
+
+def test_a_bundle_carrying_a_receipt_is_not_the_canonical_bundle(
     served_bundle: tuple[bytes, bytes],
 ) -> None:
     archive, receipt = served_bundle
-    other = json.loads(receipt)
-    other["receipt_id"] = "rcp-other"
-    problems = load_tool().read_back(archive, json.dumps(other).encode())["problems"]
-    assert "the separately downloaded receipt differs from the bundled one" in problems
+    files = dict(read_archive(archive), **{RECEIPT_FILE: receipt})
+    problems = load_tool().read_back(archive_of(files), receipt)["problems"]
+    assert f"{RECEIPT_FILE}: not part of the bundle" in problems
 
 
 def test_an_extra_file_in_the_bundle_is_reported(served_bundle: tuple[bytes, bytes]) -> None:

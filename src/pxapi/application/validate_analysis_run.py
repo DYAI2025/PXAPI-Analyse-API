@@ -43,6 +43,7 @@ from pxapi.application.discover_site import (
     BOOTSTRAP_FAILURE_CODE,
     INVENTORY_WITHHELD_CODE,
     MANIFEST_WITHHELD_CODE,
+    TARGET_NOT_PERMITTED_CODE,
     UNEXPLAINED_BOOTSTRAP_CODE,
 )
 from pxapi.domain.acquisition_digests import DIGEST_PREFIX, digest_of
@@ -50,6 +51,7 @@ from pxapi.domain.acquisition_semantics import (
     CONTRACT_RULES,
     SAMPLING_MANIFEST,
     SITE_INVENTORY,
+    inventory_producer_violations,
     violations_of,
 )
 from pxapi.domain.page_acquisition import (
@@ -236,6 +238,23 @@ def _documents(member: CanonicalMember, value: Any) -> list[dict[str, Any]] | No
     return [value] if isinstance(value, dict) else None
 
 
+def _request_withheld_by_policy(envelope: Mapping[str, Any]) -> bool:
+    """Whether the run refused a credential-bearing target and withheld its request on purpose.
+
+    Discovery refuses such a target with ``TARGET_NOT_PERMITTED`` and deliberately emits no
+    ``analysis_run_request``: it is the one member that would carry the submitted URL, secret
+    included. That absence is the producer's data-minimisation rule, not a missing document.
+    """
+    state = envelope.get("analysis_run_state")
+    failure = state.get("failure") if isinstance(state, dict) else None
+    return (
+        "analysis_run_request" not in envelope
+        and _state(envelope) == RunState.FAILED.value
+        and isinstance(failure, dict)
+        and failure.get("code") == TARGET_NOT_PERMITTED_CODE
+    )
+
+
 def _state(envelope: Mapping[str, Any]) -> str | None:
     state = envelope.get("analysis_run_state")
     value = state.get("state") if isinstance(state, dict) else None
@@ -320,6 +339,9 @@ class ValidateAnalysisRun:
     def _input_contract(
         self, envelope: Mapping[str, Any], run_id: str, declared_budget: int
     ) -> Reasons:
+        if _request_withheld_by_policy(envelope):
+            yield reason(ReasonCode.REQUEST_WITHHELD_BY_POLICY, "/analysis_run_state/failure/code")
+            return
         request = envelope.get("analysis_run_request")
         if not isinstance(request, dict):
             yield reason(ReasonCode.REQUEST_MISSING, "/analysis_run_request")
@@ -398,6 +420,8 @@ class ValidateAnalysisRun:
             if _state(envelope) == RunState.SUCCEEDED.value
             else ALWAYS_EMITTED
         )
+        if _request_withheld_by_policy(envelope):
+            required = tuple(name for name in required if name != "analysis_run_request")
         valid: dict[str, dict[str, Any]] = {}
         for name, member in CANONICAL_MEMBERS.items():
             if name not in envelope:
@@ -427,6 +451,18 @@ class ValidateAnalysisRun:
         for name in envelope:
             if name not in CANONICAL_MEMBERS:
                 yield reason(ReasonCode.CANONICAL_MEMBER_UNEXPECTED, _pointer(name))
+
+        # The inventory's producer guarantees, re-derived from what was produced rather than
+        # trusted: an inventory that drops a cut-short source while its candidates still cite it
+        # would otherwise hide the very limitation UNRESOLVED_CONFLICTS_LIMITATIONS reports.
+        # The manifest's producer guarantees are re-derived by admission in PROVENANCE_LINKAGE.
+        if "site_inventory" in valid:
+            for violation in inventory_producer_violations(valid["site_inventory"]):
+                yield reason(
+                    ReasonCode.PRODUCER_INVARIANT_BROKEN,
+                    _within("/site_inventory", violation.pointer),
+                    violation.rule,
+                )
 
         # The contract-semantic rules JSON Schema cannot state, applied only to a document that
         # already satisfies its contract: over a structurally broken one they are undefined.

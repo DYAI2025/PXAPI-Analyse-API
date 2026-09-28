@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,6 +24,7 @@ from pxapi.application.discover_site import (
 )
 from pxapi.application.validate_analysis_run import (
     CANONICAL_MEMBERS,
+    LIMITING_SOURCE_OUTCOMES,
     PRODUCER_DEFECT_RUN_FAILURES,
     RECEIPT_CONTRACT,
     RECEIPT_FILE,
@@ -565,24 +565,166 @@ def test_the_canonical_serialisation_is_the_command_line_s_byte_for_byte() -> No
         assert canonical_bytes(envelope[name]) == acquire_cli._serialise(envelope[name]).encode()
 
 
-def test_every_reason_code_the_validator_can_give_is_exercised_somewhere_in_this_module() -> None:
-    """A reason nobody ever produced in a test is a reason nobody knows the validator gives."""
-    source = Path(__file__).read_text(encoding="utf-8")
-    unexercised = [
-        code.value
-        for code in ReasonCode
-        if code.value not in source
-        and code
-        not in {
-            ReasonCode.RUN_STATE_UNAVAILABLE,
-            ReasonCode.RUN_NOT_TERMINAL,
-            ReasonCode.RUN_CANCELLED,
-            ReasonCode.ACQUISITION_RECORDS_MISSING,
-            ReasonCode.MEASUREMENT_WITHOUT_EVIDENCE,
-            ReasonCode.PAGE_MEASUREMENTS_WITHHELD,
-        }
-    ]
-    assert unexercised == []
+def _with(change: Any, budget: int = FULL_BUDGET, **kwargs: Any) -> dict[str, Any]:
+    return validate(tampered(acquired(budget=budget, **kwargs), change), budget=budget)
+
+
+def _failed_run(failure: BootstrapFailure = BootstrapFailure.TIMEOUT) -> dict[str, Any]:
+    return acquired(discovery_report=DiscoveryReport(None, bootstrap_failure=failure))
+
+
+def _set_state(value: str) -> Any:
+    return lambda e: e["analysis_run_state"].__setitem__("state", value)
+
+
+def _bundle(change: Any) -> dict[str, Any]:
+    envelope = acquired()
+    bundle = build_artifact_bundle(envelope)
+    change(bundle)
+    return validate(envelope, bundle)
+
+
+def _fetching(results: dict[str, Any], budget: int = FULL_BUDGET) -> dict[str, Any]:
+    return validate(acquired(FakeFetcher(results), budget=budget), budget=budget)
+
+
+def _limited(outcome: SourceOutcome) -> dict[str, Any]:
+    def limit(envelope: dict[str, Any]) -> None:
+        envelope["site_inventory"]["sources"][-1]["outcome"] = outcome.value
+
+    return _with(limit)
+
+
+def _conflict(envelope: dict[str, Any]) -> None:
+    measurement = envelope["measurements"][0]
+    measurement["assessment"] = {"collection_mode": "OBSERVED", "result_state": "CONFLICT"}
+    measurement.pop("result", None)
+
+
+def _credential_target() -> dict[str, Any]:
+    from tests.application.test_acquire_selected_pages import REQUEST, build
+
+    request = dict(REQUEST, target_url="https://operator:s3cr3t@example.com/")
+    return validate(build(FakeFetcher(), FULL_BUDGET).run(request))
+
+
+def _producer_invariant() -> dict[str, Any]:
+    def unseeded(envelope: dict[str, Any]) -> None:
+        seed = envelope["site_inventory"]["candidates"][0]
+        seed["provenance"] = [p for p in seed["provenance"] if p != "CANONICAL_SEED"] or ["SITEMAP"]
+
+    return _with(unseeded)
+
+
+def _raising() -> dict[str, Any]:
+    envelope = acquired()
+    return ValidateAnalysisRun(RaisingContracts(), validated_at, receipt_ids()).run(
+        envelope, build_artifact_bundle(envelope), run_id=RUN_ID, declared_budget=FULL_BUDGET
+    )
+
+
+#: One scenario that makes the validator give each reason code: every code is proved to be
+#: *produced* by some run, not merely named somewhere. The completeness test below fails when a
+#: code is added without a scenario, or when a scenario stops producing its code.
+SCENARIOS: dict[ReasonCode, Any] = {
+    ReasonCode.REQUEST_MISSING: lambda: validate(
+        tampered(_failed_run(), lambda e: e.pop("analysis_run_request"))
+    ),
+    ReasonCode.REQUEST_CONTRACT_INVALID: lambda: _with(
+        lambda e: e["analysis_run_request"].pop("scan_mode")
+    ),
+    ReasonCode.REQUEST_NOT_BOUND_TO_RUN: lambda: validate(acquired(), run_id="run-elsewhere"),
+    ReasonCode.DECLARED_BUDGET_NOT_APPLIED: lambda: validate(acquired(budget=3), budget=2),
+    ReasonCode.RUN_STATE_UNAVAILABLE: lambda: _with(lambda e: e.pop("analysis_run_state")),
+    ReasonCode.RUN_NOT_TERMINAL: lambda: _with(_set_state("RUNNING")),
+    ReasonCode.RUN_FAILED_BY_PRODUCER_DEFECT: lambda: validate(
+        acquired(
+            tamper=lambda e: e["sampling_manifest"]["selections"][0].__setitem__(
+                "url_key", "https://example.com/nowhere"
+            )
+        )
+    ),
+    ReasonCode.RUN_FAILURE_UNCLASSIFIED: lambda: validate(
+        tampered(
+            _failed_run(), lambda e: e["analysis_run_state"]["failure"].__setitem__("code", "X_Y")
+        )
+    ),
+    ReasonCode.ACQUISITION_RECORDS_MISSING: lambda: _with(lambda e: e.pop("page_acquisitions")),
+    ReasonCode.CANONICAL_MEMBER_MISSING: lambda: _with(lambda e: e.pop("website_evidence")),
+    ReasonCode.CANONICAL_MEMBER_UNEXPECTED: lambda: _with(
+        lambda e: e.__setitem__("diagnostic_findings", [])
+    ),
+    ReasonCode.DOCUMENT_CONTAINER_INVALID: lambda: _with(
+        lambda e: e.__setitem__("measurements", {})
+    ),
+    ReasonCode.DOCUMENT_CONTRACT_INVALID: lambda: _with(
+        lambda e: e["measurements"][0].update(schema_version="9.9.9")
+    ),
+    ReasonCode.DOCUMENT_SEMANTICS_INVALID: lambda: _with(
+        lambda e: e["sampling_manifest"]["selections"][1].__setitem__("selection_rank", 1)
+    ),
+    ReasonCode.PRODUCER_INVARIANT_BROKEN: _producer_invariant,
+    ReasonCode.RUN_BINDING_BROKEN: lambda: _with(
+        lambda e: e["website_evidence"][0].update(run_id="run-other")
+    ),
+    ReasonCode.LINKED_DOCUMENT_MISSING: lambda: _with(lambda e: e.pop("measurements")),
+    ReasonCode.SELECTION_BINDING_BROKEN: lambda: _with(
+        lambda e: e["sampling_manifest"].__setitem__("output_digest", "sha256:" + "0" * 64)
+    ),
+    ReasonCode.ACQUISITION_LINKAGE_BROKEN: lambda: _with(
+        lambda e: e["website_evidence"][0].update(measurement_refs=["msr-nowhere"])
+    ),
+    ReasonCode.DUPLICATE_IDENTIFIER: lambda: _with(
+        lambda e: e["measurements"][1].__setitem__(
+            "measurement_id", e["measurements"][0]["measurement_id"]
+        )
+    ),
+    ReasonCode.BUNDLE_FILE_MISSING: lambda: _bundle(lambda b: b.pop("site-inventory.json")),
+    ReasonCode.BUNDLE_FILE_UNEXPECTED: lambda: _bundle(lambda b: b.__setitem__("x.json", b"{}")),
+    ReasonCode.BUNDLE_FILE_NOT_JSON: lambda: _bundle(
+        lambda b: b.__setitem__("site-inventory.json", b"{")
+    ),
+    ReasonCode.BUNDLE_FILE_DIFFERS_FROM_CANONICAL: lambda: _bundle(
+        lambda b: b.__setitem__("analysis-run-state.json", b"{}")
+    ),
+    ReasonCode.VALIDATION_NOT_EVALUABLE: _raising,
+    ReasonCode.RUN_FAILED_TECHNICALLY: lambda: validate(_failed_run()),
+    ReasonCode.RUN_CANCELLED: lambda: _with(_set_state("CANCELLED")),
+    ReasonCode.SELECTION_INCOMPLETE: lambda: validate(acquired(budget=2), budget=2),
+    ReasonCode.PAGE_NOT_ACQUIRED: lambda: _fetching(
+        {PAGE_B: PageFetchFailure(FetchFailureKind.DNS_FAILURE)}
+    ),
+    ReasonCode.PAGE_BODY_TRUNCATED: lambda: _fetching({PAGE_A: response(PAGE_A, truncated=True)}),
+    ReasonCode.PAGE_BODY_NOT_DECODED: lambda: _fetching(
+        {PAGE_A: response(PAGE_A, undecodable=True)}
+    ),
+    ReasonCode.PAGE_MEASUREMENTS_WITHHELD: lambda: _fetching(
+        {PAGE_A: response(UNREPRESENTABLE)}, budget=2
+    ),
+    ReasonCode.PAGE_EVIDENCE_NOT_ASSESSED: lambda: _fetching(
+        {PAGE_B: PageFetchFailure(FetchFailureKind.TIMEOUT)}
+    ),
+    ReasonCode.PAGE_EVIDENCE_UNKNOWN: lambda: _fetching(
+        {PAGE_A: response(PAGE_A, content_type="")}
+    ),
+    ReasonCode.MEASUREMENT_WITHOUT_EVIDENCE: lambda: _with(lambda e: e["website_evidence"].pop(0)),
+    ReasonCode.UNRESOLVED_CONFLICT: lambda: _with(_conflict),
+    ReasonCode.DISCOVERY_SOURCE_LIMITED: lambda: _limited(SourceOutcome.PROVIDER_FAILURE),
+    ReasonCode.RUN_EMITTED_NO_PAGE_DOCUMENTS: lambda: validate(_failed_run()),
+    ReasonCode.REQUEST_WITHHELD_BY_POLICY: _credential_target,
+}
+
+
+def test_every_reason_code_has_a_scenario_that_produces_it() -> None:
+    assert set(SCENARIOS) == set(ReasonCode)
+
+
+@pytest.mark.parametrize("code", list(SCENARIOS), ids=[code.value for code in SCENARIOS])
+def test_the_validator_actually_gives_each_reason(code: ReasonCode) -> None:
+    receipt = SCENARIOS[code]()
+    assert CONTRACTS.validate(RECEIPT_CONTRACT, receipt) == ()
+    assert receipt_rule_violations(receipt) == ()
+    assert code.value in all_codes(receipt), sorted(all_codes(receipt))
 
 
 def test_the_remaining_run_state_paths_are_classified() -> None:
@@ -625,3 +767,88 @@ def test_a_measurement_no_evidence_names_and_a_withheld_page_are_missing_evidenc
     receipt = emittable(validate(envelope, budget=2))
     assert codes(receipt, F.EVIDENCE_COVERAGE) == ["PAGE_MEASUREMENTS_WITHHELD"]
     assert only_failures(receipt) == set()
+
+
+# --- independent review findings (2026-09-29) ----------------------------------------------
+
+
+def test_an_inventory_that_hides_a_limited_source_breaks_a_producer_invariant_and_fails() -> None:
+    """A defective producer drops a cut-short source row but keeps its candidates' provenance.
+
+    Digests are recomputed as that producer would, so no contract, digest or admission rule
+    notices; only the inventory's own producer invariant does, and it must fail the run's
+    validation rather than let the hidden limitation pass as a release.
+    """
+    from pxapi.domain.acquisition_digests import inventory_digests, manifest_digests
+
+    limited = DiscoveryReport(
+        target_origin=ORIGIN,
+        observations=(
+            DiscoveryObservation(ORIGIN, "CANONICAL_SEED"),
+            DiscoveryObservation(PAGE_A, "SITEMAP"),
+        ),
+        attempts=(
+            SourceAttempt("CANONICAL_SEED", SourceOutcome.USED),
+            SourceAttempt("SITEMAP", SourceOutcome.TIMEOUT),
+        ),
+    )
+    genuine = acquired(discovery_report=limited, budget=2)
+    assert codes(validate(genuine, budget=2), F.UNRESOLVED_CONFLICTS_LIMITATIONS) == [
+        "DISCOVERY_SOURCE_LIMITED"
+    ], "canary: the genuine run states its limitation"
+
+    def hide_the_source(envelope: dict[str, Any]) -> None:
+        inventory = envelope["site_inventory"]
+        inventory["sources"] = [s for s in inventory["sources"] if s["source_id"] != "SITEMAP"]
+        inventory["input_digest"], inventory["output_digest"] = inventory_digests(
+            inventory, [{"observed_form": ORIGIN, "source_id": "CANONICAL_SEED"}]
+        )
+        manifest = envelope["sampling_manifest"]
+        manifest["inventory_output_digest"] = inventory["output_digest"]
+        manifest["input_digest"], manifest["output_digest"] = manifest_digests(manifest)
+        for record in envelope["page_acquisitions"]:
+            record["sampling_manifest_output_digest"] = manifest["output_digest"]
+
+    receipt = emittable(validate(tampered(genuine, hide_the_source), budget=2))
+    reasons = receipt["gates"][F.CANONICAL_VALIDITY]["reasons"]
+    assert {
+        "code": "PRODUCER_INVARIANT_BROKEN",
+        "pointer": "/site_inventory/candidates",
+        "rule": "source_declared_for_every_provenance",
+    } in reasons
+    assert receipt["overall_state"] == "FAIL"
+
+
+def test_a_credential_bearing_target_refused_by_policy_is_blocked_never_failed() -> None:
+    """The producer withholds the request on purpose (data minimisation); that is no defect."""
+    from tests.application.test_acquire_selected_pages import REQUEST, build
+
+    request = dict(REQUEST, target_url="https://operator:s3cr3t@example.com/")
+    envelope = build(FakeFetcher(), FULL_BUDGET).run(request)
+    assert "analysis_run_request" not in envelope, "canary: the producer withheld the request"
+    assert envelope["analysis_run_state"]["failure"] == {"code": TARGET_NOT_PERMITTED_CODE}
+    receipt = emittable(validate(envelope))
+    assert receipt["overall_state"] == "BLOCKED"
+    assert only_failures(receipt) == set()
+    assert receipt["gates"][F.INPUT_CONTRACT]["state"] == "NOT_APPLICABLE"
+    assert codes(receipt, F.INPUT_CONTRACT) == ["REQUEST_WITHHELD_BY_POLICY"]
+    assert "s3cr3t" not in json.dumps(receipt)
+
+
+def test_a_request_missing_for_any_other_reason_is_still_a_defect() -> None:
+    def drop(envelope: dict[str, Any]) -> None:
+        envelope.pop("analysis_run_request")
+
+    unreachable = DiscoveryReport(None, bootstrap_failure=BootstrapFailure.UNREACHABLE)
+    receipt = emittable(validate(tampered(acquired(discovery_report=unreachable), drop)))
+    assert codes(receipt, F.INPUT_CONTRACT) == ["REQUEST_MISSING"]
+    assert receipt["overall_state"] == "FAIL"
+
+
+@pytest.mark.parametrize("outcome", sorted(LIMITING_SOURCE_OUTCOMES))
+def test_every_limiting_source_outcome_is_a_stated_limitation(outcome: str) -> None:
+    def limit(envelope: dict[str, Any]) -> None:
+        envelope["site_inventory"]["sources"][-1]["outcome"] = outcome
+
+    receipt = validate(tampered(acquired(), limit))
+    assert "DISCOVERY_SOURCE_LIMITED" in codes(receipt, F.UNRESOLVED_CONFLICTS_LIMITATIONS)

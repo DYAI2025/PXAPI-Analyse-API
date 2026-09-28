@@ -164,6 +164,7 @@
         "DOCUMENT_CONTAINER_INVALID",
         "DOCUMENT_CONTRACT_INVALID",
         "DOCUMENT_SEMANTICS_INVALID",
+        "PRODUCER_INVARIANT_BROKEN",
         "RUN_BINDING_BROKEN",
         "LINKED_DOCUMENT_MISSING",
         "SELECTION_BINDING_BROKEN",
@@ -198,7 +199,8 @@
     "not_applicable_reason_code": {
       "type": "string",
       "enum": [
-        "RUN_EMITTED_NO_PAGE_DOCUMENTS"
+        "RUN_EMITTED_NO_PAGE_DOCUMENTS",
+        "REQUEST_WITHHELD_BY_POLICY"
       ],
       "description": "Why a gate does not apply to this run."
     },

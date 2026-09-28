@@ -154,10 +154,22 @@ def test_the_full_journey_from_url_to_downloaded_evidence(
     assert page.get_by_role("heading", level=1).inner_text().startswith("Run ")
     overview = page.locator("#overview")
     assert ORIGIN in overview.inner_text()
-    assert "SUCCEEDED" in overview.inner_text()
+    assert overview.locator(".badge.run-ok").inner_text().startswith("SUCCEEDED")
     assert "PAGE_ACQUISITION" in overview.inner_text()
     validation = page.locator("#validation")
-    assert "BLOCKED" in validation.inner_text()
+    assert validation.locator(".overall .badge").inner_text().split(" \u2014 ")[0] == "! BLOCKED"
+    gate_rows = validation.locator("table.gates tbody tr")
+    assert gate_rows.count() == 7
+    states = {
+        gate_rows.nth(i).locator("code").first.inner_text(): gate_rows.nth(i)
+        .locator(".badge")
+        .inner_text()
+        for i in range(7)
+    }
+    assert states["ACQUISITION_COMPLETENESS"] == "! BLOCKED"
+    assert states["EVIDENCE_COVERAGE"] == "! BLOCKED"
+    assert states["INPUT_CONTRACT"] == "\u2713 PASS"
+    assert states["ARTIFACT_BUNDLE_VALIDITY"] == "\u2713 PASS"
     for gate in ("INPUT_CONTRACT", "ACQUISITION_COMPLETENESS", "EVIDENCE_COVERAGE"):
         assert gate in validation.inner_text()
     assert "SELECTION_INCOMPLETE" in validation.inner_text()
@@ -197,22 +209,20 @@ def test_the_full_journey_from_url_to_downloaded_evidence(
     archive = tmp_path / "bundle.zip"
     download_info.value.save_as(str(archive))
     files = read_archive(archive.read_bytes())
-    assert set(files) == {m.file_name for m in CANONICAL_MEMBERS.values()} | {RECEIPT_FILE}
+    assert set(files) == {m.file_name for m in CANONICAL_MEMBERS.values()}
     for member in CANONICAL_MEMBERS.values():
         value = json.loads(files[member.file_name])
         for document in value if member.plural else [value]:
             assert CONTRACTS.validate(member.contract, document) == ()
-    receipt = json.loads(files[RECEIPT_FILE])
-    assert CONTRACTS.validate("analysis-validation-receipt", receipt) == ()
-    assert receipt_rule_violations(receipt) == ()
-    canonical = {name: content for name, content in files.items() if name != RECEIPT_FILE}
-    assert receipt["artifact_bundle_digest"] == bundle_digest(canonical)
-
     with page.expect_download() as receipt_info:
         page.get_by_role("link", name="Download the validation receipt").click()
-    receipt_file = tmp_path / "receipt.json"
+    receipt_file = tmp_path / RECEIPT_FILE
     receipt_info.value.save_as(str(receipt_file))
-    assert receipt_file.read_bytes() == files[RECEIPT_FILE]
+    receipt = json.loads(receipt_file.read_bytes())
+    assert CONTRACTS.validate("analysis-validation-receipt", receipt) == ()
+    assert receipt_rule_violations(receipt) == ()
+    assert receipt["overall_state"] == "BLOCKED"
+    assert receipt["artifact_bundle_digest"] == bundle_digest(files)
     screenshot(page, "journey-normal-result", tmp_path)
 
 

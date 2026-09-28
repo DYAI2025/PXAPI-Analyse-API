@@ -1,11 +1,12 @@
 # PXAPI Project State
 
-**Snapshot date:** 2026-09-19  
-**Execution mode:** `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1. `WIP=1` is this implementation theme and it is the only one; the PXAPI-19 closeout theme is finished. PXAPI-20 is delivered as two sequential PR candidates under one Jira item, `20.A` then `20.B` (Jira `PXAPI-20` comment `16259`, `D-20-K`). The current candidate is `20.A — Static Page Evidence Foundation`; neither its merge nor its green gates make `PXAPI-20` Done.  
+**Snapshot date:** 2026-09-27 (evidence reconcile; the 2026-09-19 snapshot statements below are kept where they describe history)  
+**Execution mode:** `PXAPI-20` — Multi-Page Static Acquisition & Canonical Evidence Population v1. `WIP=1` is this implementation theme and it is the only one; the PXAPI-19 closeout theme is finished. PXAPI-20 is delivered as two sequential PR candidates under one Jira item, `20.A` then `20.B` (Jira `PXAPI-20` comment `16259`, `D-20-K`). `20.A — Static Page Evidence Foundation` is **merged** (`e4066161…`, PR #20). `20.B — Multi-Page Runtime & Real-Boundary` exists as a candidate at exact head `28e29a0aff59cd41a4bc1cb96030075082d9f4ad`: the multi-page runtime, the mandatory proof descriptor `.agent-proofs.json` and a **verified real-boundary proof** are on that candidate; its PR, merge and the `PXAPI-20` ticket closeout are **still pending**. Neither candidate's merge nor its green gates alone make `PXAPI-20` Done.  
 **Repository:** `DYAI2025/PXAPI-Analyse-API`  
 **19.A integrated implementation baseline:** `926c2415503f27084ab314629548b2e79ddce8a9`  
 **19.B integrated implementation baseline (historical; no longer `main`):** `fe8d838023c8f9967151cad9aa1981e76dcf7d75`  
-**Current implementation baseline:** `19a9a855d603384c216bbf9ab92e4e7cb0334bfb` — the merge of closeout PR #19, and `main` when this snapshot was written. It advances documentation only over the previous baseline `bfe06cc07ea0dfde31fedb8e7115940da24fb9fd`: `git diff --quiet bfe06cc 19a9a855 -- src tests contracts/v1 pyproject.toml uv.lock .github` exits **0**, and the six files that do differ are `contracts/README.md`, the three `docs/context/` files and the two PXAPI-19 closeout evidence artifacts. The runtime at `19a9a855` is therefore byte-for-byte the runtime PR #18 merged. `PXAPI-20.A` is implemented from this exact base.
+**PXAPI-19 closeout baseline and 20.A base (historical; no longer `main`):** `19a9a855d603384c216bbf9ab92e4e7cb0334bfb` — the merge of closeout PR #19, and `main` when the 2026-09-19 snapshot was written. It advances documentation only over the previous baseline `bfe06cc07ea0dfde31fedb8e7115940da24fb9fd`: `git diff --quiet bfe06cc 19a9a855 -- src tests contracts/v1 pyproject.toml uv.lock .github` exits **0**, and the six files that do differ are `contracts/README.md`, the three `docs/context/` files and the two PXAPI-19 closeout evidence artifacts. The runtime at `19a9a855` is therefore byte-for-byte the runtime PR #18 merged. `PXAPI-20.A` was implemented from this exact base.  
+**Current implementation baseline (`main`):** `e4066161f5d31bb10fccb9d36baac4197e61fc02` — the merge of PXAPI-20.A (PR #20). `PXAPI-20.B` is implemented from this exact base; its candidate head `28e29a0…` is **not** on `main`.
 
 ## Purpose
 
@@ -33,15 +34,17 @@ This file is a compact rehydration snapshot for delivery gates. It does not repl
 
 ## Current code truth
 
-At the current implementation baseline `19a9a855d603384c216bbf9ab92e4e7cb0334bfb`, the PXAPI-19.B site-discovery runtime **is present**, including the PR #18 discovery-correctness repair. `SiteDiscoveryPort`, `HttpSiteDiscovery`, the `DiscoverSite` use case, the deterministic `CENSUS_FIRST_DETERMINISTIC` planner, producer-side semantic enforcement and `python -m pxapi.adapters.inbound.discover_cli` are all on `main`, authorized by the twelve `PXAPI-19.B` entries in `BEHAVIOR_ALLOWED` (`tests/test_package_scaffold.py`).
+**On `main` at `e4066161f5d31bb10fccb9d36baac4197e61fc02` (20.A merged).** The PXAPI-19.B site-discovery runtime **is present**, including the PR #18 discovery-correctness repair. `SiteDiscoveryPort`, `HttpSiteDiscovery`, the `DiscoverSite` use case, the deterministic `CENSUS_FIRST_DETERMINISTIC` planner, producer-side semantic enforcement and `python -m pxapi.adapters.inbound.discover_cli` are all on `main`, authorized by the twelve `PXAPI-19.B` entries in `BEHAVIOR_ALLOWED` (`tests/test_package_scaffold.py`). PXAPI-20.A added, and `main` now carries, the registered `page-acquisition-record.v1` contract with its examples and invalid fixtures, the acquisition vocabulary and producer invariants in `src/pxapi/domain/page_acquisition.py`, and the isolated generic static-page observer `src/pxapi/application/observe_static_page.py`, authorized by two `PXAPI-20.A` entries in `BEHAVIOR_ALLOWED`. `main` itself still fetches no discovered page: 20.A deliberately shipped no multi-page runtime.
 
-Acquisition is therefore no longer homepage-only at the discovery layer: one run establishes a canonical public origin, reads `/robots.txt` for `Sitemap:` declarations only, reads sitemaps and bounded same-origin seed links, canonicalizes and deduplicates them into a `site-inventory.v1`, and plans a `sampling-manifest.v1` in `CENSUS` mode. **No discovered page is fetched** — page acquisition over the manifest is PXAPI-20 and is not implemented. `PXAPI-20.A` adds the reusable evidence foundation for it and deliberately no multi-page runtime; the manifest-driven acquisition runtime is `20.B`.
+**On the 20.B candidate at `28e29a0aff59cd41a4bc1cb96030075082d9f4ad` (not on `main`).** Manifest-driven multi-page static acquisition **is implemented**: `src/pxapi/application/acquire_selected_pages.py` orchestrates discovery → admission → one static fetch per selected page → `PageAcquisitionRecord(STATIC_HTTP)` → page-scoped measurements and evidence; the admission gate in `domain/page_acquisition.py` runs before any fetch; `build_site_acquisition` is in the composition root; `python -m pxapi.adapters.inbound.acquire_cli` requires an explicit `--max-selected-pages N`; the mandatory proof descriptor `.agent-proofs.json` and the harness `tools/pxapi20b_real_boundary_proof.py` exist; and the real-boundary proof has been executed and verified against `https://www.rfc-editor.org/` on that exact head (see *PXAPI-20.B candidate*). Two `PXAPI-20.B` entries join `BEHAVIOR_ALLOWED`.
+
+Acquisition is therefore no longer homepage-only: one run establishes a canonical public origin, reads `/robots.txt` for `Sitemap:` declarations only, reads sitemaps and bounded same-origin seed links, canonicalizes and deduplicates them into a `site-inventory.v1`, plans a `sampling-manifest.v1` in `CENSUS` mode and — on the 20.B candidate — acquires every selected page over `STATIC_HTTP` within the operator-declared selection budget. **Historical statement, preserved:** the 2026-09-19 snapshot recorded here that "no discovered page is fetched — page acquisition over the manifest is PXAPI-20 and is not implemented"; that was true of `19a9a855` and remains true of `main` until 20.B merges.
 
 **The defects found after the 19.B merge are dispositioned.** A post-merge review had found four defect classes inside the authorized boundary (AD-007, `C-PXAPI-013` … `C-PXAPI-016`). PR #18 repaired the two that were implementation defects — malformed-link isolation, together with the same defect class in `robots.txt` declaration reading (NF-5), and fragment canonicalization — and Jira `PXAPI-19` comment `16081` ruled the canonical-seed finding superseded as an implementation defect and the named-limit finding non-material. Residues that were recorded but do not block PXAPI-19 are listed under *Non-blocking follow-up candidates* below. The discovery layer still makes **no** completeness claim about a real site beyond what one inventory records: the accepted Real-Boundary evidence proves one controlled public-origin boundary (AD-006).
 
 PXAPI-19.A had added the provider-neutral contract/foundation layer for that step, including registered `site-inventory.v1` and `sampling-manifest.v1` schemas, shared acquisition definitions, valid examples, targeted invalid fixtures, deterministic digest/semantic guards and contract evidence. 19.A intentionally introduced no runtime; 19.B is what made those contracts executable.
 
-Still **not** present at `19a9a855`: browser/Crawl4AI execution, `RenderedPagePort`, multi-page static acquisition, `page-acquisition-record.v1`, scoring/customer output changes, queueing, CRM integration and deployment behavior. No customer-value claim follows from the 19.B merge, from its repair, or from the closeout. What `PXAPI-20.A` adds to that list is recorded by the 20.A candidate itself, not here in advance.
+Still **not** present on `main` at `e4066161`, nor on the 20.B candidate at `28e29a0`: browser/Crawl4AI execution, `RenderedPagePort`, any `RENDERED_BROWSER` producer, scoring/customer output changes, PDF, queueing, CRM integration and deployment behavior. No customer-value claim follows from the 19.B merge, from its repair, from the closeout, from the 20.A merge or from the 20.B proof. **Historical statement, preserved:** at `19a9a855` the list of absent items also included multi-page static acquisition and `page-acquisition-record.v1`; the contract and observer arrived on `main` with 20.A, and the runtime exists on the 20.B candidate, so that part of the list is no longer current truth.
 
 ## PXAPI-19.A closeout
 
@@ -122,10 +125,15 @@ Each candidate carries its own bounded `IC` / `R2G` / `R4M`. **Neither the 20.A 
 
 ### PXAPI-20.A candidate
 
-**State:** candidate open, **not** on `main`. Base `19a9a855d603384c216bbf9ab92e4e7cb0334bfb`;
-five commits; evidence `docs/evidence/PXAPI-20A-static-page-evidence-foundation.md`. DRS
-`IC` / `R2G` / `R4M` for this candidate are Orchestrator and Product Owner authority and are **not**
-declared by this repository.
+**State:** **merged** as `e4066161f5d31bb10fccb9d36baac4197e61fc02` (PR #20), now `main`. Base
+`19a9a855d603384c216bbf9ab92e4e7cb0334bfb`; evidence
+`docs/evidence/PXAPI-20A-static-page-evidence-foundation.md`. The `F-20A-R4M-001`
+shared-vocabulary narrowing found by the independent `R4M` review (Jira `PXAPI-20` comment `16325`)
+was repaired on the candidate **before** the merge (`C-PXAPI-021`). The 20.A gate verdicts and the
+merge itself are Orchestrator and Product Owner authority and are **not** declared by this
+repository; the 20.A merge does not make `PXAPI-20` Done (`D-20-K`). **Prior state, preserved:**
+"candidate open, **not** on `main`; five commits" — true when the 2026-09-19 snapshot was written.
+The paragraphs below describe what the candidate added and are kept as history.
 
 What the candidate adds, and nothing else: the registered `page-acquisition-record.v1` contract
 with three examples and fourteen targeted invalid fixtures; `src/pxapi/domain/page_acquisition.py`
@@ -143,6 +151,56 @@ and `oracle/` are each a **0-byte** diff against the base, so the candidate adds
 changes no CI, changes no existing contract and changes no homepage behaviour.
 
 **Hard amendments that bound 20.A** (comment `16259`): `AnalyzeHomepage` is not refactored, subclassed, extracted in place or behaviourally modified, and `H1`–`H5` are not repaired in this slice (`D-20-E`, see `C-PXAPI-018`); the static-page path is a separate generic observation path; the **producer** observes with `observation_mode = STATIC_HTTP` only, while the contract carries the architecture's own `STATIC_HTTP | RENDERED_BROWSER` vocabulary (`D-20-C` as reconciled by `F-20A-R4M-001`); page linkage uses `measurement_refs` and neither `measurement-record.v1` nor `website-evidence.v1` is versioned to carry page identity (`D-20-B`); site-caused and technical outcomes stay neutral while PXAPI's own contract/invariant defects stay visible run failures (`D-20-D`); `raw_artifact_ref` exists as optional opaque provenance and is never emitted (`D-20-H`); the HTML parser is not altered and `H7` is an operational precondition rather than a blocker (`D-20-L`, see `C-PXAPI-019`); existing `SafePageFetcher` safety coverage is not duplicated to raise test volume (`D-20-O`); after 20.B merges with green gates, feature development **stops** for the first real customer/prospect pilot (`D-20-P`).
+
+### PXAPI-20.B candidate
+
+**State:** candidate at exact head `28e29a0aff59cd41a4bc1cb96030075082d9f4ad`, **not** on `main`;
+**no PR created, not merged, ticket not Done.** Base `e4066161f5d31bb10fccb9d36baac4197e61fc02`
+(PXAPI-20.A merged, PR #20). Evidence `docs/evidence/PXAPI-20B-multi-page-runtime.md`. DRS
+`IC` / `R2G` / `R4M` are Orchestrator and Product Owner authority and are **not** declared here;
+an independent Governor review **recommends** `IC` / `R2G` / `R4M` `GREEN` for `28e29a0`, and a
+recommendation is not a declared gate. The paragraphs on the 20.A candidate above are kept as
+history; 20.A is merged.
+
+What the candidate adds: `src/pxapi/application/acquire_selected_pages.py` (the orchestrator:
+discovery → admission → one static fetch per selected page → acquisition record → page-scoped
+measurements and evidence); an admission gate in `domain/page_acquisition.py` that runs before
+any fetch; `build_site_acquisition` in the composition root; `adapters/inbound/acquire_cli.py`
+with a **required** `--max-selected-pages N` and no default; the D-20-F reading constraint in the
+observer (a non-2xx document is not parsed as page content); focused tests and an opt-in
+multi-page real-boundary smoke. Two `PXAPI-20.B` entries join `BEHAVIOR_ALLOWED`. Later commits on
+the candidate added the proof harness `tools/pxapi20b_real_boundary_proof.py`, its tests, the
+canonical container-cardinality check in `acquire_cli` (`C-PXAPI-022`, closed at `c1bf4cd5…`), the
+interpreter / configuration / `PATH` discovery repairs (`C-PXAPI-023`, closed at `479bc1db…`) and,
+as the final descriptor-only change, `.agent-proofs.json` registering `pxapi20b-real-boundary` as a
+mandatory proof (`28e29a0`).
+
+**Real-boundary proof, executed and verified at `28e29a0`** (`run-pxapi20b-proof-activate-20260927-004`,
+status `VERIFIED`, reason `VERIFIED_ORACLE_CHANGED/INDEPENDENT_REVIEW` because `.agent-proofs.json`
+was the intentional one-file oracle change): target `https://www.rfc-editor.org/` via the
+production module `pxapi.adapters.inbound.acquire_cli` with explicit `--max-selected-pages 3` and a
+fresh output directory; selected installed system Python `/opt/homebrew/opt/python@3.14/bin/python3.14`
+`3.14.6` (`D-20-L`), disposable project runtime also `3.14.6`, `uv.lock` byte-identical before and
+after; run `px-8674bf01befc4c849bd77de39621c3c6` `SUCCEEDED`; inventory of 506 candidates; manifest
+`selected_count = 3`, `selection_complete = false`, `SELECTION_BUDGET_EXHAUSTED`, 503 excluded by
+budget; three page acquisitions, all `RESPONSE_RECEIVED` HTTP 200 with 13 measurements and 13
+evidence records each, 39 measurements and 39 evidence records in total, every one linked to
+exactly one page; producer `STATIC_HTTP_PAGE_FETCH 1.0.0` / `STATIC_HTTP` only. Runner
+verification on the exact head: `3307 passed, 2 skipped`, Ruff green; exact-head GitHub Actions
+`python-compat` run `36349224176` `success`. The independent artifact review recomputed all ten
+published SHA-256 values, canonical counts, digests and linkage with no findings. Every id, digest
+and artifact SHA-256 is in the evidence document.
+
+**Evidence ceiling.** One bounded point-in-time selection of one controlled public origin over
+`STATIC_HTTP`. No complete-site claim beyond `selection_complete = false`; no browser, scoring, PDF,
+production-scale, customer-value or future-refetch-determinism claim. The boundary observed three
+successes; neutral mixed failure remains test regression evidence, not observed in this proof.
+
+**What is still pending for 20.B:** PR creation, independent exact-head `R4M` declaration
+(`D-20-M`), merge, exact-merge-SHA `main` CI, and the `PXAPI-20` ticket closeout. Because a
+commit cannot contain its own SHA, the documentation-only head that records this evidence is
+re-proved by the Delivery Runner at its own exact SHA with fresh artifacts; the figures above stay
+bound to `28e29a0`.
 
 ## Completed prerequisite
 
@@ -278,7 +336,7 @@ Of the repair document's other findings, NF-4 (this file naming `fe8d838` as cur
 
 - `PXAPI-4` — **Erledigt**, discovery/contract scope accepted.
 - `PXAPI-19` — **Erledigt** (read live 2026-09-19), closed by comment `16257`. 19.A is bounded `CLOSED / VERIFIED`; 19.B is merged and repaired by PR #18 (merge `bfe06cc`, gates `GREEN` at exact head `95c061a` per comments `16081` and `16082`); the historical PR #16 `R4M` is `UNKNOWN`, permanently (AD-005); AC8 is accepted with its evidence ceiling (AD-006). The `repair-required` and `delivery-ready-blocked` labels are gone.
-- `PXAPI-20` — **In Arbeit**, `Highest`, the only WIP theme. `Delivery Ready = GREEN` (comment `16259`); DRS `IC` / `R2G` / `R4M` all `UNKNOWN`. Candidate in flight: `20.A — Static Page Evidence Foundation`.
+- `PXAPI-20` — **In Arbeit**, `Highest`, the only WIP theme (Jira last read live 2026-09-19; not re-read for this 2026-09-27 reconcile). `Delivery Ready = GREEN` (comment `16259`). `20.A` is merged (`e4066161…`, PR #20). Candidate in flight: `20.B — Multi-Page Runtime & Real-Boundary` at `28e29a0…`, runtime plus descriptor plus verified real-boundary proof present; PR, merge and ticket closeout pending. DRS `IC` / `R2G` / `R4M` for 20.B are not declared by this file; independent Governor review recommends `GREEN` for `28e29a0`. **Prior wording, preserved (2026-09-19):** "DRS `IC` / `R2G` / `R4M` all `UNKNOWN`. Candidate in flight: `20.A — Static Page Evidence Foundation`."
 
 No sprint membership or commitment is asserted by this file. Jira must be read live for that claim.
 

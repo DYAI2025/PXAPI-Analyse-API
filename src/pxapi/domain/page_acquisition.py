@@ -39,6 +39,12 @@ page, that a page with no measurements says why. They fail **closed**:
 :func:`require_emittable_acquisition` raises rather than returning a repaired set, because a
 producer that patched its own output would be deciding what the analysis found.
 
+**Which selection may be acquired at all.** PXAPI-20.B adds the admission gate that runs before
+any fetch: :func:`admitted_page_refs` accepts the bound manifest only when it belongs to this
+run, names and pins the inventory it was drawn from, reproduces its own digests, and selects
+each Page Ref once from that inventory's eligible candidates. It fails closed with
+:class:`SelectionNotAdmissible` and never admits part of a selection.
+
 Standard library only. The domain ring imports no third-party distribution at all.
 """
 
@@ -50,8 +56,18 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Any, Final
 
-from pxapi.domain.acquisition_digests import DIGEST_PREFIX
-from pxapi.domain.acquisition_semantics import ProducerInvariantViolated, SemanticViolation
+from pxapi.domain.acquisition_digests import (
+    DIGEST_PREFIX,
+    digest_of,
+    inventory_output_projection,
+    manifest_digests,
+)
+from pxapi.domain.acquisition_semantics import (
+    ProducerInvariantViolated,
+    SemanticViolation,
+    manifest_producer_violations,
+    sampling_manifest_violations,
+)
 
 #: The registered contract these rules are about.
 PAGE_ACQUISITION_RECORD: Final = "page-acquisition-record"
@@ -360,3 +376,116 @@ def require_emittable_acquisition(
     found = acquisition_violations(records, manifest, measurements, evidence)
     if found:
         raise ProducerInvariantViolated(PAGE_ACQUISITION_RECORD, found)
+
+
+# --- admission: which selection may be acquired at all ---------------------------------------
+
+#: ``rule name -> what admission refuses``, checked over the bound manifest and inventory
+#: *before* any page is fetched (D-20-B). A manifest that breaks one of these is not a selection
+#: this runtime may act on: fetching it anyway would bind every record to a population that
+#: cannot be resolved, and no outcome of those fetches could be read correctly afterwards. The
+#: contract-semantic and producer rules of ``sampling-manifest.v1`` are applied as well, under
+#: their own names, so an unknown Page Ref is reported as ``selection_is_an_inventory_candidate``
+#: and a duplicated one as ``unique_selected_url_key`` rather than under a second spelling.
+ADMISSION_RULES: Final[dict[str, str]] = {
+    "manifest_binds_run": (
+        "The manifest and the inventory belong to the run being executed, so no record of this "
+        "run can answer a selection some other run planned."
+    ),
+    "manifest_binds_inventory": (
+        "The manifest names the inventory it is bound to by identity and by exact output "
+        "digest, so every selected Page Ref resolves against the population it was drawn from."
+    ),
+    "inventory_digest_reproduces": (
+        "The inventory's output digest is the digest of its own content, so the binding above "
+        "pins the population actually in hand rather than a claim about one."
+    ),
+    "manifest_digests_reproduce": (
+        "The manifest's two digests are the digests of its own content, so the digest every "
+        "acquisition record carries pins the selection that was actually acquired."
+    ),
+    "selection_present": (
+        "The manifest carries at least one selection, each an object with a whole-number rank, "
+        "so there is a deterministic order to acquire in."
+    ),
+}
+
+
+class SelectionNotAdmissible(Exception):
+    """The bound manifest and inventory do not form a selection this runtime may acquire.
+
+    It names a defect in the documents this service produced and handed itself, never anything
+    about the website, and it is raised before any page was fetched.
+    """
+
+    def __init__(self, violations: Sequence[SemanticViolation]) -> None:
+        self.violations: tuple[SemanticViolation, ...] = tuple(violations)
+        rendered = ", ".join(f"{v.pointer} [{v.rule}]" for v in self.violations)
+        super().__init__(f"selection not admissible: {rendered}")
+
+    @property
+    def keys(self) -> set[tuple[str, str]]:
+        return {violation.key for violation in self.violations}
+
+
+def _reproduces(expected: Any, compute: Any) -> bool:
+    """Whether ``compute()`` returns ``expected``; a document it cannot even digest does not.
+
+    A projection raises on an ambiguous or structurally broken document, and that is exactly a
+    document whose digest does not reproduce — the other admission rules then say why.
+    """
+    try:
+        return bool(compute() == expected)
+    except Exception:
+        return False
+
+
+def admission_violations(
+    manifest: Any, inventory: Any, run_id: str
+) -> tuple[SemanticViolation, ...]:
+    """Every reason the bound manifest and inventory may not be acquired, or nothing."""
+    if not isinstance(manifest, dict) or not isinstance(inventory, dict):
+        return (SemanticViolation("", "manifest_binds_inventory"),)
+
+    found: list[SemanticViolation] = []
+    if manifest.get("run_id") != run_id or inventory.get("run_id") != run_id:
+        found.append(SemanticViolation("/run_id", "manifest_binds_run"))
+
+    names_inventory = manifest.get("inventory_ref") == inventory.get("inventory_id")
+    pins_inventory = manifest.get("inventory_output_digest") == inventory.get("output_digest")
+    if not (names_inventory and pins_inventory):
+        found.append(SemanticViolation("/inventory_ref", "manifest_binds_inventory"))
+
+    inventory_digest = inventory.get("output_digest")
+    if not _reproduces(inventory_digest, lambda: digest_of(inventory_output_projection(inventory))):
+        found.append(SemanticViolation("/inventory_output_digest", "inventory_digest_reproduces"))
+
+    manifest_pair = (manifest.get("input_digest"), manifest.get("output_digest"))
+    if not _reproduces(manifest_pair, lambda: manifest_digests(manifest)):
+        found.append(SemanticViolation("/output_digest", "manifest_digests_reproduce"))
+
+    selections = manifest.get("selections")
+    if (
+        not isinstance(selections, list)
+        or not selections
+        or _selected_keys_in_rank_order(manifest) is None
+    ):
+        found.append(SemanticViolation("/selections", "selection_present"))
+
+    found += sampling_manifest_violations(manifest)
+    found += manifest_producer_violations(manifest, inventory)
+    return tuple(found)
+
+
+def admitted_page_refs(manifest: Any, inventory: Any, run_id: str) -> tuple[str, ...]:
+    """The selected Page Refs in rank order, or ``SelectionNotAdmissible`` before any fetch.
+
+    Fails closed: the caller receives either the complete, unambiguous, resolvable selection or
+    nothing at all. There is no partial admission, because acquiring the admissible half of a
+    selection would silently omit the rest.
+    """
+    found = admission_violations(manifest, inventory, run_id)
+    keys = _selected_keys_in_rank_order(manifest) if not found else None
+    if keys is None:
+        raise SelectionNotAdmissible(found)
+    return tuple(keys)

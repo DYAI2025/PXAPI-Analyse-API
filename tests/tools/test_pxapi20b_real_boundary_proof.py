@@ -650,8 +650,7 @@ def _measurements_from_two_response_urls(envelope: dict[str, Any]) -> str:
     by_id[refs[0]]["source_url"] = "https://example.com/x"
     by_id[refs[2]]["source_url"] = "https://example.com/y"
     return (
-        f"record {record['acquisition_id']}: measurements are sourced at more than one "
-        "response URL"
+        f"record {record['acquisition_id']}: measurements are sourced at more than one response URL"
     )
 
 

@@ -309,7 +309,7 @@ def test_the_verifier_is_told_every_file_its_contract_and_its_container() -> Non
     assert argv[:3] == ["/scratch/venv/bin/python", "-I", "-c"]
     assert argv[3] == proof.CONTRACT_VERIFIER
     assert json.loads(argv[4]) == spec
-    assert proof.CONTRACT_ROOT == Path("contracts/v1")
+    assert Path("contracts/v1") == proof.CONTRACT_ROOT
     contract_root = ROOT / proof.CONTRACT_ROOT
     assert contract_root == CONTRACTS_DIR
 
@@ -1766,15 +1766,16 @@ def test_a_verifier_that_validated_nothing_fails_the_contract_stage(tmp_path: Pa
 def test_a_verifier_that_does_not_run_or_prints_no_report_fails_the_verification_stage(
     tmp_path: Path,
 ) -> None:
-    root = _checkout(tmp_path)
-
     def crashed(_argv: Sequence[str], _cwd: Path, _env: Mapping[str, str]) -> str:
         raise subprocess.SubprocessError("verifier crashed")
 
-    # Each scenario gets its own host directory, so the two hosts never share a bin directory.
+    # Each scenario is complete in its own parent: its own checkout root, host and proof
+    # output, so the canonical artifacts the first command line publishes cannot make the
+    # second scenario fail at publication instead of at verification.
     first = tmp_path / "crashed"
     first.mkdir()
-    failure, _facts = _failed_after_the_cli(root, ScriptedHost(first, verifier=crashed))
+    host = ScriptedHost(first, verifier=crashed)
+    failure, _facts = _failed_after_the_cli(_checkout(first), host)
     assert failure.stage == "verification"
 
     def prose(_argv: Sequence[str], _cwd: Path, _env: Mapping[str, str]) -> str:
@@ -1782,7 +1783,8 @@ def test_a_verifier_that_does_not_run_or_prints_no_report_fails_the_verification
 
     second = tmp_path / "prose"
     second.mkdir()
-    failure, _facts = _failed_after_the_cli(root, ScriptedHost(second, verifier=prose))
+    host = ScriptedHost(second, verifier=prose)
+    failure, _facts = _failed_after_the_cli(_checkout(second), host)
     assert failure.stage == "verification"
     assert "printed no JSON" in failure.detail
 

@@ -353,6 +353,36 @@ no product or architecture decision, and declares no gate. `resolution.next_acti
 Runner executes the focused tests, the full suite, Ruff and the mandatory proof on the exact result
 SHA and publishes the artifacts; then independent `R2G` / `R4M` at that head (`D-20-M`).
 
+**Chronological note (2026-09-28, `run-pxapi20b-proof-integrity-verify-20260928-001`).**
+
+1. The repair above was reviewed at exact head `9a582f3ea2354c52e51a10573c8ae0a5f8b00e4c` (`9a582f3e`),
+   the second correction commit of `run-pxapi20b-proof-integrity-repair-20260928-001`. The
+   authoring session's ceiling ("not run in this authoring session") was closed by later steps of
+   that run, not by the author.
+2. Correction sequences 2 and 3 of that run each executed, independently and at this unchanged
+   head, fresh `uv`-locked full `pytest` and Ruff from a runner-owned environment. Latest evidence:
+   `3399 passed, 2 skipped, 2 warnings`; `ruff check .` and `ruff format --check .` clean.
+3. The independent exact-head review at `9a582f3e` found no Blocker, Critical, Important or Minor
+   finding, and records `F-20B-R4M-001` and `F-20B-R4M-002` as closed in code: registered-contract
+   and producer-invariant validation, independent digest, count, receipt and cardinality
+   recomputation, and import-shadow prevention are present, each with negative tests.
+4. The mandatory `pxapi20b-real-boundary` proof was nevertheless not executed by that run. Its
+   immutable work-order snapshot omitted the machine oracle-scope declaration
+   (`verification_scope_change`), so the dispatch control never authorised the proof, and the
+   correction sequences could not change that frozen policy. This was a dispatch-control defect, not
+   a repository defect; the repaired oracle at `9a582f3e` is unaffected.
+5. `run-pxapi20b-proof-integrity-repair-20260928-001` was cancelled by the Governor after
+   `GOAL_RECONCILED` (readback-confirmed `CANCELLED`, reason `CANCELLED_BY_GOVERNOR`) and its WIP
+   slot released. The present run is its exact-base successor on `9a582f3e`; it exists only to
+   execute the unchanged mandatory proof and changes nothing but this note.
+6. No proof result, receipt, artifact reference or gate is claimed here. The Delivery Runner
+   executes fresh full `pytest`, Ruff and the mandatory proof — through the production command line
+   against `https://www.rfc-editor.org/` with explicit `--max-selected-pages 3` — at the exact
+   result SHA of this note's commit, and publishes those artifacts externally after the commit.
+   Because the oracle is unchanged from this run's base, a successful project-native proof at that
+   SHA may serve as independent release evidence; `R2G` / `R4M` remain Orchestrator / Product Owner
+   authority (`D-20-M`) and are not self-authorised by this note.
+
 ## 6. Evidence ceiling
 
 Executed, this proves **one bounded point-in-time selection of one controlled public origin over

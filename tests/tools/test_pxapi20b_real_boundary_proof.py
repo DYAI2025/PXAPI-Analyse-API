@@ -310,7 +310,8 @@ def test_the_verifier_is_told_every_file_its_contract_and_its_container() -> Non
     assert argv[3] == proof.CONTRACT_VERIFIER
     assert json.loads(argv[4]) == spec
     assert proof.CONTRACT_ROOT == Path("contracts/v1")
-    assert ROOT / proof.CONTRACT_ROOT == CONTRACTS_DIR
+    contract_root = ROOT / proof.CONTRACT_ROOT
+    assert contract_root == CONTRACTS_DIR
 
 
 def test_the_command_environment_cannot_redirect_imports_or_the_registry() -> None:
@@ -1049,8 +1050,11 @@ def test_the_verifier_rejects_a_document_without_schema_version(tmp_path: Path) 
     del envelope["site_inventory"]["schema_version"]
     files, _stdout = _rendered(envelope)
     problems = proof.verification_problems(_verify(files, tmp_path))
-    expected = "site-inventory.json/0: violates site-inventory at /schema_version [required]"
-    assert expected in problems
+    # The reference validator reports a missing required member at the containing object,
+    # which for a root member is the empty pointer; the keyword is what names the defect.
+    prefix = "site-inventory.json/0: violates site-inventory at "
+    required = [p for p in problems if p.startswith(prefix) and p.endswith("[required]")]
+    assert required, problems
 
 
 def test_the_verifier_rejects_an_invalid_digest_string(tmp_path: Path) -> None:
@@ -1767,13 +1771,18 @@ def test_a_verifier_that_does_not_run_or_prints_no_report_fails_the_verification
     def crashed(_argv: Sequence[str], _cwd: Path, _env: Mapping[str, str]) -> str:
         raise subprocess.SubprocessError("verifier crashed")
 
-    failure, _facts = _failed_after_the_cli(root, ScriptedHost(tmp_path, verifier=crashed))
+    # Each scenario gets its own host directory, so the two hosts never share a bin directory.
+    first = tmp_path / "crashed"
+    first.mkdir()
+    failure, _facts = _failed_after_the_cli(root, ScriptedHost(first, verifier=crashed))
     assert failure.stage == "verification"
 
     def prose(_argv: Sequence[str], _cwd: Path, _env: Mapping[str, str]) -> str:
         return "Traceback (most recent call last):\n"
 
-    failure, _facts = _failed_after_the_cli(root, ScriptedHost(tmp_path, verifier=prose))
+    second = tmp_path / "prose"
+    second.mkdir()
+    failure, _facts = _failed_after_the_cli(root, ScriptedHost(second, verifier=prose))
     assert failure.stage == "verification"
     assert "printed no JSON" in failure.detail
 

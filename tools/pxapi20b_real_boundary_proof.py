@@ -1046,7 +1046,9 @@ def _record_problems(
             owner[ref] = record
             item = by_id[ref]
             if item.get("observed_at") != record.get("acquired_at"):
-                problems.append(f"measurement {ref}: not observed at its page's acquisition instant")
+                problems.append(
+                    f"measurement {ref}: not observed at its page's acquisition instant"
+                )
             metric = item.get("metric_id")
             if metric in metrics:
                 problems.append(f"record {acquisition_id}: measures {metric} twice")
@@ -1208,12 +1210,16 @@ def _report_problems(report: Mapping[str, Any]) -> list[str]:
     problems: list[str] = []
     reported = [str(problem) for problem in report.get("problems", [])]
     documents = report.get("documents")
-    if not isinstance(documents, dict):
-        return ["verification: the verifier validated no document", *reported]
+    usable = isinstance(documents, dict)
+    if not usable:
+        # No usable document mapping is a problem of its own; the producer-invariant check
+        # below still runs, so a report that validated nothing cannot suppress that failure.
+        problems.append("verification: the verifier validated no document")
+        documents = {}
     for name in sorted(CANONICAL_FILES.values()):
         entry = documents.get(name)
         if entry is None:
-            if not any(problem.startswith(f"{name}:") for problem in reported):
+            if usable and not any(problem.startswith(f"{name}:") for problem in reported):
                 problems.append(f"{name}: not validated")
             continue
         contract = entry["contract"]

@@ -325,6 +325,33 @@ def test_a_same_origin_form_post_is_accepted() -> None:
     assert answer.status_code == 303
 
 
+@pytest.mark.parametrize(
+    ("headers", "status"),
+    [
+        # What Chrome actually sends for our own form under Referrer-Policy: no-referrer:
+        # measured with Playwright on Chrome 154 — the origin is serialised as "null".
+        ({"Origin": "null", "Sec-Fetch-Site": "same-origin"}, 303),
+        ({"Sec-Fetch-Site": "same-origin"}, 303),
+        ({"Origin": "http://testserver", "Sec-Fetch-Site": "cross-site"}, 403),
+        ({"Origin": "null", "Sec-Fetch-Site": "same-site"}, 403),
+        ({"Origin": "null"}, 403),
+        ({"Sec-Fetch-Site": "cross-site"}, 403),
+    ],
+    ids=[
+        "null-origin-same-origin",
+        "fetch-metadata-only",
+        "cross-site-despite-origin",
+        "same-site-is-not-same-origin",
+        "null-origin-without-metadata",
+        "cross-site-only",
+    ],
+)
+def test_the_origin_check_trusts_the_browser_s_fetch_metadata(
+    headers: dict[str, str], status: int
+) -> None:
+    assert submit(client_for(), headers=headers).status_code == status
+
+
 def test_a_submission_that_is_not_a_form_is_refused() -> None:
     answer = client_for().post(
         "/operator/runs", json={"url": ORIGIN, "max_selected_pages": 3}, follow_redirects=False

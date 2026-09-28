@@ -44,6 +44,9 @@ button {
 .facts dd { margin: 0; overflow-wrap: anywhere; min-width: 0; }
 .table-wrap { overflow-x: auto; max-width: 100%; margin: .5rem 0 1rem; }
 table { border-collapse: collapse; width: 100%; }
+/* A narrow screen scrolls a wide table inside its own container instead of squeezing it. */
+.table-wrap > table { min-width: 34rem; }
+td code { overflow-wrap: normal; }
 caption { text-align: left; font-weight: 600; padding: .25rem 0; }
 th, td { text-align: left; vertical-align: top; padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
 th { background: var(--wash); }

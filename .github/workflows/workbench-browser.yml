@@ -1,0 +1,52 @@
+# PXAPI-25 — the Operator Workbench's deterministic browser journey, and nothing else.
+#
+# Kept apart from python-compat on purpose: the two Python 3.13 / 3.14 compatibility jobs sync
+# only the default `dev` group and never install a browser runtime. This job syncs the separate
+# `browser` dependency group and Playwright's own Chromium, then runs tests/browser with
+# PXAPI_BROWSER_TESTS=required, so a missing Playwright is an error here and never a skip.
+#
+# The journey is deterministic: the Workbench runs over fake acquisition ports. The real-boundary
+# journey against a public website is tools/pxapi25_workbench_real_boundary_proof.py and is not a
+# push-CI test (network-dependent evidence must not become a flaky mandatory gate).
+name: workbench-browser
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  journey:
+    name: browser journey (py3.13, chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Sync from the committed lockfile, browser group included
+        run: uv sync --locked --group browser
+
+      - name: Install Chromium for the locked Playwright
+        run: uv run --no-sync playwright install --with-deps chromium
+
+      - name: Browser journey
+        env:
+          PXAPI_BROWSER_TESTS: required
+          PXAPI_BROWSER_SCREENSHOTS: ${{ runner.temp }}/workbench-screenshots
+        run: uv run --no-sync pytest tests/browser -p no:cacheprovider
+
+      - name: Keep the journey screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-browser-screenshots
+          path: ${{ runner.temp }}/workbench-screenshots
+          if-no-files-found: error
+          retention-days: 14

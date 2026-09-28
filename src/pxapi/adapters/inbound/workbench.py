@@ -184,13 +184,20 @@ def _single(fields: dict[str, list[str]], name: str) -> str | None:
 def _cross_site(request: Request) -> bool:
     """Whether a state-changing request came from a page of another origin.
 
-    A browser names the origin of every form post. A request that names none (a test client, a
-    command-line tool) was not sent by another site's page; one that names a different origin,
-    or ``null``, was, and is refused.
+    The browser's own fetch metadata decides first: ``Sec-Fetch-Site`` is set by the browser,
+    cannot be written by a page, and says ``same-origin`` for our own form. It has to come first
+    because this adapter sends ``Referrer-Policy: no-referrer``, under which a browser serialises
+    the ``Origin`` of its own form post as ``null`` (measured on Chrome 154). Without fetch
+    metadata, the ``Origin`` header must name this origin; ``null`` or another origin is refused.
+    A request carrying neither (a test client, a command-line tool) was not sent by another
+    site's page.
     """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site not in {"same-origin", "none"}
     origin = request.headers.get("origin")
     if origin is None:
-        return request.headers.get("sec-fetch-site") == "cross-site"
+        return False
     own = f"{request.url.scheme}://{request.headers.get('host', '')}"
     parsed = urlsplit(origin)
     return f"{parsed.scheme}://{parsed.netloc}" != own

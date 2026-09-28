@@ -581,6 +581,64 @@ artifact reference was emitted. Those are producer guarantees, enforced by
 publishing a set no consumer can read correctly. It also proves nothing about acquisition having
 run: PXAPI-20.A registers the contract and ships no multi-page runtime.
 
+## The analysis validation receipt
+
+`analysis-validation-receipt.v1` (owner slice PXAPI-25) is a statement **about** one Analysis
+Run: whether its result can be relied on, gate by gate, and exactly why not where it cannot. It
+is never a member of the run. It carries no website value, no score, no polarity and no
+customer-release decision, and validating a run never changes one of its canonical documents.
+A run whose execution state is `SUCCEEDED` may validate `FAIL` or `BLOCKED`; the registry's own
+examples show both.
+
+**Seven gate families, reported exactly once each** — `INPUT_CONTRACT`,
+`ACQUISITION_COMPLETENESS`, `CANONICAL_VALIDITY`, `PROVENANCE_LINKAGE`, `EVIDENCE_COVERAGE`,
+`UNRESOLVED_CONFLICTS_LIMITATIONS`, `ARTIFACT_BUNDLE_VALIDITY`. They are the members of
+`gates`, required and closed, so a gate cannot be dropped to make a run look releasable.
+
+**Four gate states, three overall states.**
+
+| State | Meaning |
+| --- | --- |
+| `PASS` | the gate was actually checked and holds |
+| `FAIL` | a defect of this service: a contract, invariant, linkage or bundle defect |
+| `BLOCKED` | a reliable release cannot be established: evidence is missing, incomplete or technically unavailable — never a statement about the website |
+| `NOT_APPLICABLE` | the gate is deliberately not relevant to this run; neutral, never an overall state |
+
+The overall state is `FAIL > BLOCKED > PASS` over the applicable gates. A validation in which no
+gate applied established nothing and is `BLOCKED`. A validation can pass only for a run whose
+`run_state` is `SUCCEEDED`, which the schema states as a conditional.
+
+**A gate's state follows from its reasons.** Every reason code has one effect, and the schema
+keeps them in three closed vocabularies (`fail_reason_code`, `blocked_reason_code`,
+`not_applicable_reason_code`): a passing gate names no reason, a failing gate names at least
+one defect, a blocked gate names limitations only, and a gate that does not apply says why
+exactly once. So a technical limitation can never be escalated into a `FAIL`, and a defect can
+never be softened into a `BLOCKED`. A reason carries its `code`, an optional `pointer` into the
+run's canonical envelope (for `ARTIFACT_BUNDLE_VALIDITY`, into the bundle keyed by file name)
+and an optional `rule` token — never free text, never a value read from the website.
+
+**Neutrality.** `selection_complete: false`, a timeout, a DNS failure, a refused target or
+redirect, an undecodable or truncated body, a non-2xx document, `NOT_ASSESSED` and `UNKNOWN`
+assessments and a limited discovery source each block a release; none of them is a `FAIL`, and
+none of them is a finding about the site.
+
+**No circularity.** `artifact_bundle_digest` pins the canonical bundle that was validated: the
+canonical-JSON SHA-256 of the object mapping each bundle file name to the SHA-256 digest of that
+file's exact bytes. The receipt is built after the bundle was validated and is never part of the
+input its `ARTIFACT_BUNDLE_VALIDITY` gate decides; a bundle that already contains a receipt is not
+the run's canonical bundle.
+
+What JSON Schema cannot state — that every reason belongs to its gate family, that a gate's
+state is the state its reasons produce, that reasons are unique and ordered by
+`(code, pointer, rule)`, that the overall state follows the precedence — are the receipt rules
+of `pxapi.domain.run_validation`, which every registered example must also satisfy and which the
+Operator Workbench applies to every receipt before it shows or publishes one.
+
+**What this contract does not prove.** A passing receipt proves the gates above held for one run
+and one bundle. It proves nothing about the website's quality, nothing about a customer
+projection, and nothing about the software delivery candidate that produced it: run validation is
+not DRS.
+
 ## The Problem contract and its producer rule
 
 `problem` is transport-neutral: no HTTP status, no type URI, no other transport binding. The

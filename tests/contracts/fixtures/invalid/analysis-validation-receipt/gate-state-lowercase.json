@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "receipt_id": "rcp-01JQ8Z4K2M0000000000000052",
+  "run_id": "run-01JQ8Z4K2M0000000000000052",
+  "validated_at": "2026-09-28T12:00:00Z",
+  "validator": "ANALYSIS_RUN_VALIDATOR",
+  "validator_version": "1.0.0",
+  "run_state": "SUCCEEDED",
+  "artifact_bundle_digest": "sha256:0064cf5b858a667ec80f8648a9222a7abad76233176577a577d9df27a82d94c8",
+  "overall_state": "PASS",
+  "gates": {
+    "INPUT_CONTRACT": {
+      "state": "pass",
+      "reasons": []
+    },
+    "ACQUISITION_COMPLETENESS": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "CANONICAL_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "PROVENANCE_LINKAGE": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "EVIDENCE_COVERAGE": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "UNRESOLVED_CONFLICTS_LIMITATIONS": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "ARTIFACT_BUNDLE_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    }
+  }
+}

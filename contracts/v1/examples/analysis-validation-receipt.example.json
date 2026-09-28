@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "receipt_id": "rcp-01JQ8Z4K2M0000000000000051",
+  "run_id": "run-01JQ8Z4K2M0000000000000051",
+  "validated_at": "2026-09-28T12:00:00Z",
+  "validator": "ANALYSIS_RUN_VALIDATOR",
+  "validator_version": "1.0.0",
+  "run_state": "SUCCEEDED",
+  "artifact_bundle_digest": "sha256:f9f17c7895e315d48ecaed05baa2da8efc83dcf7e0a1313a440ddbf231834310",
+  "overall_state": "BLOCKED",
+  "gates": {
+    "INPUT_CONTRACT": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "ACQUISITION_COMPLETENESS": {
+      "state": "BLOCKED",
+      "reasons": [
+        {
+          "code": "PAGE_NOT_ACQUIRED",
+          "pointer": "/page_acquisitions/2/acquisition_outcome"
+        },
+        {
+          "code": "SELECTION_INCOMPLETE",
+          "pointer": "/sampling_manifest/selection_complete"
+        }
+      ]
+    },
+    "CANONICAL_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "PROVENANCE_LINKAGE": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "EVIDENCE_COVERAGE": {
+      "state": "BLOCKED",
+      "reasons": [
+        {
+          "code": "PAGE_EVIDENCE_NOT_ASSESSED",
+          "pointer": "/page_acquisitions/2"
+        }
+      ]
+    },
+    "UNRESOLVED_CONFLICTS_LIMITATIONS": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "ARTIFACT_BUNDLE_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    }
+  }
+}

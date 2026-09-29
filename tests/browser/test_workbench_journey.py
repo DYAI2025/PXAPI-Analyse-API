@@ -346,3 +346,64 @@ def test_a_refused_input_is_announced_and_the_form_keeps_what_is_safe_to_keep(
     assert "s3cr3t" not in page.content()
     assert page.get_by_label("Maximum selected pages").input_value() == "3"
     assert served.acquisitions.budgets == []
+
+
+#: For every ``.table-wrap`` on the page: whether it scrolls, whether every cell lies inside its
+#: scrollable extent, whether the last column comes fully into view once scrolled to the end,
+#: and whether anything is cut off vertically. Scroll positions are restored afterwards.
+_TABLE_REACH = """() => [...document.querySelectorAll('.table-wrap')].map((wrap) => {
+  const table = wrap.querySelector('table');
+  const cells = [...table.querySelectorAll('th, td')];
+  const beyond = cells.filter((c) => c.offsetLeft + c.offsetWidth > wrap.scrollWidth + 1).length;
+  wrap.scrollLeft = wrap.scrollWidth;
+  const box = wrap.getBoundingClientRect();
+  const last = table.querySelector('thead tr th:last-child').getBoundingClientRect();
+  const lastInView = last.left >= box.left - 1 && last.right <= box.right + 1;
+  wrap.scrollLeft = 0;
+  return {
+    caption: table.querySelector('caption').textContent,
+    scrolls: wrap.scrollWidth > wrap.clientWidth,
+    cellsBeyondReach: beyond,
+    lastColumnInViewAfterScroll: lastInView,
+    clippedVertically: wrap.scrollHeight > wrap.clientHeight + 1,
+  };
+})"""
+
+
+def test_at_375_px_wide_tables_scroll_inside_their_region_and_nothing_is_cut_off(
+    browser: Any, served: Served, dialogs: list[str], tmp_path: Path
+) -> None:
+    """The precise narrow-view claim: the *page* never scrolls sideways; a wide technical table
+    scrolls sideways inside its own container, and every cell of it stays reachable there — by
+    pointer and by keyboard — rather than being clipped away."""
+    page = open_page(browser, NARROW, dialogs)
+    start_run(page, served.base)
+    for index in range(page.locator("details.page-evidence").count()):
+        page.locator("details.page-evidence").nth(index).locator("summary").click()
+    assert no_horizontal_scroll(page)
+
+    tables = page.evaluate(_TABLE_REACH)
+    captions = [table["caption"] for table in tables]
+    for required in ("Validation gates", "Selected pages and acquisition outcomes"):
+        assert any(caption.startswith(required) for caption in captions), captions
+    assert sum("website evidence" in caption for caption in captions) == 3, captions
+    assert any(table["scrolls"] for table in tables), "canary: 375 px must exercise the scroller"
+    for table in tables:
+        assert table["cellsBeyondReach"] == 0, table
+        assert table["lastColumnInViewAfterScroll"], table
+        assert not table["clippedVertically"], table
+
+    # Reasons, outcomes and evidence are in the rendered text, not hidden behind the scroller.
+    assert "SELECTION_INCOMPLETE" in page.locator("#validation").inner_text()
+    assert "Technical limitation: TIMEOUT" in page.locator("#pages").inner_text()
+    assert HOSTILE_TEXT in page.locator("details.page-evidence").nth(1).inner_text()
+
+    # Keyboard: the validation table's region takes focus and scrolls with the arrow keys.
+    wrap = page.locator("#validation .table-wrap").first
+    wrap.focus()
+    assert page.evaluate("document.activeElement.classList.contains('table-wrap')")
+    before = wrap.evaluate("w => w.scrollLeft")
+    for _ in range(10):
+        page.keyboard.press("ArrowRight")
+    assert wrap.evaluate("w => w.scrollLeft") > before
+    screenshot(page, "result-narrow-tables", tmp_path)

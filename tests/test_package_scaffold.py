@@ -56,6 +56,7 @@ BEHAVIOR_ALLOWED: dict[str, str] = {
     "domain/run_validation.py": "PXAPI-25",
     "ports/contract_validation.py": "PXAPI-25",
     "application/validate_analysis_run.py": "PXAPI-25",
+    "application/run_lifecycle.py": "PXAPI-25",
     "adapters/inbound/workbench.py": "PXAPI-25",
     "adapters/inbound/workbench_views.py": "PXAPI-25",
 }

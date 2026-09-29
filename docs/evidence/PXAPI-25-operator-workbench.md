@@ -7,7 +7,7 @@
 `python-compat` run `36405179068` `success`), re-verified with `git ls-remote` before the branch
 was created. **Branch:** `agent/pxapi25-operator-workbench`.
 
-**Proven code head:** `f524a8c274d2953e9c5069419c0fa13798589a38` — the final validation repair
+**Proven code head:** `e0b0f3a57cb3c27f1d23e48c82919a1b56c599e6` — the final validation repair
 (§10) on top of the earlier proven head `32703a67b5af03f5b297e6ad18d996e9ab349d74`; sections 1–9
 record the state at `32703a6` and say so where a figure was measured there. Every executed figure
 below names the SHA it was measured on. The commit that carries this document changes documentation
@@ -283,8 +283,10 @@ The one extra skip in each compatibility job is the browser module, skipped by d
 
 **Old head:** `73d1d7b3ff6ffcbec5c62a0d4ee9b6cddd7a7901` (PR #22 head at handoff, base
 `ce4de18`, re-verified open and unchanged with `gh pr view 22` and `git ls-remote` before any
-edit). **Repaired code head:** `f524a8c274d2953e9c5069419c0fa13798589a38` — `4ac9d5c` (fix) and
-`f524a8c` (tests). The commit that carries this section changes documentation only.
+edit). **Repaired code head:** `e0b0f3a57cb3c27f1d23e48c82919a1b56c599e6` — `4ac9d5c` (fix),
+`f524a8c` (tests) and `e0b0f3a` (a timing fix in one browser test, below). `git diff f524a8c
+e0b0f3a` outside this document touches only `tests/browser/test_workbench_journey.py`. The
+commit that carries this section changes documentation only.
 
 `git diff --stat 73d1d7b f524a8c`: 10 files, 741 insertions, 30 deletions. The same diff over
 every protected path of §2 plus `contracts/`, `src/pxapi/ports/` and `.github/` is **empty**. No
@@ -412,6 +414,14 @@ annotated accordingly).
 
 The first full run surfaced `test_only_authorised_modules_declare_behavior`: the new module needed
 its `BEHAVIOR_ALLOWED` entry (`application/run_lifecycle.py: PXAPI-25`), added in `f524a8c`.
+
+**A race found after these runs.** Re-running the 3.13 suite at the docs commit on top of
+`f524a8c` failed the new narrow-table test once (`scrollLeft` still 0 after the arrow keys). In
+isolation it then failed 11 of 12 runs: Chrome animates keyboard scrolling (measured 5, 80, then
+201 px over ~200 ms) and the test read the position once, immediately. The green full-suite runs
+above had won that race by timing. `e0b0f3a` waits for the region to move (5 s bound): 15 of 15
+isolated runs pass, and the `overflow: hidden` mutant is still killed. The product code did not
+change; final-head figures are on the PR.
 
 ### Real-boundary browser proof at `f524a8c`
 

@@ -7,8 +7,10 @@
 `python-compat` run `36405179068` `success`), re-verified with `git ls-remote` before the branch
 was created. **Branch:** `agent/pxapi25-operator-workbench`.
 
-**Proven code head:** `32703a67b5af03f5b297e6ad18d996e9ab349d74`. Every executed figure below
-names the SHA it was measured on. The commit that carries this document changes documentation
+**Proven code head:** `f524a8c274d2953e9c5069419c0fa13798589a38` — the final validation repair
+(§10) on top of the earlier proven head `32703a67b5af03f5b297e6ad18d996e9ab349d74`; sections 1–9
+record the state at `32703a6` and say so where a figure was measured there. Every executed figure
+below names the SHA it was measured on. The commit that carries this document changes documentation
 only; a commit cannot contain its own SHA, so that head is re-verified at its own exact SHA (CI
 and the real-boundary proof) and those results are recorded on the PR and in Jira, not here.
 
@@ -28,6 +30,7 @@ read-back → ValidateAnalysisRun → analysis-validation-receipt.v1 → result 
 | `src/pxapi/domain/run_validation.py` | domain | new: gate families, states, closed reason vocabulary with one effect each, derived gate state, precedence, receipt rules |
 | `src/pxapi/ports/contract_validation.py` | ports | new: narrow validation port; `ContractRegistry` satisfies it structurally (no wrapper) |
 | `src/pxapi/application/validate_analysis_run.py` | application | new: the seven gates over produced documents and the published bundle |
+| `src/pxapi/application/run_lifecycle.py` | application | new in the repair (§10): the stage history and members the multi-page orchestration emits per outcome |
 | `src/pxapi/adapters/inbound/workbench.py` | adapter | new: FastAPI routes, one-run guard, execution, bundle, downloads |
 | `src/pxapi/adapters/inbound/workbench_views.py` + `workbench.css` | adapter | new: server-side HTML, escaping by construction, one local stylesheet, no script |
 | `pyproject.toml`, `uv.lock` | build | additive `browser` dependency group (Playwright); no runtime dependency added |
@@ -68,9 +71,9 @@ table and serialisation are pinned byte for byte against `acquire_cli`.
 
 | Gate | FAIL (defect of this service) | BLOCKED (evidence missing / incomplete / unavailable) | NOT_APPLICABLE |
 | --- | --- | --- | --- |
-| `INPUT_CONTRACT` | request missing / contract-invalid / bound to another run; manifest budget ≠ declared budget | — | request withheld by policy (credential target refused; the producer persists no request on purpose) |
+| `INPUT_CONTRACT` | request missing / contract-invalid / not the submitted request (another run, another target, or any other member differing — since §10); manifest budget ≠ declared budget | — | request withheld by policy (credential target refused; the producer persists no request on purpose) — since §10 only when the *submitted* target carried credentials |
 | `ACQUISITION_COMPLETENESS` | run state unreadable; not terminal; failed by a producer defect (`*_NOT_EMITTABLE`, `SAMPLING_MANIFEST_NOT_ADMISSIBLE`); unclassified failure code; succeeded without manifest or records | run failed technically (target refused, unreachable, discovery provider/timeout/runtime); cancelled; `selection_complete` not `true`; a page with no response; a truncated or undecodable body | — |
-| `CANONICAL_VALIDITY` | member missing / unexpected / wrong container; document contract violation (pointer + keyword); contract-semantic rule broken; inventory producer invariant broken | — | — |
+| `CANONICAL_VALIDITY` | member missing / unexpected / wrong container; document contract violation (pointer + keyword); contract-semantic rule broken; inventory producer invariant broken; since §10 the run's stage history or member set contradicts how it ended (`PRODUCER_INVARIANT_BROKEN`, rules `stage_history_follows_run_outcome` / `member_follows_run_outcome`) | — | — |
 | `PROVENANCE_LINKAGE` | document bound to another run; linked document missing; manifest–inventory binding, manifest producer rule or digest reproduction broken; acquisition linkage rule broken; duplicated measurement or evidence id | — | — |
 | `EVIDENCE_COVERAGE` | only if the documents cannot be evaluated | measurements withheld; a page with NOT_ASSESSED or UNKNOWN assessments; a measurement no evidence names | the run did not succeed, so it emitted no page documents |
 | `UNRESOLVED_CONFLICTS_LIMITATIONS` | only if the documents cannot be evaluated | a CONFLICT assessment; a discovery source `BUDGET_EXHAUSTED`, `TARGET_POLICY_REFUSED`, `PROVIDER_FAILURE`, `RUNTIME_ERROR`, `TIMEOUT` or `MALFORMED` | as above |
@@ -92,8 +95,9 @@ Implementation decisions taken inside the accepted plan, for review:
    non-SUCCEEDED state, and stated in the schema as a conditional).
 3. A non-2xx page is a received response (acquisition complete) whose document facts are
    NOT_ASSESSED (`UNSUPPORTED`) — missing evidence, `BLOCKED`.
-4. `run_id` and the declared budget are inputs from the caller, not read from the documents under
-   validation, so documents cannot vouch for their own binding.
+4. The submitted request and the declared budget are inputs from the caller, not read from the
+   documents under validation, so documents cannot vouch for their own binding. (Until §10 only
+   the submitted `run_id` was handed in; the target was not bound — see §10, Finding A.)
 5. The bundle is validated as published: written as a deterministic zip, read back, validated;
    **that same archive, byte for byte, is what `artifacts.zip` serves**, holding the canonical
    documents only. The receipt is built afterwards, pins the bundle by `artifact_bundle_digest`,
@@ -201,8 +205,10 @@ browser: `page.locator("script").count() == 0` and no dialog opened.
 URL + budget → result → gate states read from the gate table → Evidence Inspector opened →
 bundle and receipt downloaded through the browser and read back; keyboard-only path with a
 visible focus ring on every step; reload, back and forward never resubmit (one run started); a
-second tab gets `409` while the first run is held; no horizontal page scroll at 1280×900 and
-375×812.
+second tab gets `409` while the first run is held; the *document* does not scroll sideways at
+1280×900 and 375×812 (`scrollWidth <= clientWidth` of the root element). At 375 px the wide
+technical tables do scroll sideways inside their own `.table-wrap` region — that is the design,
+and §10 adds the test that every cell there stays reachable.
 
 ## 7. Real-boundary browser proof
 
@@ -229,7 +235,9 @@ imported from this checkout's `src/pxapi`, served acquisition `build_site_acquis
   the browser; independent read-back: every canonical document contract-valid, producer
   invariants hold, the bundle digest recomputed over the downloaded files equals the receipt's,
   receipt contract-valid and rule-clean; no script element, no handler attribute, no dialog;
-  reload keeps the result; no horizontal scroll at 375 px. Verdict `PASS`, no problems.
+  reload keeps the result; no horizontal scroll *of the page* at 375 px (the tool measured the
+  root element only; tables scrolled inside their own region, unmeasured then — see §10).
+  Verdict `PASS`, no problems.
 
 **Earlier, at `7e5572d`** (before the review fixes; the bundle then still carried the receipt):
 run `px-d6dd4079f5444116b89b52e695356792` `SUCCEEDED` in 3.8 s, the same three pages and counts,
@@ -270,3 +278,177 @@ The one extra skip in each compatibility job is the browser module, skipped by d
 - The validator validates every document against its contract a second time after the command
   line's own check; its cost on very large runs was not measured.
 - The pre-existing command-line credential defect (`C-PXAPI-026`) is recorded, not repaired.
+
+## 10. Final validation repair (2026-09-29)
+
+**Old head:** `73d1d7b3ff6ffcbec5c62a0d4ee9b6cddd7a7901` (PR #22 head at handoff, base
+`ce4de18`, re-verified open and unchanged with `gh pr view 22` and `git ls-remote` before any
+edit). **Repaired code head:** `f524a8c274d2953e9c5069419c0fa13798589a38` — `4ac9d5c` (fix) and
+`f524a8c` (tests). The commit that carries this section changes documentation only.
+
+`git diff --stat 73d1d7b f524a8c`: 10 files, 741 insertions, 30 deletions. The same diff over
+every protected path of §2 plus `contracts/`, `src/pxapi/ports/` and `.github/` is **empty**. No
+reason code, schema, example or manifest entry is added or changed.
+
+### Finding A — the receipt was not bound to the submitted target
+
+`ValidateAnalysisRun.run` received `run_id` and the declared budget, not the submitted target.
+Pre-fix, measured at `73d1d7b` over a genuine run whose canonical request was changed to
+`target_url = https://b.example/` (submitted `https://example.com/`, same run id, same budget):
+**overall `PASS`, `INPUT_CONTRACT` `PASS`.**
+
+*Oracle.* The multi-page producer copies the submitted request into the envelope unchanged
+(`DiscoverSite.run` emits `"analysis_run_request": request`; `AcquireSelectedPages` passes it
+on). The only request it can emit is therefore the submitted document itself. The binding is
+that identity, member for member — no URL normalisation is invented, so a spelling nobody
+submitted (upper-case host, missing slash, explicit default port) is not the submitted request
+either.
+
+*Repair.* `run(envelope, bundle, *, submitted_request, declared_budget)`; the run id is taken from
+the submitted request. `INPUT_CONTRACT` compares every member of the canonical request with the
+submission (values compared in the canonical serialisation) and reports each differing member as
+`REQUEST_NOT_BOUND_TO_RUN` at `/analysis_run_request/<member>`; the reason's fixed meaning now
+reads "not the request submitted for the run validated". The receipt never carries the submitted
+value. The credential exemption `REQUEST_WITHHELD_BY_POLICY` now also requires that the
+*submitted* target carried credentials (same `site_identity.refuse` rule the producer uses): pre-
+fix, a clean submission whose documents claimed the refusal and withheld the request validated
+`INPUT_CONTRACT` `NOT_APPLICABLE`. The Workbench passes the request it admitted.
+
+### Finding B — lifecycle and artifact coherence were not validated
+
+*Oracle.* `contracts/README.md` makes a `FAILED` stage beside a `SUCCEEDED` run contract-valid
+and leaves stage fatality to "orchestration policy, which no contract here decides". The
+multi-page orchestration has decided it in code, and that code is the authority used:
+`DiscoverSite._failed` / `AcquireSelectedPages._failed` / the success return. Per outcome:
+
+| Run outcome | Stage history (`stage_id`, `status`) | Members beyond request, state, stages |
+| --- | --- | --- |
+| `SUCCEEDED` | SITE_DISCOVERY ✓, SAMPLING_PLAN ✓, PAGE_ACQUISITION ✓ | inventory, manifest, the three page members |
+| `FAILED` bootstrap codes, `SITE_DISCOVERY_BOOTSTRAP_FAILED`, `SITE_INVENTORY_NOT_EMITTABLE` | SITE_DISCOVERY ✗ | none |
+| `FAILED` `TARGET_NOT_PERMITTED` | SITE_DISCOVERY ✗ | none; the request is optional (withheld for a credential target only) |
+| `FAILED` `SAMPLING_MANIFEST_NOT_EMITTABLE` | SITE_DISCOVERY ✓, SAMPLING_PLAN ✗ | inventory |
+| `FAILED` `SAMPLING_MANIFEST_NOT_ADMISSIBLE` | SITE_DISCOVERY ✓, SAMPLING_PLAN ✓, PAGE_ACQUISITION ✗ | inventory |
+| `FAILED` `PAGE_ACQUISITION_NOT_EMITTABLE` | as above | inventory, manifest |
+| `CANCELLED` | not stated — no producer of this slice emits it | no page members (the one fact every non-succeeded outcome shares) |
+
+No reusable invariant existed, so the table is new: `src/pxapi/application/run_lifecycle.py`,
+importing every stage token and failure code from the module that emits it; the run-state edges
+stay in `domain/run_state.py`. It is pinned against the producer, not asserted: a test runs every
+genuine producer path (success, budget-limited success, success with a page timeout, each of the
+five bootstrap failures, credential refusal, inventory withheld, manifest withheld, selection not
+admissible, acquisition withheld) and requires zero lifecycle violations, and two more pin the
+table's member set to the validator's and its failure codes to exactly the producers' codes.
+
+Pre-fix, measured at `73d1d7b` over genuine runs with one change each:
+
+| Counterexample | Overall before | After |
+| --- | --- | --- |
+| `SUCCEEDED`, `stage_executions = []` | `PASS` | `FAIL` (`stage_history_follows_run_outcome`) |
+| `SUCCEEDED`, PAGE_ACQUISITION stage `FAILED` | `PASS` | `FAIL` |
+| `SUCCEEDED`, SAMPLING_PLAN stage `CANCELLED` | `PASS` | `FAIL` |
+| `FAILED` (discovery `TIMEOUT`) + a succeeded run's inventory, manifest and page documents | `BLOCKED`, `EVIDENCE_COVERAGE` claiming `RUN_EMITTED_NO_PAGE_DOCUMENTS` | `FAIL` (`member_follows_run_outcome` at each foreign member) |
+| `CANCELLED` + page documents | `BLOCKED` | `FAIL` |
+
+Further RED cases: missing, reversed and duplicated stage entries; an acquisition failure whose
+stage claims success; a plan failure still carrying a manifest. `CANONICAL_VALIDITY` reports each
+contradiction as the existing `PRODUCER_INVARIANT_BROKEN` (FAIL) with its rule name; a required
+member that is simply absent stays `CANONICAL_MEMBER_MISSING`, not reported twice.
+
+**Failure neutrality.** Every genuine technical outcome still validates without a single FAIL
+reason (per bootstrap failure: overall `BLOCKED`, `CANONICAL_VALIDITY` `PASS`); a page timeout or
+incomplete selection stays `BLOCKED`. Only a document set this producer cannot have emitted
+becomes `FAIL`.
+
+### RED → GREEN and counter-mutation
+
+At `73d1d7b` plus the new tests only: **18 failed, 9 passed** in
+`tests/application/test_validation_binding_and_lifecycle.py` and the new Workbench test, each on
+its intended assertion (e.g. `assert 'PASS' == 'FAIL'`, `assert ['REQUEST_WITHHELD_BY_POLICY'] ==
+['REQUEST_MISSING']`; the table-pin test on the absent module). The nine passing were the
+positive and neutrality controls. After the repair all pass.
+
+Counter-mutation at `4ac9d5c` (driver asserts each target file is tracked, purges `__pycache__`
+with `PYTHONDONTWRITEBYTECODE=1`, restores with `git checkout` and re-checks a clean diff; canary
+unmutated `29 passed` before and after):
+
+| Mutant | Result |
+| --- | --- |
+| request binding compares `run_id` only | killed (rc 1) |
+| credential exemption ignores the submission | killed |
+| validator skips the lifecycle check | killed |
+| no stage-history check | killed |
+| no page-member check for a run that did not succeed | killed |
+| no member-set check | killed |
+| Workbench validates against the request the documents carry | killed |
+
+### Finding C — the 375 px claim
+
+Observed (Chrome 154.0.8037.58 headless, deterministic journey, every Evidence Inspector entry
+open): the root element is 375 px wide with no overflow; all eight `.table-wrap` tables are wider
+than their container (content 544–802 px in 317–343 px) and scroll sideways inside it; no cell lies
+outside the scrollable extent, the last column comes fully into view when scrolled to the end, and
+nothing is clipped vertically. Tab reached all eight regions (probe), and the arrow keys scroll the validation table's region (tested). The
+real-boundary screenshot shows the Validation *Reasons* column continuing past the right edge
+inside its table region; the same BLOCKED reasons are also written out in full in the Limitations
+section.
+
+The implementation is usable as it stands, so **no CSS or view changed**. What changed is the
+evidence: `test_at_375_px_wide_tables_scroll_inside_their_region_and_nothing_is_cut_off` asserts
+all of the above (plus the validation, page-outcome and evidence texts), and was counter-mutated —
+`.table-wrap { overflow: hidden }` and a `max-height` clip each turn it red. **The supported claim
+is now:** at 375 px the page itself never scrolls sideways; wide technical tables scroll sideways
+inside their own region, where every cell stays reachable by pointer and — in Chromium — by
+keyboard. The earlier wording "no horizontal scroll at 375 px" meant the page only (§6, §7 are
+annotated accordingly).
+
+### Regression at `f524a8c`
+
+| Command | Interpreter | Result |
+| --- | --- | --- |
+| `uv lock --check` | — | rc 0 |
+| `uv run ruff check src tests tools` / `ruff format --check` | — | rc 0 / rc 0 (126 files) |
+| `PXAPI_BROWSER_TESTS=required PXAPI_BROWSER_CHANNEL=chrome uv run pytest -q -p no:cacheprovider` | CPython 3.13.3 | rc 0, `3859 passed, 2 skipped` (the two opt-in real-boundary smokes); 8 browser tests ran |
+| `uv run --python 3.14 pytest -q -p no:cacheprovider` (separate environment) | CPython 3.14.6 | rc 0, `3851 passed, 3 skipped` (browser module skipped by design: no browser group there) |
+
+The first full run surfaced `test_only_authorised_modules_declare_behavior`: the new module needed
+its `BEHAVIOR_ALLOWED` entry (`application/run_lifecycle.py: PXAPI-25`), added in `f524a8c`.
+
+### Real-boundary browser proof at `f524a8c`
+
+`tools/pxapi25_workbench_real_boundary_proof.py --channel chrome`, clean tracked tree, production
+wiring (`build_site_acquisition`), CPython 3.13.3, Chrome 154.0.8037.58 headless,
+`https://www.rfc-editor.org/`, budget 3, 2026-09-29T11:42:49Z:
+
+- run `px-9f65dfe813754092b1671949205f2d19` `SUCCEEDED` in 2.4 s; stages SITE_DISCOVERY,
+  SAMPLING_PLAN, PAGE_ACQUISITION all `SUCCEEDED`; lifecycle violations over the downloaded
+  documents: none;
+- `selection_complete = false` (`SELECTION_BUDGET_EXHAUSTED`); pages `/`, `/about/contact/`,
+  `/about/rfc-editor/`, each `RESPONSE_RECEIVED` HTTP 200 with 13 measurements; 39 measurements,
+  39 evidence records; all three opened in the Evidence Inspector;
+- validation `BLOCKED`: `ACQUISITION_COMPLETENESS` (`SELECTION_INCOMPLETE`),
+  `UNRESOLVED_CONFLICTS_LIMITATIONS` (`DISCOVERY_SOURCE_LIMITED`); `INPUT_CONTRACT` and the other
+  four gates `PASS`;
+- bundle `artifacts.zip` 11984 bytes, SHA-256 `3ab33f24e6d20840da9620952ebac3454f916f3af91b15a5f1f4111350373706`;
+  `artifact_bundle_digest` `sha256:cd7bcaca85eb1fd3fd01d758895c3e1aeeb5266b08bf38bc55477e719de73ec0`,
+  recomputed over the downloaded files: equal; the downloaded request's `target_url` equals the
+  submitted target; receipt contract-valid and rule-clean; no script, handler or dialog; page not
+  scrolling sideways at 375 px. Verdict `PASS`.
+
+Screenshots of this head (not committed): the proof's `result-normal.png`, `result-narrow.png`,
+and the deterministic suite's `start-{normal,narrow}.png`, `result-{normal,narrow}.png`,
+`journey-normal-result.png`, `result-narrow-tables.png`.
+
+### What the repair does not prove
+
+- The binding is document identity with the submitted request. It proves that the documents are
+  *this* submission's; it does not prove that the site analysed is the one the target names
+  beyond what discovery already records (the inventory's `target_origin`).
+- The lifecycle table describes the multi-page orchestration of this slice only. A new stage or
+  failure code needs the table extended — the pin tests go red first. `CANCELLED` has no stated
+  stage history, because nothing emits it yet.
+- Stage timestamps are not cross-checked against the run's `entered_at` / `finished_at`.
+- Keyboard scrolling of the table regions relies on Chromium making scroll containers focusable;
+  the regions carry no `tabindex`, role or accessible name, so Safari/Firefox keyboard reach and
+  screen-reader announcement were not verified. With overlay scrollbars nothing but the cut-off
+  column signals that a table scrolls.
+- One real-boundary run of one origin at one point in time, as in §9.

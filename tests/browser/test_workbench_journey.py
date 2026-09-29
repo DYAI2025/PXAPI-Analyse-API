@@ -405,5 +405,11 @@ def test_at_375_px_wide_tables_scroll_inside_their_region_and_nothing_is_cut_off
     before = wrap.evaluate("w => w.scrollLeft")
     for _ in range(10):
         page.keyboard.press("ArrowRight")
-    assert wrap.evaluate("w => w.scrollLeft") > before
+    # Keyboard scrolling is animated (measured: 5, 80, then 201 px over ~200 ms), so the test
+    # waits for the region to move rather than reading it once.
+    page.wait_for_function(
+        "(before) => document.querySelector('#validation .table-wrap').scrollLeft > before",
+        arg=before,
+        timeout=5_000,
+    )
     screenshot(page, "result-narrow-tables", tmp_path)

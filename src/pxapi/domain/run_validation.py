@@ -166,7 +166,8 @@ REASONS: Final[dict[ReasonCode, ReasonSpec]] = {
     ),
     ReasonCode.REQUEST_NOT_BOUND_TO_RUN: _spec(
         GateState.FAIL,
-        "The request document belongs to a different run than the one validated.",
+        "The request document is not the request submitted for the run validated: it names "
+        "another run, another target, or differs from the submission in another member.",
         _F.INPUT_CONTRACT,
     ),
     ReasonCode.DECLARED_BUDGET_NOT_APPLIED: _spec(

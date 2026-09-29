@@ -66,6 +66,7 @@ from tests.application.test_acquire_selected_pages import (
     PAGE_A,
     PAGE_B,
     PAGE_C,
+    REQUEST,
     FakeFetcher,
     html,
     response,
@@ -440,7 +441,10 @@ def test_a_declared_budget_that_is_not_a_whole_number_of_at_least_one_is_refused
     envelope = acquired()
     with pytest.raises(ValueError):
         ValidateAnalysisRun(CONTRACTS, validated_at, receipt_ids()).run(
-            envelope, build_artifact_bundle(envelope), run_id=RUN_ID, declared_budget=declared
+            envelope,
+            build_artifact_bundle(envelope),
+            submitted_request=REQUEST,
+            declared_budget=declared,
         )
 
 
@@ -531,7 +535,10 @@ class RaisingContracts:
 def test_a_gate_that_cannot_be_evaluated_fails_closed_and_the_others_still_report() -> None:
     envelope = acquired()
     receipt = ValidateAnalysisRun(RaisingContracts(), validated_at, receipt_ids()).run(
-        envelope, build_artifact_bundle(envelope), run_id=RUN_ID, declared_budget=FULL_BUDGET
+        envelope,
+        build_artifact_bundle(envelope),
+        submitted_request=REQUEST,
+        declared_budget=FULL_BUDGET,
     )
     emittable(receipt)
     assert codes(receipt, F.CANONICAL_VALIDITY) == ["VALIDATION_NOT_EVALUABLE"]
@@ -542,7 +549,10 @@ def test_a_gate_that_cannot_be_evaluated_fails_closed_and_the_others_still_repor
 def test_the_registry_satisfies_the_contract_port_as_it_stands() -> None:
     """No wrapper: the runtime registry is handed to the use case directly."""
     receipt = ValidateAnalysisRun(CONTRACTS, validated_at, receipt_ids()).run(
-        acquired(), build_artifact_bundle(acquired()), run_id=RUN_ID, declared_budget=FULL_BUDGET
+        acquired(),
+        build_artifact_bundle(acquired()),
+        submitted_request=REQUEST,
+        declared_budget=FULL_BUDGET,
     )
     assert receipt["gates"][F.CANONICAL_VALIDITY]["state"] == "PASS"
 
@@ -602,10 +612,10 @@ def _conflict(envelope: dict[str, Any]) -> None:
 
 
 def _credential_target() -> dict[str, Any]:
-    from tests.application.test_acquire_selected_pages import REQUEST, build
+    from tests.application.test_acquire_selected_pages import build
 
     request = dict(REQUEST, target_url="https://operator:s3cr3t@example.com/")
-    return validate(build(FakeFetcher(), FULL_BUDGET).run(request))
+    return validate(build(FakeFetcher(), FULL_BUDGET).run(request), submitted=request)
 
 
 def _producer_invariant() -> dict[str, Any]:
@@ -619,7 +629,10 @@ def _producer_invariant() -> dict[str, Any]:
 def _raising() -> dict[str, Any]:
     envelope = acquired()
     return ValidateAnalysisRun(RaisingContracts(), validated_at, receipt_ids()).run(
-        envelope, build_artifact_bundle(envelope), run_id=RUN_ID, declared_budget=FULL_BUDGET
+        envelope,
+        build_artifact_bundle(envelope),
+        submitted_request=REQUEST,
+        declared_budget=FULL_BUDGET,
     )
 
 
@@ -821,13 +834,13 @@ def test_an_inventory_that_hides_a_limited_source_breaks_a_producer_invariant_an
 
 def test_a_credential_bearing_target_refused_by_policy_is_blocked_never_failed() -> None:
     """The producer withholds the request on purpose (data minimisation); that is no defect."""
-    from tests.application.test_acquire_selected_pages import REQUEST, build
+    from tests.application.test_acquire_selected_pages import build
 
     request = dict(REQUEST, target_url="https://operator:s3cr3t@example.com/")
     envelope = build(FakeFetcher(), FULL_BUDGET).run(request)
     assert "analysis_run_request" not in envelope, "canary: the producer withheld the request"
     assert envelope["analysis_run_state"]["failure"] == {"code": TARGET_NOT_PERMITTED_CODE}
-    receipt = emittable(validate(envelope))
+    receipt = emittable(validate(envelope, submitted=request))
     assert receipt["overall_state"] == "BLOCKED"
     assert only_failures(receipt) == set()
     assert receipt["gates"][F.INPUT_CONTRACT]["state"] == "NOT_APPLICABLE"

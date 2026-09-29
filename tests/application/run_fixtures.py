@@ -61,11 +61,17 @@ def validate(
     bundle: dict[str, bytes] | None = None,
     *,
     budget: int = FULL_BUDGET,
-    run_id: str = RUN_ID,
+    run_id: str | None = None,
+    submitted: dict[str, Any] = REQUEST,
 ) -> dict[str, Any]:
-    """Validate a run against its own bundle unless a (tampered) one is handed in."""
+    """Validate a run against its own bundle unless a (tampered) one is handed in.
+
+    ``submitted`` is the request the operator submitted — the frozen ``REQUEST`` every genuine
+    run here was produced from — and ``run_id`` overrides only its run identity.
+    """
     published = build_artifact_bundle(envelope) if bundle is None else bundle
-    return validator().run(envelope, published, run_id=run_id, declared_budget=budget)
+    request = submitted if run_id is None else dict(submitted, run_id=run_id)
+    return validator().run(envelope, published, submitted_request=request, declared_budget=budget)
 
 
 def states(receipt: dict[str, Any]) -> dict[str, str]:

@@ -325,8 +325,10 @@ class Workbench:
         # never part of it: it has its own download.
         archive = archive_of(build_artifact_bundle(envelope))
         published = read_archive(archive)
+        # Validated against the request that was submitted, never against the request the
+        # documents carry: a run for any other target cannot pass its input gate.
         receipt = ValidateAnalysisRun(self.registry, self.clock, self.new_id).run(
-            envelope, published, run_id=run_id, declared_budget=budget
+            envelope, published, submitted_request=request, declared_budget=budget
         )
         receipt_valid = not self.registry.validate(RECEIPT_CONTRACT, receipt) and not (
             receipt_rule_violations(receipt)

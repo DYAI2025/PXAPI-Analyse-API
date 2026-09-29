@@ -46,6 +46,7 @@ from pxapi.application.discover_site import (
     TARGET_NOT_PERMITTED_CODE,
     UNEXPLAINED_BOOTSTRAP_CODE,
 )
+from pxapi.application.run_lifecycle import lifecycle_violations
 from pxapi.domain.acquisition_digests import DIGEST_PREFIX, digest_of
 from pxapi.domain.acquisition_semantics import (
     CONTRACT_RULES,
@@ -69,6 +70,7 @@ from pxapi.domain.run_validation import (
     reason,
 )
 from pxapi.domain.site_discovery import SourceOutcome
+from pxapi.domain.site_identity import UrlRefusal, refuse
 from pxapi.ports.contract_validation import ContractValidation
 
 #: The contract this use case produces, and the file its document is published as.
@@ -238,12 +240,26 @@ def _documents(member: CanonicalMember, value: Any) -> list[dict[str, Any]] | No
     return [value] if isinstance(value, dict) else None
 
 
-def _request_withheld_by_policy(envelope: Mapping[str, Any]) -> bool:
+def _carries_credentials(target: Any) -> bool:
+    """Whether a target URL carries userinfo, by the Domain's own identity rule.
+
+    The same rule ``DiscoverSite`` refuses such a target by (``site_identity.refuse``), asked
+    rather than restated, and total in the same way: a value it cannot read carries none.
+    """
+    try:
+        return refuse(target) is UrlRefusal.CREDENTIALS_PRESENT
+    except Exception:
+        return False
+
+
+def _request_withheld_by_policy(envelope: Mapping[str, Any], submitted: Mapping[str, Any]) -> bool:
     """Whether the run refused a credential-bearing target and withheld its request on purpose.
 
     Discovery refuses such a target with ``TARGET_NOT_PERMITTED`` and deliberately emits no
     ``analysis_run_request``: it is the one member that would carry the submitted URL, secret
-    included. That absence is the producer's data-minimisation rule, not a missing document.
+    included. That absence is the producer's data-minimisation rule, not a missing document —
+    but only when the *submitted* target carried credentials. The documents cannot vouch for
+    that themselves: a clean submission whose run claims the refusal has lost its request.
     """
     state = envelope.get("analysis_run_state")
     failure = state.get("failure") if isinstance(state, dict) else None
@@ -252,6 +268,7 @@ def _request_withheld_by_policy(envelope: Mapping[str, Any]) -> bool:
         and _state(envelope) == RunState.FAILED.value
         and isinstance(failure, dict)
         and failure.get("code") == TARGET_NOT_PERMITTED_CODE
+        and _carries_credentials(submitted.get("target_url"))
     )
 
 
@@ -284,27 +301,35 @@ class ValidateAnalysisRun:
         envelope: Mapping[str, Any],
         bundle: Mapping[str, bytes],
         *,
-        run_id: str,
+        submitted_request: Mapping[str, Any],
         declared_budget: int,
     ) -> dict[str, Any]:
-        """Validate one run. ``run_id`` and ``declared_budget`` are what the caller submitted.
+        """Validate one run against the request and the budget the caller submitted.
 
-        They are handed in rather than read out of the envelope, because the question is
-        whether the documents belong to the run that was requested under the budget that was
-        declared — reading both from the documents under test would let them vouch for
-        themselves.
+        Both are handed in rather than read out of the envelope, because the question is
+        whether the documents belong to the run that was requested — for that target, under
+        that budget — and reading either from the documents under test would let them vouch
+        for themselves. The submitted request is never copied into the receipt: a reason names
+        the member that differs, never its value.
         """
+        if not isinstance(submitted_request, Mapping) or not isinstance(
+            submitted_request.get("run_id"), str
+        ):
+            raise ValueError("submitted_request must be a request document with a run_id")
         if isinstance(declared_budget, bool) or not isinstance(declared_budget, int):
             raise ValueError("declared_budget must be a whole number")
         if declared_budget < 1:
             raise ValueError("declared_budget must be at least 1")
+        run_id: str = submitted_request["run_id"]
 
         evaluations: dict[GateFamily, Callable[[], Reasons]] = {
             GateFamily.INPUT_CONTRACT: lambda: self._input_contract(
-                envelope, run_id, declared_budget
+                envelope, submitted_request, declared_budget
             ),
             GateFamily.ACQUISITION_COMPLETENESS: lambda: self._acquisition_completeness(envelope),
-            GateFamily.CANONICAL_VALIDITY: lambda: self._canonical_validity(envelope),
+            GateFamily.CANONICAL_VALIDITY: lambda: self._canonical_validity(
+                envelope, submitted_request
+            ),
             GateFamily.PROVENANCE_LINKAGE: lambda: self._provenance_linkage(envelope, run_id),
             GateFamily.EVIDENCE_COVERAGE: lambda: self._evidence_coverage(envelope),
             GateFamily.UNRESOLVED_CONFLICTS_LIMITATIONS: lambda: self._conflicts_limitations(
@@ -337,9 +362,12 @@ class ValidateAnalysisRun:
     # --- INPUT_CONTRACT ----------------------------------------------------------------
 
     def _input_contract(
-        self, envelope: Mapping[str, Any], run_id: str, declared_budget: int
+        self,
+        envelope: Mapping[str, Any],
+        submitted: Mapping[str, Any],
+        declared_budget: int,
     ) -> Reasons:
-        if _request_withheld_by_policy(envelope):
+        if _request_withheld_by_policy(envelope, submitted):
             yield reason(ReasonCode.REQUEST_WITHHELD_BY_POLICY, "/analysis_run_state/failure/code")
             return
         request = envelope.get("analysis_run_request")
@@ -352,8 +380,22 @@ class ValidateAnalysisRun:
                     _within("/analysis_run_request", violation.pointer),
                     violation.keyword,
                 )
-            if request.get("run_id") != run_id:
-                yield reason(ReasonCode.REQUEST_NOT_BOUND_TO_RUN, "/analysis_run_request/run_id")
+            # The producer emits the submitted request unchanged (``DiscoverSite.run``), so the
+            # only request it can emit is the submitted one, member for member. That identity is
+            # the binding: no URL is re-normalised here, and a spelling nobody submitted is not
+            # the submitted request. Values are compared as published, so ``1`` is not ``true``.
+            absent = object()
+            for name in sorted(set(request) | set(submitted), key=str):
+                ours, theirs = request.get(name, absent), submitted.get(name, absent)
+                if (
+                    ours is absent
+                    or theirs is absent
+                    or canonical_bytes(ours) != canonical_bytes(theirs)
+                ):
+                    yield reason(
+                        ReasonCode.REQUEST_NOT_BOUND_TO_RUN,
+                        _within("/analysis_run_request", _pointer(name)),
+                    )
 
         manifest = envelope.get("sampling_manifest")
         if isinstance(manifest, dict):
@@ -414,13 +456,15 @@ class ValidateAnalysisRun:
 
     # --- CANONICAL_VALIDITY ------------------------------------------------------------
 
-    def _canonical_validity(self, envelope: Mapping[str, Any]) -> Reasons:
+    def _canonical_validity(
+        self, envelope: Mapping[str, Any], submitted: Mapping[str, Any]
+    ) -> Reasons:
         required = (
             tuple(CANONICAL_MEMBERS)
             if _state(envelope) == RunState.SUCCEEDED.value
             else ALWAYS_EMITTED
         )
-        if _request_withheld_by_policy(envelope):
+        if _request_withheld_by_policy(envelope, submitted):
             required = tuple(name for name in required if name != "analysis_run_request")
         valid: dict[str, dict[str, Any]] = {}
         for name, member in CANONICAL_MEMBERS.items():
@@ -463,6 +507,18 @@ class ValidateAnalysisRun:
                     _within("/site_inventory", violation.pointer),
                     violation.rule,
                 )
+
+        # The lifecycle the multi-page orchestration emits: the stage history and the members
+        # that belong to how the run ended (``run_lifecycle``). The contracts leave stage
+        # fatality to orchestration policy; this producer has one, and a set of documents it
+        # could not have emitted — a SUCCEEDED run without its succeeded stages, a run that did
+        # not succeed carrying page documents — is a defect of ours, never a site finding. A
+        # required member that is simply absent is already CANONICAL_MEMBER_MISSING above.
+        for violation in lifecycle_violations(envelope):
+            member = violation.pointer.lstrip("/")
+            if member not in envelope and member in required:
+                continue
+            yield reason(ReasonCode.PRODUCER_INVARIANT_BROKEN, violation.pointer, violation.rule)
 
         # The contract-semantic rules JSON Schema cannot state, applied only to a document that
         # already satisfies its contract: over a structurally broken one they are undefined.

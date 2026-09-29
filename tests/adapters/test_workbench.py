@@ -738,7 +738,12 @@ def test_the_served_bundle_is_exactly_the_validated_canonical_bundle() -> None:
         name: json.loads(files[member.file_name]) for name, member in CANONICAL_MEMBERS.items()
     }
     again = ValidateAnalysisRun(CONTRACTS, lambda: __import__("datetime").datetime.now(), str).run(
-        envelope, files, run_id=receipt["run_id"], declared_budget=4
+        envelope,
+        files,
+        # The bundle verdict is what is compared here; the request read back from the bundle
+        # is, by the input gate's own test, the one this test client submitted.
+        submitted_request=envelope["analysis_run_request"],
+        declared_budget=4,
     )
     assert again["gates"]["ARTIFACT_BUNDLE_VALIDITY"] == {"state": "PASS", "reasons": []}
     assert again["overall_state"] == receipt["overall_state"]
@@ -918,3 +923,35 @@ def test_the_overall_badge_and_the_run_state_render_the_real_states() -> None:
     assert "BLOCKED" in "".join(parsed(overall).text)
     run_state = page.split("<dt>Run state</dt>")[1].split("</dd>")[0]
     assert "SUCCEEDED" in "".join(parsed(run_state).text)
+
+
+# --- PXAPI-25 final validation repair: the receipt is bound to the submitted target ----------
+
+
+class RetargetingAcquisitions(Acquisitions):
+    """A defective producer: it runs, and emits a request, for a target nobody submitted."""
+
+    def __call__(self, budgets: SelectionBudgets, registry: Any) -> Any:
+        inner = super().__call__(budgets, registry)
+
+        class Retargeted:
+            def run(self, request: dict[str, Any]) -> dict[str, Any]:
+                return inner.run(dict(request, target_url="https://b.example/"))
+
+        return Retargeted()
+
+
+def test_a_run_for_another_target_than_the_submitted_one_is_never_validated_as_its_input() -> None:
+    client = client_for(RetargetingAcquisitions())
+    location = completed_run(client, url=ORIGIN, budget="4")
+    page = client.get(location)
+    assert page.status_code == 200
+    # The receipt is withheld from nobody: it is the evidence that the documents are not the
+    # submitted run's. The canonical bundle is still served only when the receipt is emittable.
+    receipt = client.get(f"{location}/{RECEIPT_FILE}").json()
+    assert receipt["gates"]["INPUT_CONTRACT"]["state"] == "FAIL"
+    assert {
+        "code": "REQUEST_NOT_BOUND_TO_RUN",
+        "pointer": "/analysis_run_request/target_url",
+    } in receipt["gates"]["INPUT_CONTRACT"]["reasons"]
+    assert receipt["overall_state"] == "FAIL"

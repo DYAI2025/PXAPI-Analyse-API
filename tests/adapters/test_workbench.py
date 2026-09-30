@@ -9,6 +9,7 @@ refused by the shipped safety policy before any connection, so that test needs n
 from __future__ import annotations
 
 import ast
+import copy
 import html.parser
 import io
 import itertools
@@ -22,8 +23,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from pxapi.adapters.composition import build_site_acquisition
+from pxapi.adapters.composition import build_site_acquisition, new_identifier, utc_now
 from pxapi.adapters.inbound import workbench as workbench_module
+from pxapi.adapters.inbound.cli import build_request
 from pxapi.adapters.inbound.http_api import create_app as create_http_api
 from pxapi.adapters.inbound.workbench import (
     LOOPBACK_HOSTS,
@@ -955,3 +957,130 @@ def test_a_run_for_another_target_than_the_submitted_one_is_never_validated_as_i
         "pointer": "/analysis_run_request/target_url",
     } in receipt["gates"]["INPUT_CONTRACT"]["reasons"]
     assert receipt["overall_state"] == "FAIL"
+
+
+# --- F-25-R4M-003: the submitted request is frozen before the producer runs -----------------
+
+OTHER_TARGET = "https://b.example/"
+
+
+class InPlaceRewritingAcquisitions(Acquisitions):
+    """A defective producer that rewrites the request it is handed, in place, and runs for that.
+
+    Unlike ``RetargetingAcquisitions`` it keeps no copy of its own: it mutates the very object
+    the adapter passed it. Whether that can reach the submission depends only on whether the
+    adapter handed the producer the submitted request itself.
+    """
+
+    def __init__(self, member: str = "target_url", value: str = OTHER_TARGET) -> None:
+        super().__init__()
+        self.member = member
+        self.value = value
+        self.handed: list[dict[str, Any]] = []
+
+    def __call__(self, budgets: SelectionBudgets, registry: Any) -> Any:
+        inner = super().__call__(budgets, registry)
+        factory = self
+
+        class InPlace:
+            def run(self, request: dict[str, Any]) -> dict[str, Any]:
+                factory.handed.append(request)
+                request[factory.member] = factory.value
+                return inner.run(request)
+
+        return InPlace()
+
+
+def _target_row(document: str) -> str:
+    return "".join(parsed(document.split("<dt>Target URL</dt>")[1].split("</dd>")[0]).text)
+
+
+def test_a_producer_rewriting_its_input_in_place_cannot_rebind_the_submitted_target() -> None:
+    acquisitions = InPlaceRewritingAcquisitions()
+    client = client_for(acquisitions)
+    location = completed_run(client, url=ORIGIN, budget="4")
+
+    # The producer really ran for the other target, and published canonical output for it.
+    assert [handed["target_url"] for handed in acquisitions.handed] == [OTHER_TARGET]
+    files = read_archive(client.get(f"{location}/artifacts.zip").content)
+    published = json.loads(files[CANONICAL_MEMBERS["analysis_run_request"].file_name])
+    assert published["target_url"] == OTHER_TARGET
+
+    # Validation still compares it with what the operator submitted, and refuses the binding.
+    receipt = client.get(f"{location}/{RECEIPT_FILE}").json()
+    assert receipt["gates"]["INPUT_CONTRACT"]["state"] == "FAIL"
+    assert {
+        "code": "REQUEST_NOT_BOUND_TO_RUN",
+        "pointer": "/analysis_run_request/target_url",
+    } in receipt["gates"]["INPUT_CONTRACT"]["reasons"]
+    assert receipt["overall_state"] == "FAIL"
+
+    # The operator is shown the target they submitted, not the one the producer swapped in.
+    assert _target_row(client.get(location).text) == ORIGIN
+
+
+def test_a_producer_cannot_claim_the_credential_withholding_exemption_by_rewriting_its_input() -> (
+    None
+):
+    """A clean submission whose producer swaps in a credential target and then withholds the
+    request, as discovery does for such a target, has lost its request: the exemption belongs
+    to a *submitted* credential target only."""
+    credential_target = f"https://operator:{SECRET}@example.com/"
+    acquisitions = InPlaceRewritingAcquisitions(value=credential_target)
+    client = client_for(acquisitions)
+    location = completed_run(client, url=ORIGIN, budget="4")
+
+    receipt = client.get(f"{location}/{RECEIPT_FILE}")
+    gate = receipt.json()["gates"]["INPUT_CONTRACT"]
+    codes = {entry["code"] for entry in gate["reasons"]}
+    assert "REQUEST_WITHHELD_BY_POLICY" not in codes
+    assert "REQUEST_MISSING" in codes
+    assert gate["state"] == "FAIL"
+    page = client.get(location).text
+    assert _target_row(page) == ORIGIN
+    assert SECRET not in page and SECRET not in receipt.text
+
+
+def test_a_submitted_credential_target_keeps_its_withholding_exemption() -> None:
+    """Preserved behaviour: admission refuses such a target over HTTP, but the adapter's run
+    path, driven directly, still recognises the withholding its own submission caused."""
+    workbench = Workbench(CONTRACTS, Acquisitions(), utc_now, new_identifier)
+    request = build_request(f"https://operator:{SECRET}@example.com/")
+    completed = workbench.execute(request, 3)
+    assert completed.receipt is not None
+    gate = completed.receipt["gates"]["INPUT_CONTRACT"]
+    assert [entry["code"] for entry in gate["reasons"]] == ["REQUEST_WITHHELD_BY_POLICY"]
+    assert completed.envelope is not None
+    assert "analysis_run_request" not in completed.envelope
+
+
+@pytest.mark.parametrize(
+    ("member", "value"),
+    [
+        ("target_url", OTHER_TARGET),
+        ("run_id", "px-rewritten-by-the-producer"),
+        ("request_id", "px-rewritten-request"),
+        ("requested_at", "2000-01-01T00:00:00Z"),
+    ],
+)
+def test_the_producer_gets_its_own_copy_and_the_submission_stays_as_submitted(
+    member: str, value: str
+) -> None:
+    acquisitions = InPlaceRewritingAcquisitions(member, value)
+    workbench = Workbench(CONTRACTS, acquisitions, utc_now, new_identifier)
+    request = build_request(ORIGIN)
+    submitted = copy.deepcopy(request)
+
+    completed = workbench.execute(request, 4)
+
+    (handed,) = acquisitions.handed
+    assert handed is not request
+    assert handed[member] == value
+    assert request == submitted
+    assert (completed.run_id, completed.target_url) == (submitted["run_id"], ORIGIN)
+    assert completed.receipt is not None
+    assert completed.receipt["run_id"] == submitted["run_id"]
+    assert {
+        "code": "REQUEST_NOT_BOUND_TO_RUN",
+        "pointer": f"/analysis_run_request/{member}",
+    } in completed.receipt["gates"]["INPUT_CONTRACT"]["reasons"]

@@ -31,6 +31,7 @@ Run it with ``uvicorn pxapi.adapters.inbound.workbench:app`` (binds to 127.0.0.1
 from __future__ import annotations
 
 import argparse
+import copy
 import io
 import re
 import threading
@@ -38,6 +39,7 @@ import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from types import MappingProxyType
 from typing import Any, Final, Protocol
 from urllib.parse import parse_qs, urlsplit
 
@@ -313,9 +315,13 @@ class Workbench:
 
     def execute(self, request: dict[str, Any], budget: int) -> CompletedRun:
         """One synchronous run through the production path, validated end to end."""
-        run_id = request["run_id"]
+        # The submission is frozen before any producer code runs, and the producer is handed a
+        # copy of its own. Whatever it does to its input, validation and the result are bound to
+        # what was submitted: a producer that rewrites the request it was given in place cannot
+        # make the submission agree with the run it produced instead.
+        submitted: Mapping[str, Any] = MappingProxyType(copy.deepcopy(request))
         envelope = self.acquisition(SelectionBudgets(max_selected_pages=budget), self.registry).run(
-            request
+            copy.deepcopy(dict(submitted))
         )
         withheld = tuple(dict.fromkeys(invalid_documents(self.registry, envelope)))
 
@@ -328,15 +334,15 @@ class Workbench:
         # Validated against the request that was submitted, never against the request the
         # documents carry: a run for any other target cannot pass its input gate.
         receipt = ValidateAnalysisRun(self.registry, self.clock, self.new_id).run(
-            envelope, published, submitted_request=request, declared_budget=budget
+            envelope, published, submitted_request=submitted, declared_budget=budget
         )
         receipt_valid = not self.registry.validate(RECEIPT_CONTRACT, receipt) and not (
             receipt_rule_violations(receipt)
         )
 
         return CompletedRun(
-            run_id=run_id,
-            target_url=request["target_url"],
+            run_id=submitted["run_id"],
+            target_url=submitted["target_url"],
             declared_budget=budget,
             envelope=None if withheld else envelope,
             receipt=receipt if receipt_valid else None,

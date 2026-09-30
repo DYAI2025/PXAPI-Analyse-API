@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "receipt_id": "rcp-01JQ8Z4K2M0000000000000053",
+  "run_id": "run-01JQ8Z4K2M0000000000000053",
+  "validated_at": "2026-09-28T12:00:00Z",
+  "validator": "ANALYSIS_RUN_VALIDATOR",
+  "validator_version": "1.0.0",
+  "run_state": "SUCCEEDED",
+  "artifact_bundle_digest": "sha256:bfa14e60a4213271205afe7382cbe3802ab9c56d72a3d4724eadb04d9b639ebd",
+  "overall_state": "FAIL",
+  "gates": {
+    "INPUT_CONTRACT": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "ACQUISITION_COMPLETENESS": {
+      "state": "BLOCKED",
+      "reasons": [
+        {
+          "code": "SELECTION_INCOMPLETE",
+          "pointer": "/sampling_manifest/selection_complete"
+        }
+      ]
+    },
+    "CANONICAL_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "PROVENANCE_LINKAGE": {
+      "state": "FAIL",
+      "reasons": [
+        {
+          "code": "RUN_BINDING_BROKEN",
+          "pointer": "/measurements/0/run_id"
+        }
+      ]
+    },
+    "EVIDENCE_COVERAGE": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "UNRESOLVED_CONFLICTS_LIMITATIONS": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "ARTIFACT_BUNDLE_VALIDITY": {
+      "state": "FAIL",
+      "reasons": [
+        {
+          "code": "BUNDLE_FILE_NOT_JSON",
+          "pointer": "/website-evidence.json"
+        }
+      ]
+    }
+  }
+}

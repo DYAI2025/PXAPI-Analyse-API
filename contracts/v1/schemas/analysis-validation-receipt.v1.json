@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pxapi:schema:analysis-validation-receipt:1.0.0",
+  "title": "PXAPI analysis validation receipt v1",
+  "description": "Whether the result of one Analysis Run can be relied on, gate by gate, and exactly why not where it cannot. It is a statement ABOUT a run and never a member of it: it changes no canonical document, carries no website value, no score, no polarity and no customer-release decision, and a run whose execution state is SUCCEEDED may validate FAIL or BLOCKED without its Analysis Truth changing. FAIL names a defect of this service (a contract, invariant, linkage or bundle defect); BLOCKED means a reliable release cannot be established because evidence is missing, incomplete or technically unavailable, which is never a statement about the website; NOT_APPLICABLE means the gate is deliberately not relevant to this run; PASS means the gate was actually checked and holds. The overall state is FAIL > BLOCKED > PASS over the applicable gates. Run validation is not delivery governance: it evaluates one analysis result, never a software candidate.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Required. Always 1.0.0 for this contract. Each contract is versioned in its own right; this value is not a version of the contract set as a whole."
+    },
+    "receipt_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. This receipt's own identity. A run validated twice has two receipts."
+    },
+    "run_id": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/id",
+      "description": "Required. The Analysis Run this receipt is about: the run that was requested, not a value read out of the documents under validation, so the documents cannot vouch for their own binding."
+    },
+    "validated_at": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/timestamp",
+      "description": "Required. When the validation was made."
+    },
+    "validator": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/code",
+      "description": "Required. The component that validated. The vocabulary is open, as collector's is: validators are interchangeable behind this contract."
+    },
+    "validator_version": {
+      "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/single_line_label",
+      "description": "Required. The version of the validation method. Two receipts are comparable only when validator and version agree."
+    },
+    "run_state": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "QUEUED",
+        "RUNNING",
+        "SUCCEEDED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "description": "Conditional. The execution state the validated run's own run state document declared, copied and never re-derived. Present whenever the run carried a readable run state, and required when overall_state is PASS: only a run that succeeded has anything to release. Absent when the run carried no readable run state, which ACQUISITION_COMPLETENESS then reports as a defect."
+    },
+    "artifact_bundle_digest": {
+      "$ref": "urn:pxapi:schema:acquisition:1.0.0#/$defs/digest",
+      "description": "Required. The digest of the canonical artifact bundle that was validated: the canonical-JSON SHA-256 of the object mapping each bundle file name to the SHA-256 digest of that file's exact bytes. The receipt is not part of the bundle it pins, so validating a bundle never depends on the receipt that reports it."
+    },
+    "overall_state": {
+      "type": "string",
+      "enum": [
+        "FAIL",
+        "BLOCKED",
+        "PASS"
+      ],
+      "description": "Required. FAIL if any gate fails; otherwise BLOCKED if any gate is blocked; otherwise PASS. NOT_APPLICABLE is neutral and never an overall state; a validation in which no gate applied established nothing and is BLOCKED."
+    },
+    "gates": {
+      "type": "object",
+      "description": "Required. Exactly the seven gate families of validation v1, each once. A gate family cannot be omitted, so a gate cannot be dropped to make a run look releasable, and no other member is admitted.",
+      "properties": {
+        "INPUT_CONTRACT": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether the request the run executed is a valid request, bound to this run, and the page budget the operator declared is the one the sampling manifest carries."
+        },
+        "ACQUISITION_COMPLETENESS": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether the run reached a terminal state, acquired every page its sampling manifest selected, and the selection covered the site."
+        },
+        "CANONICAL_VALIDITY": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether every canonical document the run emitted satisfies its registered contract and the contract rules JSON Schema cannot state, and no member is missing or unexpected."
+        },
+        "PROVENANCE_LINKAGE": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether every document names this run, the sampling manifest is bound to its site inventory with digests that reproduce, and selection, acquisition record, measurement and evidence resolve to one another once and only once."
+        },
+        "EVIDENCE_COVERAGE": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether every acquired page is measured and assessed, and every measurement is named by website evidence."
+        },
+        "UNRESOLVED_CONFLICTS_LIMITATIONS": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether no assessment reports an unresolved conflict and no discovery source was cut short, refused, failed or unreadable."
+        },
+        "ARTIFACT_BUNDLE_VALIDITY": {
+          "$ref": "#/$defs/gate",
+          "description": "Required. Whether the published artifact bundle holds exactly the run's canonical documents, each byte-identical to its canonical serialisation, and nothing else — the receipt itself included."
+        }
+      },
+      "required": [
+        "INPUT_CONTRACT",
+        "ACQUISITION_COMPLETENESS",
+        "CANONICAL_VALIDITY",
+        "PROVENANCE_LINKAGE",
+        "EVIDENCE_COVERAGE",
+        "UNRESOLVED_CONFLICTS_LIMITATIONS",
+        "ARTIFACT_BUNDLE_VALIDITY"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "run_id",
+    "validated_at",
+    "validator",
+    "validator_version",
+    "artifact_bundle_digest",
+    "overall_state",
+    "gates"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "overall_state": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "overall_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "run_state": {
+            "const": "SUCCEEDED"
+          }
+        },
+        "required": [
+          "run_state"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "gate_state": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "NOT_APPLICABLE"
+      ],
+      "description": "What one gate established: PASS (checked and holds), FAIL (a defect of this service), BLOCKED (evidence missing, incomplete or technically unavailable — never a website verdict) or NOT_APPLICABLE (deliberately not relevant to this run)."
+    },
+    "fail_reason_code": {
+      "type": "string",
+      "enum": [
+        "REQUEST_MISSING",
+        "REQUEST_CONTRACT_INVALID",
+        "REQUEST_NOT_BOUND_TO_RUN",
+        "DECLARED_BUDGET_NOT_APPLIED",
+        "RUN_STATE_UNAVAILABLE",
+        "RUN_NOT_TERMINAL",
+        "RUN_FAILED_BY_PRODUCER_DEFECT",
+        "RUN_FAILURE_UNCLASSIFIED",
+        "ACQUISITION_RECORDS_MISSING",
+        "CANONICAL_MEMBER_MISSING",
+        "CANONICAL_MEMBER_UNEXPECTED",
+        "DOCUMENT_CONTAINER_INVALID",
+        "DOCUMENT_CONTRACT_INVALID",
+        "DOCUMENT_SEMANTICS_INVALID",
+        "PRODUCER_INVARIANT_BROKEN",
+        "RUN_BINDING_BROKEN",
+        "LINKED_DOCUMENT_MISSING",
+        "SELECTION_BINDING_BROKEN",
+        "ACQUISITION_LINKAGE_BROKEN",
+        "DUPLICATE_IDENTIFIER",
+        "BUNDLE_FILE_MISSING",
+        "BUNDLE_FILE_UNEXPECTED",
+        "BUNDLE_FILE_NOT_JSON",
+        "BUNDLE_FILE_DIFFERS_FROM_CANONICAL",
+        "VALIDATION_NOT_EVALUABLE"
+      ],
+      "description": "A reason that names a defect of this service. Closed: a reason that could describe the website must never be able to arrive under this effect."
+    },
+    "blocked_reason_code": {
+      "type": "string",
+      "enum": [
+        "RUN_FAILED_TECHNICALLY",
+        "RUN_CANCELLED",
+        "SELECTION_INCOMPLETE",
+        "PAGE_NOT_ACQUIRED",
+        "PAGE_BODY_TRUNCATED",
+        "PAGE_BODY_NOT_DECODED",
+        "PAGE_MEASUREMENTS_WITHHELD",
+        "PAGE_EVIDENCE_NOT_ASSESSED",
+        "PAGE_EVIDENCE_UNKNOWN",
+        "MEASUREMENT_WITHOUT_EVIDENCE",
+        "UNRESOLVED_CONFLICT",
+        "DISCOVERY_SOURCE_LIMITED"
+      ],
+      "description": "A reason that names missing, incomplete or technically unavailable evidence. Every token describes this analysis — a bound it declared, a fetch that did not complete, an assessment that established nothing — and none describes the website."
+    },
+    "not_applicable_reason_code": {
+      "type": "string",
+      "enum": [
+        "RUN_EMITTED_NO_PAGE_DOCUMENTS",
+        "REQUEST_WITHHELD_BY_POLICY"
+      ],
+      "description": "Why a gate does not apply to this run."
+    },
+    "rule_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z$][A-Za-z0-9_]*(?!\\n)$",
+      "description": "The stable name of a rule: a JSON Schema keyword or the snake_case name of a contract-semantic, admission or producer rule. Structural vocabulary, safe to show; never a validator's free-text message."
+    },
+    "fail_reason": {
+      "type": "object",
+      "description": "One FAIL reason. It carries structural tokens and a location only — never free text, never a value read from the analysed website.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/fail_reason_code",
+          "description": "Required. What is wrong, from the closed reason vocabulary of this effect."
+        },
+        "pointer": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/json_pointer",
+          "description": "Optional. Where the subject of the reason is. For every gate except ARTIFACT_BUNDLE_VALIDITY it is an RFC 6901 pointer into the run's canonical envelope, whose members are the canonical document names (analysis_run_request, analysis_run_state, stage_executions, site_inventory, sampling_manifest, page_acquisitions, measurements, website_evidence); for ARTIFACT_BUNDLE_VALIDITY it addresses the bundle as an object keyed by file name. Absent when the reason concerns the gate as a whole."
+        },
+        "rule": {
+          "$ref": "#/$defs/rule_token",
+          "description": "Optional. The stable name of the rule that was broken — a JSON Schema keyword for a contract violation, or the name of a contract-semantic, admission or producer rule. Present only when a named rule is what failed."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "blocked_reason": {
+      "type": "object",
+      "description": "One BLOCKED reason. It carries structural tokens and a location only — never free text, never a value read from the analysed website.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/blocked_reason_code",
+          "description": "Required. What is wrong, from the closed reason vocabulary of this effect."
+        },
+        "pointer": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/json_pointer",
+          "description": "Optional. Where the subject of the reason is. For every gate except ARTIFACT_BUNDLE_VALIDITY it is an RFC 6901 pointer into the run's canonical envelope, whose members are the canonical document names (analysis_run_request, analysis_run_state, stage_executions, site_inventory, sampling_manifest, page_acquisitions, measurements, website_evidence); for ARTIFACT_BUNDLE_VALIDITY it addresses the bundle as an object keyed by file name. Absent when the reason concerns the gate as a whole."
+        },
+        "rule": {
+          "$ref": "#/$defs/rule_token",
+          "description": "Optional. The stable name of the rule that was broken — a JSON Schema keyword for a contract violation, or the name of a contract-semantic, admission or producer rule. Present only when a named rule is what failed."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "not_applicable_reason": {
+      "type": "object",
+      "description": "One NOT_APPLICABLE reason. It carries structural tokens and a location only — never free text, never a value read from the analysed website.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/not_applicable_reason_code",
+          "description": "Required. What is wrong, from the closed reason vocabulary of this effect."
+        },
+        "pointer": {
+          "$ref": "urn:pxapi:schema:common:1.0.0#/$defs/json_pointer",
+          "description": "Optional. Where the subject of the reason is. For every gate except ARTIFACT_BUNDLE_VALIDITY it is an RFC 6901 pointer into the run's canonical envelope, whose members are the canonical document names (analysis_run_request, analysis_run_state, stage_executions, site_inventory, sampling_manifest, page_acquisitions, measurements, website_evidence); for ARTIFACT_BUNDLE_VALIDITY it addresses the bundle as an object keyed by file name. Absent when the reason concerns the gate as a whole."
+        },
+        "rule": {
+          "$ref": "#/$defs/rule_token",
+          "description": "Optional. The stable name of the rule that was broken — a JSON Schema keyword for a contract violation, or the name of a contract-semantic, admission or producer rule. Present only when a named rule is what failed."
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "description": "One gate: its state and the reasons that produced it. The state is derived from the reasons — none means the gate holds — so a gate cannot pass while naming a problem.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/gate_state",
+          "description": "Required. The gate's state."
+        },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/fail_reason"
+              },
+              {
+                "$ref": "#/$defs/blocked_reason"
+              },
+              {
+                "$ref": "#/$defs/not_applicable_reason"
+              }
+            ]
+          },
+          "description": "Required. Every reason the gate gives, unique and ordered by (code, pointer, rule). Empty exactly when the gate passes. A FAIL gate names at least one FAIL reason and may name BLOCKED reasons beside it; a BLOCKED gate names BLOCKED reasons only; a NOT_APPLICABLE gate names exactly one NOT_APPLICABLE reason."
+        }
+      },
+      "required": [
+        "state",
+        "reasons"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/fail_reason"
+                    },
+                    {
+                      "$ref": "#/$defs/blocked_reason"
+                    }
+                  ]
+                },
+                "contains": {
+                  "$ref": "#/$defs/fail_reason"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "BLOCKED"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/blocked_reason"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "NOT_APPLICABLE"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "$ref": "#/$defs/not_applicable_reason"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

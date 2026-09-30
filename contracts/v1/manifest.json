@@ -169,6 +169,21 @@
         "examples/page-acquisition-record.timeout.example.json",
         "examples/page-acquisition-record.measurements-withheld.example.json"
       ]
+    },
+    {
+      "name": "analysis-validation-receipt",
+      "id": "urn:pxapi:schema:analysis-validation-receipt:1.0.0",
+      "version": "1.0.0",
+      "role": "core",
+      "status": "active",
+      "owner_slice": "PXAPI-25",
+      "schema": "schemas/analysis-validation-receipt.v1.json",
+      "examples": [
+        "examples/analysis-validation-receipt.example.json",
+        "examples/analysis-validation-receipt.pass.example.json",
+        "examples/analysis-validation-receipt.fail.example.json",
+        "examples/analysis-validation-receipt.failed-run.example.json"
+      ]
     }
   ],
   "problem_codes": [

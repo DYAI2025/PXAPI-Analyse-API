@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0.0",
+  "receipt_id": "rcp-01JQ8Z4K2M0000000000000054",
+  "run_id": "run-01JQ8Z4K2M0000000000000054",
+  "validated_at": "2026-09-28T12:00:00Z",
+  "validator": "ANALYSIS_RUN_VALIDATOR",
+  "validator_version": "1.0.0",
+  "run_state": "FAILED",
+  "artifact_bundle_digest": "sha256:8a15522dd3e61ddaded43b39980a003d3e810fbec766e854528f50f40e72067d",
+  "overall_state": "BLOCKED",
+  "gates": {
+    "INPUT_CONTRACT": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "ACQUISITION_COMPLETENESS": {
+      "state": "BLOCKED",
+      "reasons": [
+        {
+          "code": "RUN_FAILED_TECHNICALLY",
+          "pointer": "/analysis_run_state/failure/code"
+        }
+      ]
+    },
+    "CANONICAL_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "PROVENANCE_LINKAGE": {
+      "state": "PASS",
+      "reasons": []
+    },
+    "EVIDENCE_COVERAGE": {
+      "state": "NOT_APPLICABLE",
+      "reasons": [
+        {
+          "code": "PAGE_EVIDENCE_NOT_ASSESSED"
+        }
+      ]
+    },
+    "UNRESOLVED_CONFLICTS_LIMITATIONS": {
+      "state": "NOT_APPLICABLE",
+      "reasons": [
+        {
+          "code": "RUN_EMITTED_NO_PAGE_DOCUMENTS"
+        }
+      ]
+    },
+    "ARTIFACT_BUNDLE_VALIDITY": {
+      "state": "PASS",
+      "reasons": []
+    }
+  }
+}

@@ -22,7 +22,10 @@ PXAPI is a Python **modular monolith** built as **Ports & Adapters**.
 > static-page observer; 20.B adds the bounded multi-page runtime and its command line below,
 > which fetch exactly the pages an explicitly budgeted manifest selected — static HTTP only,
 > no browser. `contracts/` remains the versioned vocabulary, as data rather than behavior,
-> and is still the single contract authority.
+> and is still the single contract authority. PXAPI-25 adds the first browser-visible product
+> surface: an internal **Operator Workbench** that runs exactly that multi-page path from a
+> browser and shows its evidence, and the `analysis-validation-receipt.v1` contract with the
+> run-validation use case behind it.
 
 ## Analysing a page
 
@@ -80,6 +83,48 @@ A 4xx/5xx is a received response whose status is measured, but its document is n
 page content, and every per-page technical failure is recorded neutrally without failing the
 run. With `--output-dir`, each document set is written, read back, re-validated, and
 summarised per page in `receipt.json`.
+
+### The Operator Workbench (PXAPI-25)
+
+The same multi-page use case, operated from a browser by an internal operator:
+
+```bash
+uv run uvicorn pxapi.adapters.inbound.workbench:app --port 8001   # binds 127.0.0.1
+# then open http://127.0.0.1:8001/operator
+```
+
+| Route | What it does |
+| --- | --- |
+| `GET /operator` | the start form: a target URL and an explicit page budget, **no default** |
+| `POST /operator/runs` | starts exactly one synchronous run, then `303` to the result (POST/Redirect/GET) |
+| `GET /operator/runs/{run_id}` | the result: run and stage state, inventory, manifest and `selection_complete`, selected pages and their acquisition outcomes, the Evidence Inspector (page → measurement → website evidence), run validation with every gate and reason, limitations |
+| `GET /operator/runs/{run_id}/artifacts.zip` | the run's canonical documents, byte for byte the archive that was validated |
+| `GET /operator/runs/{run_id}/analysis-validation-receipt.json` | the validation receipt, which pins that archive by digest and is never inside it |
+
+It is a thin adapter: `build_request` → request contract → `SelectionBudgets` →
+`build_site_acquisition` → `AcquireSelectedPages`, in process, with the same strict target
+policy as the command line. It is **not** a machine API — `POST /v1/analysis-runs` stays the
+homepage-only endpoint it was — and it has no OpenAPI surface.
+
+**Ephemeral by design (V1).** It holds at most one running run and the most recently completed
+one, in memory: no database, no queue, no run history, no idempotency key. A restart loses both.
+While a run is in progress a second submission gets `409`; that is a local concurrency guard,
+not a deduplication contract.
+
+**Validation is not execution.** Every run is validated into an `analysis-validation-receipt.v1`
+(see [`contracts/README.md`](contracts/README.md#the-analysis-validation-receipt)): seven gates,
+each `PASS`, `FAIL` (a defect of this service), `BLOCKED` (evidence missing, incomplete or
+technically unavailable) or `NOT_APPLICABLE`, overall `FAIL > BLOCKED > PASS`. A `SUCCEEDED`
+run commonly validates `BLOCKED` — a budget smaller than the site leaves `selection_complete`
+false — and no technical limitation is ever shown as a website defect.
+
+**Website content is untrusted.** Pages are rendered server-side with escaping by construction,
+carry no JavaScript, and are served under `Content-Security-Policy: default-src 'none';
+style-src 'self'; form-action 'self'`; no website URL is rendered as a link, and only
+contract-valid canonical documents are shown — a run whose own documents fail their contracts is
+withheld and explained. Cross-site form posts are refused, the Workbench answers only to the
+loopback host names `127.0.0.1` and `localhost` (a DNS-rebinding page is refused), and a URL
+that may carry credentials is refused and never echoed back.
 
 **A technical failure is never a finding about the website.** A timeout, a DNS failure, a
 refused target, a broken parser and a response we cannot decode each record why *our process*
@@ -180,6 +225,11 @@ uv run ruff format .               # format
 uv run ruff format --check .       # verify formatting without writing
 
 uv run --python 3.14 pytest        # run the suite on the compatibility interpreter
+
+uv sync --locked --group browser   # adds Playwright for the Workbench browser journey
+uv run --no-sync playwright install chromium
+PXAPI_BROWSER_TESTS=required uv run --no-sync pytest tests/browser
+# PXAPI_BROWSER_CHANNEL=chrome drives an installed Google Chrome instead of Playwright's Chromium
 ```
 
 Switching interpreter rebuilds `.venv` — uv removes and recreates it each time you cross between
@@ -207,6 +257,8 @@ tests/contracts/     the contract validation harness and its invalid fixtures
 tests/domain/        the run-state transition matrix and the orthogonality proofs
 tests/acquisition/   the acquisition contract semantics: digest topology and ordering rules
 tests/smoke/         the opt-in real-boundary smoke; skipped unless a public target is named
+tests/browser/       the Operator Workbench's real-browser journey (needs the `browser` group)
+tools/               the real-boundary proof harnesses (PXAPI-20.B, PXAPI-25); not product code
 oracle/              frozen regression oracle from A2 — reference evidence, not application code
 docs/context/        project state and the decision / contradiction ledgers
 docs/evidence/       per-slice verification records
@@ -286,6 +338,8 @@ entry that is stale, unearned, outside a layer or blanket fails on its own. The 
 | `adapters/inbound/discover_cli.py`, `config/discovery_limits.py` | PXAPI-19.B |
 | `domain/page_acquisition.py`, `application/observe_static_page.py` | PXAPI-20.A |
 | `application/acquire_selected_pages.py`, `adapters/inbound/acquire_cli.py` | PXAPI-20.B |
+| `domain/run_validation.py`, `ports/contract_validation.py`, `application/validate_analysis_run.py` | PXAPI-25 |
+| `adapters/inbound/workbench.py`, `adapters/inbound/workbench_views.py` | PXAPI-25 |
 
 ### The Analysis Run lifecycle
 
@@ -306,4 +360,14 @@ migration evidence, and it is **not** application code and **not** a source to c
 
 `.github/workflows/python-compat.yml` runs, on Python 3.13 and 3.14: `uv sync --locked`,
 `uv lock --check`, `ruff check`, `ruff format --check`, and `pytest`. That is its entire remit.
+It syncs only the default `dev` group, so it installs no browser runtime and the Workbench browser
+journey (`tests/browser`) is skipped there.
+
+`.github/workflows/workbench-browser.yml` (PXAPI-25) is that journey's own job, on Python 3.13:
+`uv sync --locked --group browser`, Playwright's Chromium, and `pytest tests/browser` with
+`PXAPI_BROWSER_TESTS=required`, so a missing browser fails the job instead of skipping it. It
+uploads the journey's screenshots. The Workbench's real-boundary proof against a public site
+(`tools/pxapi25_workbench_real_boundary_proof.py`) is network-dependent evidence and runs outside
+push CI.
+
 The full repository CI/security/quality gate is a separate slice (A8).

@@ -1,0 +1,195 @@
+{
+  "contract": "analysis-validation-receipt",
+  "note": "One expectation index per contract directory. Each case names the structural violations that prove its point as (pointer, keyword) pairs; a validator's free-text message is deliberately never recorded. The expected set must be a subset of what the validator reports, because a conditional rule often reports a broader violation alongside the specific one.",
+  "cases": {
+    "gate-family-missing": {
+      "proves": "Every one of the seven gate families is reported. A receipt that drops a gate could make a run look releasable by omission.",
+      "violations": [
+        {
+          "pointer": "/gates",
+          "keyword": "required"
+        }
+      ]
+    },
+    "gate-family-unknown": {
+      "proves": "The gate families are closed at the seven of validation v1. A gate a later capability needs arrives with a contract version, never as an unrecognised member.",
+      "violations": [
+        {
+          "pointer": "/gates",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "gate-state-unknown": {
+      "proves": "The gate state vocabulary is closed at PASS, FAIL, BLOCKED and NOT_APPLICABLE; there is no fifth, softer state to hide a problem in.",
+      "violations": [
+        {
+          "pointer": "/gates/INPUT_CONTRACT/state",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "gate-state-lowercase": {
+      "proves": "The gate state vocabulary is case-sensitive, so a lowercased token cannot be matched against an approved state by accident.",
+      "violations": [
+        {
+          "pointer": "/gates/INPUT_CONTRACT/state",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "overall-not-applicable": {
+      "proves": "NOT_APPLICABLE is neutral and describes a gate, never the validation as a whole.",
+      "violations": [
+        {
+          "pointer": "/overall_state",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "pass-overall-for-failed-run": {
+      "proves": "Only a run that succeeded may pass validation: a run that did not execute to the end has nothing to release.",
+      "violations": [
+        {
+          "pointer": "/run_state",
+          "keyword": "const"
+        }
+      ]
+    },
+    "pass-overall-without-run-state": {
+      "proves": "A passing validation states the run state it passed on, so SUCCEEDED can be read off the receipt rather than assumed.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "required"
+        }
+      ]
+    },
+    "pass-gate-with-reason": {
+      "proves": "A passing gate names no problem: a gate cannot hold while giving a reason it does not.",
+      "violations": [
+        {
+          "pointer": "/gates/INPUT_CONTRACT/reasons",
+          "keyword": "maxItems"
+        }
+      ]
+    },
+    "fail-gate-without-reason": {
+      "proves": "A failing gate names the defect it failed on; an unexplained FAIL could not be acted on.",
+      "violations": [
+        {
+          "pointer": "/gates/CANONICAL_VALIDITY/reasons",
+          "keyword": "contains"
+        }
+      ]
+    },
+    "fail-gate-with-only-blocked-reasons": {
+      "proves": "FAIL is reserved for defects of this service. A gate whose only reasons are missing evidence is BLOCKED, never FAIL, so a technical limitation can never be escalated into a defect.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons",
+          "keyword": "contains"
+        }
+      ]
+    },
+    "blocked-gate-with-fail-reason": {
+      "proves": "A BLOCKED gate names BLOCKED reasons only: a defect cannot be softened into a limitation.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons/0/code",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "blocked-gate-without-reason": {
+      "proves": "A blocked gate states what is missing; an unexplained BLOCKED is not a limitation anyone can resolve.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons",
+          "keyword": "minItems"
+        }
+      ]
+    },
+    "not-applicable-gate-with-two-reasons": {
+      "proves": "A gate that does not apply says why exactly once.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons",
+          "keyword": "maxItems"
+        }
+      ]
+    },
+    "not-applicable-gate-with-blocked-reason": {
+      "proves": "An exemption is not a limitation: a NOT_APPLICABLE gate cannot carry a BLOCKED reason, which would state a problem while declaring the gate irrelevant.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons/0/code",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "reason-code-website-quality": {
+      "proves": "The reason vocabulary is closed, so no reason describing the website can arrive: every BLOCKED reason names our process.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons/0/code",
+          "keyword": "enum"
+        }
+      ]
+    },
+    "reason-carries-a-message": {
+      "proves": "A reason carries tokens and a location only. Free text could carry a validator's message or website content into a document every adapter renders.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons/0",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "reasons-duplicated": {
+      "proves": "A reason is reported once, so a count of reasons is a count of problems.",
+      "violations": [
+        {
+          "pointer": "/gates/EVIDENCE_COVERAGE/reasons",
+          "keyword": "uniqueItems"
+        }
+      ]
+    },
+    "customer-release-property": {
+      "proves": "Run validation is not a customer-release decision; SUCCEEDED and a passing validation together still decide no release.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "score-property": {
+      "proves": "A receipt carries no score: validation says whether a result can be relied on, never how good the website is.",
+      "violations": [
+        {
+          "pointer": "",
+          "keyword": "additionalProperties"
+        }
+      ]
+    },
+    "bundle-digest-uppercase": {
+      "proves": "One bundle has exactly one written digest: upper-case hexadecimal is refused.",
+      "violations": [
+        {
+          "pointer": "/artifact_bundle_digest",
+          "keyword": "pattern"
+        }
+      ]
+    },
+    "run-state-unknown": {
+      "proves": "The run state is copied from the run's own vocabulary, never paraphrased.",
+      "violations": [
+        {
+          "pointer": "/run_state",
+          "keyword": "enum"
+        }
+      ]
+    }
+  }
+}

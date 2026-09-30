@@ -53,6 +53,12 @@ BEHAVIOR_ALLOWED: dict[str, str] = {
     "application/observe_static_page.py": "PXAPI-20.A",
     "application/acquire_selected_pages.py": "PXAPI-20.B",
     "adapters/inbound/acquire_cli.py": "PXAPI-20.B",
+    "domain/run_validation.py": "PXAPI-25",
+    "ports/contract_validation.py": "PXAPI-25",
+    "application/validate_analysis_run.py": "PXAPI-25",
+    "application/run_lifecycle.py": "PXAPI-25",
+    "adapters/inbound/workbench.py": "PXAPI-25",
+    "adapters/inbound/workbench_views.py": "PXAPI-25",
 }
 
 SOURCE_FILES = sorted(SRC.rglob("*.py"))

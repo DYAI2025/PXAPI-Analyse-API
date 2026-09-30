@@ -31,6 +31,11 @@ from pxapi.domain.page_acquisition import (
     AcquisitionOutcome,
 )
 from pxapi.domain.run_state import TERMINAL_STATES, RunState
+from pxapi.domain.run_validation import (
+    OVERALL_STATES,
+    GateState,
+    reason_codes_with_effect,
+)
 from tests.contracts.support import CONTRACTS, load_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,6 +239,31 @@ WITHHELD_REASON_POINTER = "#/properties/measurements_withheld_reason/enum"
 RESPONSE_OUTCOME_POINTER = "#/allOf/0/if/properties/acquisition_outcome/const"
 DECODED_BODY_POINTER = "#/allOf/1/if/properties/body_decoded/const"
 
+#: The four states one validation gate can be in, and the three the run's validation as a whole
+#: can be in. *Derived* from the Domain, which owns both and the precedence between them: the
+#: schema is the second statement of a fact the code holds. ``NOT_APPLICABLE`` is never an overall
+#: state, and the overall order is the precedence, strongest first.
+GATE_STATES: list[str] = [state.value for state in GateState]
+OVERALL_VALIDATION_STATES: list[str] = [state.value for state in OVERALL_STATES]
+
+#: The reason vocabulary, split by the effect each reason has on its gate. Derived from the
+#: Domain's single reason table, so a reason cannot change effect in the schema alone; a website
+#: quality token can arrive under no effect at all, because every list is closed.
+FAIL_REASON_CODES: list[str] = reason_codes_with_effect(GateState.FAIL)
+BLOCKED_REASON_CODES: list[str] = reason_codes_with_effect(GateState.BLOCKED)
+NOT_APPLICABLE_REASON_CODES: list[str] = reason_codes_with_effect(GateState.NOT_APPLICABLE)
+
+#: The four gate-state conditionals, one per state in the declared order, and the one overall
+#: conditional: only a SUCCEEDED run may pass. All **literals**, as ``VALUED_RESULT_STATE`` is: a
+#: token selected out of the vocabulary above would be a member of it by construction, so the
+#: companion membership canary could never fail.
+GATE_STATE_BRANCHES: list[str] = ["PASS", "FAIL", "BLOCKED", "NOT_APPLICABLE"]
+PASSING_OVERALL_STATE = "PASS"
+RELEASABLE_RUN_STATE = "SUCCEEDED"
+
+_RECEIPT = "analysis-validation-receipt.v1.json"
+
+
 #: Every closed vocabulary this module pins, as ``(schema file, JSON pointer) -> exact value``.
 PINNED: dict[tuple[str, str], Any] = {
     ("analysis-run-request.v1.json", "#/properties/scan_mode/enum"): SCAN_MODES,
@@ -266,6 +296,20 @@ PINNED: dict[tuple[str, str], Any] = {
     (_ACQUISITION_RECORD, WITHHELD_REASON_POINTER): MEASUREMENTS_WITHHELD_REASONS,
     (_ACQUISITION_RECORD, RESPONSE_OUTCOME_POINTER): RESPONSE_OUTCOME,
     (_ACQUISITION_RECORD, DECODED_BODY_POINTER): DECODED_BODY_VALUE,
+    (_RECEIPT, "#/properties/run_state/enum"): RUN_STATES,
+    (_RECEIPT, "#/properties/overall_state/enum"): OVERALL_VALIDATION_STATES,
+    (_RECEIPT, "#/allOf/0/if/properties/overall_state/const"): PASSING_OVERALL_STATE,
+    (_RECEIPT, "#/allOf/0/then/properties/run_state/const"): RELEASABLE_RUN_STATE,
+    (_RECEIPT, "#/$defs/gate_state/enum"): GATE_STATES,
+    (_RECEIPT, "#/$defs/fail_reason_code/enum"): FAIL_REASON_CODES,
+    (_RECEIPT, "#/$defs/blocked_reason_code/enum"): BLOCKED_REASON_CODES,
+    (_RECEIPT, "#/$defs/not_applicable_reason_code/enum"): NOT_APPLICABLE_REASON_CODES,
+    # One conditional per gate state, in the declared order: a fifth state cannot arrive
+    # without a branch, and a branch cannot be dropped or reordered without a red test.
+    **{
+        (_RECEIPT, f"#/$defs/gate/allOf/{index}/if/properties/state/const"): state
+        for index, state in enumerate(GATE_STATE_BRANCHES)
+    },
     # The four value_type branches, derived from the vocabulary rather than listed: this pins
     # that there is exactly one branch per declared type, in the declared order, so a fifth
     # type cannot arrive without a branch and a branch cannot be dropped without a red test.
@@ -446,6 +490,37 @@ def test_the_acquisition_outcomes_are_more_than_the_response_token() -> None:
     """Canary: a one-token vocabulary would make the conditional's membership rule vacuous."""
     assert len(ACQUISITION_OUTCOMES) > 1
     assert ACQUISITION_OUTCOMES[0] == RESPONSE_OUTCOME
+
+
+def test_every_gate_state_has_exactly_one_branch_in_the_declared_order() -> None:
+    """The literal branch list and the Domain vocabulary must agree, token for token."""
+    assert GATE_STATE_BRANCHES == GATE_STATES
+
+
+def test_the_overall_states_are_the_gate_states_without_the_neutral_one() -> None:
+    """``NOT_APPLICABLE`` is neutral: it can describe a gate, never the validation as a whole."""
+    assert set(OVERALL_VALIDATION_STATES) == set(GATE_STATES) - {"NOT_APPLICABLE"}
+    assert OVERALL_VALIDATION_STATES == ["FAIL", "BLOCKED", "PASS"], "the order is the precedence"
+
+
+def test_the_passing_overall_state_and_the_releasable_run_state_are_vocabulary_members() -> None:
+    assert PASSING_OVERALL_STATE in OVERALL_VALIDATION_STATES
+    assert RELEASABLE_RUN_STATE in RUN_STATES
+
+
+def test_the_reason_vocabularies_partition_the_domain_s_reason_codes() -> None:
+    """Every reason has exactly one effect; none of them is PASS, and none is shared."""
+    split = FAIL_REASON_CODES + BLOCKED_REASON_CODES + NOT_APPLICABLE_REASON_CODES
+    assert len(split) == len(set(split))
+    assert reason_codes_with_effect(GateState.PASS) == []
+    assert FAIL_REASON_CODES and BLOCKED_REASON_CODES and NOT_APPLICABLE_REASON_CODES
+
+
+def test_no_blocked_or_not_applicable_reason_describes_the_website() -> None:
+    """A neutral reason names our process; a website-quality word would make it a verdict."""
+    page_quality = ("BROKEN", "BAD", "POOR", "WEAK", "SLOW", "THIN", "QUALITY", "SEO", "SCORE")
+    neutral = BLOCKED_REASON_CODES + NOT_APPLICABLE_REASON_CODES
+    assert [code for code in neutral if any(word in code for word in page_quality)] == []
 
 
 def test_the_valued_result_state_belongs_to_the_result_state_vocabulary() -> None:

@@ -37,6 +37,14 @@ dev = [
     "ruff>=0.16.5",    # linter + formatter (AC2)
     "httpx>=0.28,<1",  # starlette TestClient transport; test-only, never imported by src/
 ]
+# PXAPI-25: the Operator Workbench's real-browser journey. A group of its own, outside the default
+# `dev` group, so `uv sync --locked` in the Python 3.13/3.14 compatibility jobs never installs a
+# browser runtime; only the separate browser job and the real-boundary proof sync it
+# (`uv sync --locked --group browser`). Never imported by src/ — the provider-neutrality lock
+# bans it there.
+browser = [
+    "playwright>=1.62,<2",
+]
 
 [build-system]
 requires = ["hatchling>=1.27"]   # >=1.27 emits PEP 639 License-Expression; older silently degrades

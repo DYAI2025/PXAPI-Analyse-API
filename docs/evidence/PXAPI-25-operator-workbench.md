@@ -7,14 +7,18 @@
 `python-compat` run `36405179068` `success`), re-verified with `git ls-remote` before the branch
 was created. **Branch:** `agent/pxapi25-operator-workbench`.
 
-**Proven code head:** `e0b0f3a57cb3c27f1d23e48c82919a1b56c599e6` — the final validation repair
-(§10) on top of the earlier proven head `32703a67b5af03f5b297e6ad18d996e9ab349d74`; sections 1–9
+**Code head:** `53c98bfbaeaabdc928821a4f7a4d32bb87d0680c` — the target-binding repair (§11,
+`F-25-R4M-003`) on top of `e0b0f3a57cb3c27f1d23e48c82919a1b56c599e6`, the final validation repair
+(§10), on top of the earlier proven head `32703a67b5af03f5b297e6ad18d996e9ab349d74`. Exact-head CI,
+the real-boundary proof and review of `53c98bf` are still to be run; the real-boundary proof in
+§10 is of `f524a8c` and does not cover §11. Sections 1–9
 record the state at `32703a6` and say so where a figure was measured there. Every executed figure
 below names the SHA it was measured on. The commit that carries this document changes documentation
 only; a commit cannot contain its own SHA, so that head is re-verified at its own exact SHA (CI
 and the real-boundary proof) and those results are recorded on the PR and in Jira, not here.
 
-**Authority:** Jira `PXAPI-25` (description, comments `16735`, `16747`) and the Product Owner's
+**Authority:** Jira `PXAPI-25` (description, comments `16735`, `16747`; for §10–§11 also
+`16813`, `16817`, `16819`) and the Product Owner's
 acceptance of the PRE_IMPLEMENTATION plan with amendments (2026-09-28); Confluence `71991298` v3,
 `54362115` v1, `55181314` v1.
 
@@ -462,3 +466,86 @@ and the deterministic suite's `start-{normal,narrow}.png`, `result-{normal,narro
   screen-reader announcement were not verified. With overlay scrollbars nothing but the cut-off
   column signals that a table scrolls.
 - One real-boundary run of one origin at one point in time, as in §9.
+
+## 11. Target-binding repair — `F-25-R4M-003` (2026-09-30)
+
+**Old head:** `dfb15abfc637b67c5da1a247a0b3495cc7a8336e` (PR #22 head, base `ce4de18`; branch,
+HEAD, `origin` and `gh pr view 22` re-verified equal before any edit; Jira comments `16813`,
+`16817`, `16819` read). **Repair commit:** `53c98bfbaeaabdc928821a4f7a4d32bb87d0680c`.
+`git diff --stat dfb15ab 53c98bf`: 2 files, 141 insertions, 6 deletions —
+`src/pxapi/adapters/inbound/workbench.py` and `tests/adapters/test_workbench.py`. Every other
+path, including `contracts/`, `src/pxapi/application/`, `src/pxapi/domain/`, `src/pxapi/ports/`,
+the views and `.github/`, has an empty diff. No reason code, gate, schema or view changes.
+
+### The defect
+
+§10 closed Finding A with "The Workbench passes the request it admitted" — true, but it passed the
+*same object* twice. `Workbench.execute()` handed one mutable request `dict` to the producer
+(`self.acquisition(...).run(request)`), then to `ValidateAnalysisRun.run(...,
+submitted_request=request)`, and read `request["target_url"]` again for the result page. A
+producer that rewrote its input in place therefore rewrote the submission it was validated
+against. §10's binding tests did not reach this: they changed a separate copy
+(`dict(request, target_url=...)`) or the canonical envelope after the run.
+
+Measured at `dfb15ab` with the new test double (`InPlaceRewritingAcquisitions`: the genuine fake-port
+runtime, preceded by `request[member] = value` on the object it was handed), submitted target
+`https://example.com/`, budget 4, through `POST /operator/runs`:
+
+| Producer rewrites its input to | Overall before | `INPUT_CONTRACT` before | Target shown before | After |
+| --- | --- | --- | --- | --- |
+| `https://b.example/` | **`PASS`** | `PASS`, no reasons | `https://b.example/` | `FAIL`: `REQUEST_NOT_BOUND_TO_RUN` at `/analysis_run_request/target_url`; shows `https://example.com/` |
+| a credential URL (discovery then refuses it and withholds the request, as it does for such a target) | `BLOCKED` | `NOT_APPLICABLE`, `REQUEST_WITHHELD_BY_POLICY` | the credential URL, secret included | `FAIL`: `REQUEST_MISSING`; shows `https://example.com/` |
+
+### The repair
+
+Before any producer code runs, `execute()` snapshots the admitted request —
+`MappingProxyType(copy.deepcopy(request))`, a read-only view of a deep copy nothing else holds —
+and hands the producer `copy.deepcopy(dict(snapshot))`, an input of its own. Validation
+(`submitted_request=`), the run id and the displayed target are read from the snapshot. The
+caller's object is no longer handed to the producer at all. `ValidateAnalysisRun` already takes a
+`Mapping`; it needed no change.
+
+Preserved, and tested at the Workbench boundary: a *submitted* credential target driven through
+`Workbench.execute` still validates `INPUT_CONTRACT` with exactly `REQUEST_WITHHELD_BY_POLICY`
+(over HTTP, admission refuses such a target before any run, unchanged). Lifecycle validation,
+failure neutrality, the bundle/receipt split and every view are untouched by the diff.
+
+### RED → GREEN and counter-mutation
+
+At `dfb15ab` plus the new tests only: **6 failed, 1 passed** (the passed one is the preserved
+credential-exemption control). The A→B test failed on `assert 'PASS' == 'FAIL'` (the
+`INPUT_CONTRACT` state); the credential test on `'REQUEST_WITHHELD_BY_POLICY' not in
+{'REQUEST_WITHHELD_BY_POLICY'}`; the four parametrised own-copy tests (`target_url`, `run_id`,
+`request_id`, `requested_at`) on `handed is not request`. At `53c98bf` all 7 pass.
+
+Counter-mutation of `53c98bf` (driver writes each mutant, purges `__pycache__` with
+`PYTHONDONTWRITEBYTECODE=1`, restores the original bytes and compares them; restore identical):
+
+| Mutant | Result |
+| --- | --- |
+| producer handed the caller's object (snapshot kept for validation) | killed (rc 1) |
+| validation bound to the producer's copy | killed |
+| displayed target read from the producer's copy | killed |
+| no snapshot at all (the `dfb15ab` aliasing) | killed |
+
+### Regression of the working tree committed as `53c98bf`
+
+| Command | Interpreter | Result |
+| --- | --- | --- |
+| `uv lock --check`, `uv run ruff check .`, `uv run ruff format --check .` | CPython 3.13.3 | rc 0; `All checks passed!`; `131 files already formatted` |
+| `uv run pytest -q -p no:cacheprovider` (`uv sync --locked`, no browser group) | CPython 3.13.3 | `3858 passed, 3 skipped` (two opt-in smokes, the browser module) |
+| the same, separate environment, `UV_PYTHON=3.14` | CPython 3.14.6 | `3858 passed, 3 skipped` |
+| `PXAPI_BROWSER_TESTS=required PXAPI_BROWSER_CHANNEL=chrome uv run --no-sync pytest tests/browser` | CPython 3.13.3, Chrome | `8 passed` |
+
+These are local runs. Exact-head CI is recorded on the PR, not here.
+
+### What this repair does not prove
+
+- The snapshot protects the submission from the producer it is handed to; it does not make the
+  producer correct. A producer that emits another target is now *detected* (`FAIL`), not prevented.
+- No real-boundary proof, visual evidence or independent review exists for `53c98bf` yet; §10's
+  proof is of `f524a8c`. The browser journey above is the deterministic suite of §6, not a
+  real-boundary run.
+- The snapshot is read-only at its top level; its values are plain strings today. A future
+  request member holding a nested object would be protected by the deep copy (nothing else holds
+  it), not by the read-only view.
